@@ -5,7 +5,7 @@
 程序主体用 Python 实现。涉及 MySQL 数据库操作、Mail 发送。
 
 
-
+****
 ## 主要组件功能设计
 ### Msg_Handler
 
@@ -24,6 +24,7 @@
 * 新文章加入观察
 * 立即/周期性触发观察者的观察动作
 
+同时主逻辑还要运行一个 Timer ，这个 Timer 定时触发观察动作。
 
 ### Observer
 
@@ -37,7 +38,32 @@
 
 发送备份的邮件给特定邮箱
 
+****
 
+## 接口定义
+我们常驻后台运行的其实是 **Msg_Handler**
+
+它调用主逻辑，因此主逻辑给它提供接口。
+### 主逻辑接口
+* Add_User
+* Update_User
+* Remove_User
+* Add_OB_Article
+### DB_Operator接口
+* Add_User
+* Find_User
+* Update_User
+* Remove_User
+* Add_Article
+* Remove_Article
+* Update_Article (tag)
+### Observer接口
+* Ob_This_One
+* Ob_All
+### Mail_Server接口
+* Send
+
+****
 
 ## 工作量及任务规划
 - [x] 搞一个微信公众号 1h 
@@ -51,5 +77,5 @@
 
 
 ## More features
-* 供查看当前状态的管理页面（PHP技能需要
+* 用于查看当前状态/统计信息的管理页面（PHP技能需要
 * 多个用户提交相同页面时的去重
