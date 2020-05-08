@@ -50,6 +50,6 @@
 - [ ] 联调联测    2h
 
 
-## more features
+## More features
 * 供查看当前状态的管理页面（PHP技能需要
 * 多个用户提交相同页面时的去重
