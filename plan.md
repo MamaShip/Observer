@@ -1,5 +1,5 @@
 
-![简易框架](./frame.png ''简易框架'')
+![简易框架](frame.png)
 
 ### Msg_Handler
 
@@ -33,3 +33,17 @@
 
 
 
+## 工作量及任务规划
+
+- [ ] 搞个能用的 Linux 服务器  1h
+- [ ] 微信消息接口调试  12h
+- [ ] 主逻辑   3h
+- [ ] mail server   3h
+- [ ] MySQL 部署及 DB_Operator  4h
+- [ ] Observer   3h
+- [ ] 联调联测    2h
+
+
+## more features
+* 供查看当前状态的管理页面（PHP技能需要
+* 多个用户提交相同页面时的去重
