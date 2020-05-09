@@ -8,3 +8,6 @@ mail:
 
 微信第三方SDK（python）：
 * [wechatpy文档](http://docs.wechatpy.org/zh_CN/master/)
+
+端点星的存档检查机器人：
+[ArchiveTeleBot](https://github.com/Terminus2049/ArchiveTeleBot)
