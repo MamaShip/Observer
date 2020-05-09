@@ -34,6 +34,9 @@
 * 若链接有效，且存在备份，结束
 * 若链接失效，向数据库写入失效标签，发送备份给用户，从观察列表中剔除。
 
+### Article_Checker
+获取网页内容，判断是否为有效链接（urllib.request库或其他方式）
+
 ### Mail_Server
 
 发送备份的邮件给特定邮箱
@@ -60,18 +63,22 @@
 ### Observer接口
 * Ob_This_One
 * Ob_All
+### Article_Checker接口
+* Check_Validation
+* Get_Content
 ### Mail_Server接口
 * Send
 
 ****
 
 ## 工作量及任务规划
-- [x] 搞一个微信公众号 1h 
-- [ ] 搞个能用的 Linux 服务器  1h
+- [x] 搞一个微信公众号 1h
+- [x] 搞个能用的 Linux 服务器  1h
 - [ ] 微信消息接口调试  12h
 - [ ] 主逻辑   3h
 - [ ] mail server   3h
 - [ ] MySQL 部署及 DB_Operator  4h
+- [ ] Article_Checker 4h
 - [ ] Observer   3h
 - [ ] 联调联测    2h
 
