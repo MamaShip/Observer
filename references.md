@@ -10,4 +10,8 @@ mail:
 * [wechatpy文档](http://docs.wechatpy.org/zh_CN/master/)
 
 端点星的存档检查机器人：
-[ArchiveTeleBot](https://github.com/Terminus2049/ArchiveTeleBot)
+* [ArchiveTeleBot](https://github.com/Terminus2049/ArchiveTeleBot)
+
+****
+其他参考资料：
+* [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/)
