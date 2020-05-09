@@ -23,7 +23,7 @@ def index():
     return render_template("index.html", host=host)
 
 
-@app.route("/wechat", methods=["GET", "POST"])
+@app.route("/wx", methods=["GET", "POST"])
 def wechat():
     signature = request.args.get("signature", "")
     timestamp = request.args.get("timestamp", "")
@@ -66,4 +66,4 @@ def wechat():
 
 
 if __name__ == "__main__":
-    app.run("127.0.0.1", 5001, debug=True)
+    app.run("0.0.0.0", 80, debug=True)
