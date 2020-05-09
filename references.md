@@ -11,6 +11,10 @@ mail:
 端点星的 telegram 机器人：
 * [ArchiveTeleBot](https://github.com/Terminus2049/ArchiveTeleBot)
 
+自动化测试：
+* [pytest 官网](https://docs.pytest.org/en/latest/index.html)
+* [用 Pytest 來做 Unit Test](https://medium.com/@wistw.chang/python-%E7%94%A8-pytest-%E4%BE%86%E5%81%9A-unit-test-7e1a7ac599f6)
+
 ****
 其他参考资料：
 * [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/)
