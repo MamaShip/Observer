@@ -18,3 +18,4 @@ mail:
 ****
 其他参考资料：
 * [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/)
+* [使用 linux screen 在后台运行程序](https://www.cnblogs.com/mchina/archive/2013/01/30/2880680.html)
