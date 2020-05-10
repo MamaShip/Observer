@@ -1,6 +1,8 @@
 # Observer
 A simple tool for checking accessibility of specific articles
 
+![CI](https://github.com/MamaShip/Observer/workflows/CI/badge.svg?branch=master&event=status)
+
 构想：
 ![构想](img/init.jpg)
 
