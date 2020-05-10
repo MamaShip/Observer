@@ -1,7 +1,7 @@
 # Observer
 A simple tool for checking accessibility of specific articles
 
-![CI](https://github.com/MamaShip/Observer/workflows/CI/badge.svg?branch=master&event=status)
+![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
 
 构想：
 ![构想](img/init.jpg)
