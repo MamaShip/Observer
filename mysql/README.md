@@ -4,7 +4,7 @@
 
 依赖的第三方库：[mysql-connector-python](https://dev.mysql.com/doc/connector-python/en/connector-python-introduction.html)
 
-db_operator.py 提供了一个类 **DbOperator**，用于操作 MySQL。具体接口见文档： [pydoc_output.txt](mysql/pydoc_output.txt)
+db_operator.py 提供了一个类 **DbOperator**，用于操作 MySQL。具体接口见文档： [pydoc_output.txt](pydoc_output.txt)
 
 数据库内实际管理了2个表(users, articles)，结构如下：
 ![Database Structure](../img/DB_structure.png)
