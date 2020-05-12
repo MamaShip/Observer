@@ -1,9 +1,8 @@
 # -*-coding:utf-8 -*-
-
-'''
-import sys 
-reload(sys)
-sys.setdefaultencoding('utf-8')
+'''DataBase Operator
+Work on MySQL. Offerring a class called DbOperator, which
+handle the connection of MySQL and provide several basic
+operations. 
 '''
 import mysql.connector
 from mysql.connector import errorcode
@@ -298,12 +297,7 @@ class DbCreator:
 
     def create_table(self):
         """Create table.
-        If table doesn't exist, creat it.
-
-        Args:
-            nothing
-        Returns:
-            nothing
+        Create 2 tables defined by global variables: TABLES
         """
         cursor = self.db.cursor()        # 获取操作游标
         for table_name in TABLES:
