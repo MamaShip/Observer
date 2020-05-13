@@ -4,10 +4,15 @@ Work on MySQL. Offerring a class called DbOperator, which
 handle the connection of MySQL and provide several basic
 operations. 
 '''
+import logging
 import mysql.connector
 from mysql.connector import errorcode
 
 # !!! 已知问题：当数据库内没有目标项目时，对其做 update/delete 都不会报错
+
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+logging.basicConfig(filename='mysql.log',
+                    level=logging.DEBUG, format=LOG_FORMAT)
 
 DB_NAME = 'ObDb'
 TABLES = {}
@@ -31,20 +36,72 @@ TABLES['articles'] = (
     "  PRIMARY KEY (`article_id`)"
     ") ENGINE=InnoDB")
 
+
 class DbOperator:
     def __init__(self):
         # 打开数据库连接
         self.db = mysql.connector.connect(
-                    host="localhost",            # 数据库主机地址
-                    user="DbOperator",           # 数据库用户名
-                    passwd="DoNotAnswer2048!",   # 数据库密码
-                    database=DB_NAME)            # 直接选择特定数据库
+            host="localhost",            # 数据库主机地址
+            user="DbOperator",           # 数据库用户名
+            passwd="DoNotAnswer2048!",   # 数据库密码
+            database=DB_NAME)            # 直接选择特定数据库
         print("db connection created")
 
     def __del__(self):
         # 关闭数据库连接
         self.db.close()
         print("db connection deleted")
+
+    def _commit_cmd(self, cmd, parameters):
+        """Commit a cmd.
+        When making any changes to database, you should
+        commit it to make it effective. This operation may 
+        cause error. So you have to handle it and rollback.
+
+        Args:
+            cmd: str
+            parameters: tuple of variables in your cmd
+
+        Returns:
+            success: True/False - if any error happened,
+                    this will be False. 
+        """
+        success = True
+        cursor = self.db.cursor()
+        try:
+            cursor.execute(cmd, parameters)
+            # Commit the changes
+            self.db.commit()
+        except:
+            self.db.rollback()
+            success = False
+            # log it
+            logging.warning("commit fail when executing cmd: " + cmd)
+            logging.warning("> with parameters: "
+                            + " ".join(map(str, parameters)))
+        cursor.close()
+        return success
+
+    def _execute_cmd(self, cmd, parameters):
+        """Execute a query cmd.
+        Query cmd doesn't make any change to database.
+        So you don't have to commit it and/or rollback.
+        We only care about results.
+
+        Args:
+            cmd: str
+            parameters: tuple of variables in your cmd
+
+        Returns:
+            result: list. can be empty
+        """
+        cursor = self.db.cursor()
+        result = []
+        cursor.execute(cmd, parameters)
+        for item in cursor:
+            result.append(item)
+        cursor.close()
+        return result
 
     def add_user(self, user):
         """Register new user.
@@ -56,22 +113,10 @@ class DbOperator:
         Returns:
             success or not: True/False
         """
-        cursor = self.db.cursor()
         insert_new_user = (
-                "INSERT INTO users (open_id, email, reg_date) "
-                "VALUES (%s, %s, NOW())")
-        success = True
-        try:
-            cursor.execute(insert_new_user, user)
-            # Commit the changes
-            self.db.commit() 
-        except:
-            self.db.rollback()
-            success = False
-            # log it
-
-        cursor.close()
-        return success
+            "INSERT INTO users (open_id, email, reg_date) "
+            "VALUES (%s, %s, NOW());")
+        return self._commit_cmd(insert_new_user, user)
 
     def find_user(self, open_id):
         """Get user info.
@@ -86,20 +131,20 @@ class DbOperator:
             result: a dict of {'user_id','open_id','email','reg_date'}
         """
         success = True
-        cursor = self.db.cursor()
         query = ("SELECT user_id, email, reg_date FROM users "
-                "WHERE open_id = %s")
-        cursor.execute(query, (open_id,))
+                 "WHERE open_id = %s;")
+        query_result = self._execute_cmd(query, (open_id,))
         result = {}
-        for (user_id, email, reg_date) in cursor:
+        for (user_id, email, reg_date) in query_result:
             result['user_id'] = user_id
             result['open_id'] = open_id
             result['email'] = email
             result['reg_date'] = reg_date
-        cursor.close()
         if len(result) == 0:
             success = False
             # log it
+            logging.info("fetch no item with cmd:" + query)
+            logging.info("> open_id= " + str(open_id))
         return success, result
 
     def update_user(self, user):
@@ -113,20 +158,9 @@ class DbOperator:
             success: True/False
         """
         open_id, email = user
-        cursor = self.db.cursor()
         update = ("UPDATE users SET email=%s WHERE open_id=%s;")
-        success = True
-        try:
-            cursor.execute(update, (email, open_id))
-            # Commit the changes
-            self.db.commit() 
-        except:
-            self.db.rollback()
-            success = False
-            # log it
-            print("update fail")
-        cursor.close()
-        return success
+        parameters = (email, open_id)
+        return self._commit_cmd(update, parameters)
 
     def remove_user(self, open_id):
         """remove user info.
@@ -138,25 +172,14 @@ class DbOperator:
         Returns:
             success: True/False
         """
-        cursor = self.db.cursor()
         delete = ("DELETE FROM users WHERE open_id=%s;")
-        success = True
-        try:
-            cursor.execute(delete, (open_id,))
-            # Commit the changes
-            self.db.commit() 
-        except:
-            self.db.rollback()
-            success = False
-            # log it
-            print("remove fail")
-        cursor.close()
-        return success
+        return self._commit_cmd(delete, (open_id,))
 
     def add_article(self, article):
         """Register new article to be observed.
         Add article info to database.
-        Only registered users can add articles. This should be guaranteed by caller.
+        Only registered users can add articles. This should be guaranteed 
+        by caller.
 
         Args:
             user: A tuple of article info like : (URL, open_id, backup_addr)
@@ -164,23 +187,12 @@ class DbOperator:
         Returns:
             success or not: True/False
         """
-        cursor = self.db.cursor()
         insert_new_article = (
-                "INSERT INTO articles (URL, open_id, backup_addr, start_date, status) "
-                "VALUES (%s, %s, %s, NOW(), 1)") # status 目前没有使用，强制赋1
-        success = True
-        try:
-            cursor.execute(insert_new_article, article)
-            # Commit the changes
-            self.db.commit()
-        except:
-            self.db.rollback()
-            success = False
-            # log it
-        cursor.close()
-        return success
-    
-    def find_my_article(self, open_id): # TODO
+            "INSERT INTO articles (URL, open_id, backup_addr, start_date, status) "
+            "VALUES (%s, %s, %s, NOW(), 1);")  # status 目前没有使用，强制赋1
+        return self._commit_cmd(insert_new_article, article)
+
+    def find_my_article(self, open_id):  # TODO
         """Get article list of one user.
         Get article info from database. If article dosn't exist,
         return False and empty list.
@@ -190,15 +202,15 @@ class DbOperator:
 
         Returns:
             success: True/False
-            result: a list of dict like {'URL','open_id','backup_addr','reg_date'}
+            result: a list of dict like {'URL','open_id',
+                    'backup_addr','start_date','status'}
         """
         success = True
-        cursor = self.db.cursor()
         query = ("SELECT URL, backup_addr, start_date, status FROM articles "
-                "WHERE open_id = %s")
-        cursor.execute(query, (open_id,))
+                 "WHERE open_id = %s;")
+        query_result = self._execute_cmd(query, (open_id,))
         result = []
-        for (URL, backup_addr, start_date, status) in cursor:
+        for (URL, backup_addr, start_date, status) in query_result:
             item = {}
             item['URL'] = URL
             item['open_id'] = open_id
@@ -206,10 +218,11 @@ class DbOperator:
             item['start_date'] = start_date
             item['status'] = status
             result.append(item)
-        cursor.close()
         if len(result) == 0:
             success = False
             # log it
+            logging.info("fetch no item with cmd: " + query)
+            logging.info("> open_id= " + str(open_id))
         return success, result
 
     def update_article(self, article):
@@ -217,28 +230,16 @@ class DbOperator:
         Change(Set) article info to database.
 
         Args:
-            article: A tuple of article info like : (article_id, backup_addr, status)
+            article: A tuple of article info like: (article_id, backup_addr, status)
 
         Returns:
             success: True/False
         """
         article_id, backup_addr, status = article
-
-        cursor = self.db.cursor()
-        update = ("UPDATE articles SET backup_addr=%s, status=%s WHERE article_id=%s;")
-        success = True
-        try:
-            cursor.execute(update, (backup_addr, status, article_id))
-            # Commit the changes
-            self.db.commit() 
-        except:
-            self.db.rollback()
-            success = False
-            # log it
-            print("update fail")
-        
-        cursor.close()
-        return success
+        update = (
+            "UPDATE articles SET backup_addr=%s, status=%s WHERE article_id=%s;")
+        parameters = (backup_addr, status, article_id)
+        return self._commit_cmd(update, parameters)
 
     def remove_article(self, article_id):
         """remove article record.
@@ -250,44 +251,52 @@ class DbOperator:
         Returns:
             success: True/False
         """
-        cursor = self.db.cursor()
         delete = ("DELETE FROM articles WHERE article_id=%s;")
-        success = True
-        try:
-            cursor.execute(delete, (article_id,))
-            # Commit the changes
-            self.db.commit() 
-        except:
-            self.db.rollback()
-            success = False
-            # log it
-            print("remove article fail")
-        cursor.close()
-        return success
+        return self._commit_cmd(delete, (article_id,))
 
-    def is_table_exist(self, table_name): # 代码里不打算做这个检测了，由用户保证
-        """Check wanted table exists or not.
-        Before operating database, you should check the existence of the table.
-        If table doesn't exist, creat it first.
+    def fetch_all_article(self):
+        """Get the whole article list.
+        Fetch all article info from database.
 
         Args:
-            table_name: 'users' or 'articles'
+            Nothing
 
         Returns:
-            True/False
+            success: True/False
+            result: a list of dict like {'article_id', 'URL',
+                    'open_id','backup_addr','start_date','status'}
         """
+        success = True
+        query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles;")
+        query_result = self._execute_cmd(query, None)
+        result = []
+        for (article_id, URL, open_id, backup_addr, start_date, status) in query_result:
+            item = {}
+            item['article_id'] = article_id
+            item['URL'] = URL
+            item['open_id'] = open_id
+            item['backup_addr'] = backup_addr
+            item['start_date'] = start_date
+            item['status'] = status
+            result.append(item)
+        if len(result) == 0:
+            success = False
+            # log it
+            logging.info("fetch no item with cmd: " + query)
+        return success, result
+
+    def is_table_exist(self, table_name):  # 代码里不打算做这个检测了，由用户保证
         return True
 
 
-    
 class DbCreator:
     def __init__(self):
         # 打开数据库连接
         self.db = mysql.connector.connect(
-                    host="localhost",            # 数据库主机地址
-                    user="DbOperator",           # 数据库用户名
-                    passwd="DoNotAnswer2048!",   # 数据库密码
-                    database=DB_NAME)            # 直接选择特定数据库
+            host="localhost",            # 数据库主机地址
+            user="DbOperator",           # 数据库用户名
+            passwd="DoNotAnswer2048!",   # 数据库密码
+            database=DB_NAME)            # 直接选择特定数据库
         print("db connection created")
 
     def __del__(self):
@@ -300,6 +309,7 @@ class DbCreator:
         Create 2 tables defined by global variables: TABLES
         """
         cursor = self.db.cursor()        # 获取操作游标
+        logging.info("try create_table()")
         for table_name in TABLES:
             table_description = TABLES[table_name]
             try:
@@ -308,10 +318,14 @@ class DbCreator:
             except mysql.connector.Error as err:
                 if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
                     print("already exists.")
+                    logging.info("table already exists.")
                 else:
                     print(err.msg)
+                    logging.warning("create_table() ERROR.")
+                    logging.warning(err.msg)
             else:
                 print("OK")
+                logging.info("create_table() OK")
         cursor.close()
 
 
@@ -320,6 +334,4 @@ if __name__ == "__main__":
     worker = DbCreator()
     worker.create_table()
     print("create tables finish")
-    
 
-# s = t[0][1].decode('utf-8')
