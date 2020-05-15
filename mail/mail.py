@@ -20,7 +20,6 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
     # Create SMTP Object
     smtp = smtplib.SMTP()
     print('connecting ...')
-
     # show the debug log
     smtp.set_debuglevel(1) # TODO
 
@@ -48,10 +47,9 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
     msg['From'] = sender
     msg['To'] = ';'.join(receiver)
     msg['Subject']='hello , today is a special day.'
-
     msg.attach(MIMEText(contents, 'plain', 'utf-8'))
     
-
+    # add attachments
     if len(attachments) > 0:
         for item in attachments:
             att = MIMEText(open(item, 'rb').read(), 'base64', 'utf-8')
@@ -61,8 +59,7 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
             att["Content-Disposition"] = 'attachment; filename=' + f_name
             msg.attach(att)
 
-    print(msg.as_string())
-
+    # print(msg.as_string())
     try:
         smtp.sendmail(sender, receiver, msg.as_string())
     except smtplib.SMTPException:
@@ -74,8 +71,7 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
 
 
 if __name__ == "__main__":
-    from_addr = MAIL_USERNAME
     to_addrs=['534440305@qq.com']
 
-    result = send_mail(from_addr, to_addrs, ['/home/twisted/test.txt'])
+    result = send_mail(to_addrs, attachments = ['/home/twisted/test.txt'])
     print("send mail done, result:", result)
