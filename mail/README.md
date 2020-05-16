@@ -110,6 +110,11 @@ gmail 官方文档：
 * [关于 SMTP 错误消息](https://support.google.com/a/answer/3221692)
 * [SMTP 错误参考](https://support.google.com/a/answer/3726730)
 
+python 调试 smtplib 库时，`smtplib.SMTP()`对象有一个方法是`set_debuglevel()`。
+调用这个方法，可以输出 debug 信息到 terminal：
+
+    smtp.set_debuglevel(2) # 参数 1 或 True 代表输出debug信息， 2 代表输出debug信息并打上时间戳
+
 查看邮件队列的命令：
 
     $ mailq
