@@ -3,6 +3,11 @@ import smtplib
 import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import logging
+
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+logging.basicConfig(filename='mail.log',
+                    level=logging.DEBUG, format=LOG_FORMAT)
 
 MAIL_USERNAME = os.getenv("MAIL_USERNAME", "ObserverZG@gmail.com")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
@@ -11,9 +16,23 @@ MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
 HOST = 'smtp.gmail.com'
 PORT = 25
 
-DEFAULT_MSG = '由观察机器人为您寄来的通知邮件'
+DEFAULT_MSG = {'Subject': '您的观察目标有状态更新',
+               'Body': '由观察机器人为您寄来的通知邮件'}
 
-def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
+
+def send_mail(receiver, contents=DEFAULT_MSG, attachments=[]):
+    """Send Email to user.
+    this function calls Linux service 'sendmail' to use Gmail smtp service.
+
+    Args:
+        receiver: a string of receiver's email address
+        contents: a dict contains values of {'Subject', 'Body'}
+        attachments: a list of strings. Path of the file to be attached.
+
+    Returns:
+        success: True/False - if any error happened,
+                this will be False. 
+    """
     result = True
 
     sender = MAIL_USERNAME
@@ -21,13 +40,14 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
     smtp = smtplib.SMTP()
     print('connecting ...')
     # show the debug log
-    smtp.set_debuglevel(1) # TODO
+    # smtp.set_debuglevel(2)
 
     # connet
     try:
         print(smtp.connect(HOST, PORT))
     except:
         print('CONNECT ERROR ****')
+        logging.error("Fail to connect")
         result = False
 
     # gmail uses ssl
@@ -37,18 +57,21 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
     try:
         print('loginning ...')
         smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
-    except:
+    except Exception as e:
         print('LOGIN ERROR ****')
+        # log it (user password is not allowed to be recorded in log file)
+        logging.error("smtp login fail with username:" + MAIL_USERNAME)
+        logging.error("> %s\n" % (e))
         result = False
 
-    # fill content with MIMEText's object 
+    # fill content with MIMEText's object
     msg = MIMEMultipart()
-    
+
     msg['From'] = sender
     msg['To'] = ';'.join(receiver)
-    msg['Subject']='hello , today is a special day.'
-    msg.attach(MIMEText(contents, 'plain', 'utf-8'))
-    
+    msg['Subject'] = contents['Subject']
+    msg.attach(MIMEText(contents['Body'], 'plain', 'utf-8'))
+
     # add attachments
     if len(attachments) > 0:
         for item in attachments:
@@ -62,8 +85,10 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
     # print(msg.as_string())
     try:
         smtp.sendmail(sender, receiver, msg.as_string())
-    except smtplib.SMTPException:
+        logging.info("mail sent to %s" % (msg['To']))
+    except smtplib.SMTPException as e:
         print("Error: 无法发送邮件")
+        logging.error("sendmail FAIL. reason: %s " % (e))
         result = False
     smtp.quit()
 
@@ -71,7 +96,6 @@ def send_mail(receiver, contents = DEFAULT_MSG, attachments = []):
 
 
 if __name__ == "__main__":
-    to_addrs=['534440305@qq.com']
-
-    result = send_mail(to_addrs, attachments = ['/home/twisted/test.txt'])
+    to_addrs = ['534440305@qq.com']
+    result = send_mail(to_addrs, attachments=['/home/twisted/test.txt'])
     print("send mail done, result:", result)
