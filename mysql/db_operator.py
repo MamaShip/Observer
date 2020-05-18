@@ -36,6 +36,17 @@ TABLES['articles'] = (
     "  PRIMARY KEY (`article_id`)"
     ") ENGINE=InnoDB")
 
+TABLES['archive'] = (
+    "CREATE TABLE `archive` ("
+    "  `article_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,"
+    "  `URL` varchar(2048) NOT NULL,"
+    "  `open_id` varchar(128) NOT NULL,"
+    "  `backup_addr` varchar(100) NOT NULL,"
+    "  `start_date` date NOT NULL,"
+    "  `status` INT UNSIGNED NOT NULL,"
+    "  PRIMARY KEY (`article_id`)"
+    ") ENGINE=InnoDB")
+
 
 class DbOperator:
     def __init__(self):
@@ -284,6 +295,29 @@ class DbOperator:
             # log it
             logging.info("fetch no item with cmd: " + query)
         return success, result
+
+    def archive_article(self, article):
+        article_id = article['article_id']
+        self.remove_article(article_id)
+        new_record = (article_id, article['URL'], article['open_id'],
+                    article['backup_addr'], article['start_date'])
+        return self._add_archive(new_record)
+
+    def _add_archive(self, article):
+        """Move record to archive table.
+        Archive info for later report.
+
+        Args:
+            user: A tuple of article info
+            (article_id, URL, open_id, backup_addr, start_date)
+
+        Returns:
+            success or not: True/False
+        """
+        insert_new_article = (
+            "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, status) "
+            "VALUES (%s, %s, %s, %s, %s, 8);")  # status 8 用来表示存档的文件
+        return self._commit_cmd(insert_new_article, article)
 
     def is_table_exist(self, table_name):  # 代码里不打算做这个检测了，由用户保证
         return True
