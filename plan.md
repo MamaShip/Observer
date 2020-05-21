@@ -2,7 +2,7 @@
 ![简易框架](img/frame.png)
 计划利用微信公众号的API接口，响应微信用户的消息来实现功能。基本框架如上图所示。
 
-程序主体用 Python 实现。涉及 MySQL 数据库操作、Mail 发送。
+程序主体用 Python 实现。涉及 MySQL 数据库操作、Mail 发送、网页访问和抓取。
 
 
 ****
@@ -76,10 +76,10 @@
 - [x] 搞个能用的 Linux 服务器  ~~1h~~ 3h
 - [ ] 微信消息接口调试  12h
 - [ ] 主逻辑   4h
-- [ ] mail server   8h
+- [x] mail server   8h
 - [x] MySQL 部署及 DB_Operator  12h
 - [ ] Article_Checker 12h
-- [ ] Observer   5h
+- [x] Observer   5h
 - [ ] 联调联测    2h
 
 
