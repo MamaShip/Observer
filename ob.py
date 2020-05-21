@@ -1,16 +1,17 @@
+import os
 from datetime import datetime
 from article_checker import Checker
-from ..mysql.db_operator import DbOperator
-from ..mail.db_operator import send_mail
+from database.db_operator import DbOperator
+from mail.mail import send_mail
 
-DEFAULT_PATH = "/var/wx/article/"
+DEFAULT_PATH = "/var/wx/article"
 
 class Observer:
     def __init__(self):
         self.ckr = Checker()
         self.db  = DbOperator()
 
-    def backup_article(self, URL):
+    def backup_article(self, URL, article_id):
         # TODO: 这部分要确认过 Article_Checker 的功能之后再确认怎么写
         try:
             web = self.ckr.get_content(URL)
@@ -20,20 +21,21 @@ class Observer:
             return None
         if web:
             path = self.get_path()
-            self.save_file(path, web)
-            return path
+            file_path = os.path.join(path, str(article_id) + '.pdf')
+            self.save_file(file_path, web)
+            return file_path
         else:
             return None
 
     def get_path(self):
         # 从当前日期生成存档路径
-        # TODO：如何生成比较好
         now = datetime.now()
         date = now.strftime('%Y%m%d')
-        return DEFAULT_PATH + date
+        return os.path.join(DEFAULT_PATH, date)
 
     def save_file(self, path, web):
-        # TODO: 要根据路径下已有的文件来决定下一个文件命名
+        # TODO: 取决于 Article_Checker 是怎么写的
+        # 这里可能只是个mv动作
         pass
             
     def _db_add(self, URL, open_id, backup_addr):
@@ -50,7 +52,14 @@ class Observer:
             success: bool
         """
         article = (URL, open_id, backup_addr)
-        return self.db.add_article(article)
+        if not self.db.add_article(article): # 执行add操作
+            return False, None
+        _, result = self.db.find_my_article(open_id) # add完读出来获取 article_id
+        for item in result:
+            if item['URL'] == URL:
+                return True, item['article_id']
+        return False, None
+
 
     def _db_update(self, article_id, backup_addr, status):
         """Private function for update status to database.
@@ -97,13 +106,16 @@ class Observer:
             success: bool
         """
         if self.ckr.check_validation(URL):
-            # do sth
-            path = self.backup_article(URL)
+            success, article_id = self._db_add(URL, open_id, None)
+            if not success:
+                return False
+            # 先添加一次，然后获取 article_id 进行备份，再更新一次
+            path = self.backup_article(URL, article_id)
             if path:
-                self._db_add(URL, open_id, path)
+                self._db_update(article_id, path, 0)
             else:
                 # log it
-                self._db_add(URL, open_id, None)
+                print("can't backup")
         else:
             return False # 初次检查就不可访问时，由主逻辑处理这个错误
                          # 向发送信息的用户回复内容有误，观察结束。
@@ -132,10 +144,10 @@ class Observer:
 
             if self.ckr.check_validation(URL):
                 # do sth
-                if not path: # TODO: 这个条件需要再确认
-                    path = self.backup_article(URL)
+                if not backup_addr: # TODO: 这个条件需要再确认
+                    path = self.backup_article(URL, article_id)
                     if path:
-                        self._db_update(article_id, backup_addr, status)
+                        self._db_update(article_id, path, status)
                     else:
                         # log it
                         pass

@@ -43,6 +43,7 @@ TABLES['archive'] = (
     "  `open_id` varchar(128) NOT NULL,"
     "  `backup_addr` varchar(100) NOT NULL,"
     "  `start_date` date NOT NULL,"
+    "  `end_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
     "  PRIMARY KEY (`article_id`)"
     ") ENGINE=InnoDB")
@@ -213,16 +214,17 @@ class DbOperator:
 
         Returns:
             success: True/False
-            result: a list of dict like {'URL','open_id',
+            result: a list of dict like {'article_id','URL','open_id',
                     'backup_addr','start_date','status'}
         """
         success = True
-        query = ("SELECT URL, backup_addr, start_date, status FROM articles "
+        query = ("SELECT article_id, URL, backup_addr, start_date, status FROM articles "
                  "WHERE open_id = %s;")
         query_result = self._execute_cmd(query, (open_id,))
         result = []
-        for (URL, backup_addr, start_date, status) in query_result:
+        for (article_id, URL, backup_addr, start_date, status) in query_result:
             item = {}
+            item['article_id'] = article_id
             item['URL'] = URL
             item['open_id'] = open_id
             item['backup_addr'] = backup_addr
@@ -315,8 +317,8 @@ class DbOperator:
             success or not: True/False
         """
         insert_new_article = (
-            "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, status) "
-            "VALUES (%s, %s, %s, %s, %s, 8);")  # status 8 用来表示存档的文件
+            "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, end_date, status) "
+            "VALUES (%s, %s, %s, %s, %s, NOW(), 8);")  # status 8 用来表示存档的文件
         return self._commit_cmd(insert_new_article, article)
 
     def is_table_exist(self, table_name):  # 代码里不打算做这个检测了，由用户保证
@@ -340,7 +342,7 @@ class DbCreator:
 
     def create_table(self):
         """Create table.
-        Create 2 tables defined by global variables: TABLES
+        Create tables defined by global variables: TABLES
         """
         cursor = self.db.cursor()        # 获取操作游标
         logging.info("try create_table()")
