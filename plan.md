@@ -76,10 +76,10 @@
 - [x] 搞个能用的 Linux 服务器  ~~1h~~ 3h
 - [ ] 微信消息接口调试  12h
 - [ ] 主逻辑   4h
-- [ ] mail server   8h
+- [x] mail server   8h
 - [x] MySQL 部署及 DB_Operator  12h
 - [ ] Article_Checker 12h
-- [ ] Observer   5h
+- [x] Observer   5h
 - [ ] 联调联测    2h
 
 
