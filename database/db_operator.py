@@ -36,6 +36,18 @@ TABLES['articles'] = (
     "  PRIMARY KEY (`article_id`)"
     ") ENGINE=InnoDB")
 
+TABLES['archive'] = (
+    "CREATE TABLE `archive` ("
+    "  `article_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,"
+    "  `URL` varchar(2048) NOT NULL,"
+    "  `open_id` varchar(128) NOT NULL,"
+    "  `backup_addr` varchar(100) NOT NULL,"
+    "  `start_date` date NOT NULL,"
+    "  `end_date` date NOT NULL,"
+    "  `status` INT UNSIGNED NOT NULL,"
+    "  PRIMARY KEY (`article_id`)"
+    ") ENGINE=InnoDB")
+
 
 class DbOperator:
     def __init__(self):
@@ -202,16 +214,17 @@ class DbOperator:
 
         Returns:
             success: True/False
-            result: a list of dict like {'URL','open_id',
+            result: a list of dict like {'article_id','URL','open_id',
                     'backup_addr','start_date','status'}
         """
         success = True
-        query = ("SELECT URL, backup_addr, start_date, status FROM articles "
+        query = ("SELECT article_id, URL, backup_addr, start_date, status FROM articles "
                  "WHERE open_id = %s;")
         query_result = self._execute_cmd(query, (open_id,))
         result = []
-        for (URL, backup_addr, start_date, status) in query_result:
+        for (article_id, URL, backup_addr, start_date, status) in query_result:
             item = {}
+            item['article_id'] = article_id
             item['URL'] = URL
             item['open_id'] = open_id
             item['backup_addr'] = backup_addr
@@ -285,6 +298,29 @@ class DbOperator:
             logging.info("fetch no item with cmd: " + query)
         return success, result
 
+    def archive_article(self, article):
+        article_id = article['article_id']
+        self.remove_article(article_id)
+        new_record = (article_id, article['URL'], article['open_id'],
+                    article['backup_addr'], article['start_date'])
+        return self._add_archive(new_record)
+
+    def _add_archive(self, article):
+        """Move record to archive table.
+        Archive info for later report.
+
+        Args:
+            user: A tuple of article info
+            (article_id, URL, open_id, backup_addr, start_date)
+
+        Returns:
+            success or not: True/False
+        """
+        insert_new_article = (
+            "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, end_date, status) "
+            "VALUES (%s, %s, %s, %s, %s, NOW(), 8);")  # status 8 用来表示存档的文件
+        return self._commit_cmd(insert_new_article, article)
+
     def is_table_exist(self, table_name):  # 代码里不打算做这个检测了，由用户保证
         return True
 
@@ -306,7 +342,7 @@ class DbCreator:
 
     def create_table(self):
         """Create table.
-        Create 2 tables defined by global variables: TABLES
+        Create tables defined by global variables: TABLES
         """
         cursor = self.db.cursor()        # 获取操作游标
         logging.info("try create_table()")
