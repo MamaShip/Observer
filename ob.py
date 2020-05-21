@@ -1,10 +1,15 @@
 import os
+import logging
 from datetime import datetime
 from article_checker import Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
 
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+logging.basicConfig(filename='observer.log',
+                    level=logging.DEBUG, format=LOG_FORMAT)
 DEFAULT_PATH = "/var/wx/article"
+FAKE_PATH_PLACE_HOLDER = "placeholder"
 
 class Observer:
     def __init__(self):
@@ -30,7 +35,7 @@ class Observer:
     def get_path(self):
         # 从当前日期生成存档路径
         now = datetime.now()
-        date = now.strftime('%Y%m%d')
+        date = now.strftime('%Y%m')
         return os.path.join(DEFAULT_PATH, date)
 
     def save_file(self, path, web):
@@ -53,13 +58,16 @@ class Observer:
         """
         article = (URL, open_id, backup_addr)
         if not self.db.add_article(article): # 执行add操作
+            logging.warning("_db_add fail, with paras:" 
+                            + " ".join(map(str, article)))
             return False, None
         _, result = self.db.find_my_article(open_id) # add完读出来获取 article_id
         for item in result:
             if item['URL'] == URL:
                 return True, item['article_id']
+        logging.warning("_db_add success, but can't read. with paras:"
+                        + " ".join(map(str, article)))
         return False, None
-
 
     def _db_update(self, article_id, backup_addr, status):
         """Private function for update status to database.
@@ -106,7 +114,7 @@ class Observer:
             success: bool
         """
         if self.ckr.check_validation(URL):
-            success, article_id = self._db_add(URL, open_id, None)
+            success, article_id = self._db_add(URL, open_id, FAKE_PATH_PLACE_HOLDER)
             if not success:
                 return False
             # 先添加一次，然后获取 article_id 进行备份，再更新一次
@@ -115,6 +123,7 @@ class Observer:
                 self._db_update(article_id, path, 0)
             else:
                 # log it
+                logging.warning("article valid, but backup fail: " + URL)
                 print("can't backup")
         else:
             return False # 初次检查就不可访问时，由主逻辑处理这个错误
@@ -123,8 +132,8 @@ class Observer:
 
     def ob_all(self):
         """Observe all objects in watch list.
-        No paras needed. It automatically fetch data from database,
-        then do ob for all items.
+        No paras needed. It automatically fetches data from database,
+        then loop through all items.
 
         Args:
         
@@ -133,7 +142,7 @@ class Observer:
         """
         success, watch_list = self.db.fetch_all_article()
         if not success:
-            # log it?
+            logging.warning("ob_all find nothing")
             return False
         for item in watch_list:
             article_id  = item['article_id']
@@ -143,22 +152,39 @@ class Observer:
             status      = item['status']
 
             if self.ckr.check_validation(URL):
-                # do sth
-                if not backup_addr: # TODO: 这个条件需要再确认
+                # check backup
+                if FAKE_PATH_PLACE_HOLDER == backup_addr: # need try backup again
                     path = self.backup_article(URL, article_id)
                     if path:
                         self._db_update(article_id, path, status)
                     else:
-                        # log it
-                        pass
+                        logging.warning("article valid, but backup fail: " + URL)
+                        print("can't backup")
             else:
                 self.notify_user(article_id, URL, open_id, backup_addr)
                 self._db_archive(item)
+                logging.info("article expired, move to archive: " 
+                            + " ".join(map(str, [article_id, URL])))
         return True
     
     def notify_user(self, article_id, URL, open_id, backup_addr):
+        """Send email to users.
+        Send email to users for notifying article expiration.
+        With backup file attached.
+
+        Args:
+            article_id : int
+            URL : str
+            open_id : str
+            backup_addr : str
+        
+        Returns:
+            success: bool
+        """
         success, result = self.db.find_user(open_id)
         if not success:
+            logging.error("article & user no match: " 
+                        + " ".join(map(str, [article_id, open_id])))
             return False
         email    = result['email']
         receiver = [email]
