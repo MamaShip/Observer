@@ -114,9 +114,7 @@ class Observer:
             success: bool
         """
         if self.ckr.check_validation(URL):
-            success, article_id = self._db_add(URL, open_id, FAKE_PATH_PLACE_HOLDER)
-            if not success:
-                return False
+            _, article_id = self._db_add(URL, open_id, FAKE_PATH_PLACE_HOLDER)
             # 先添加一次，然后获取 article_id 进行备份，再更新一次
             path = self.backup_article(URL, article_id)
             if path:
@@ -160,6 +158,7 @@ class Observer:
                     else:
                         logging.warning("article valid, but backup fail: " + URL)
                         print("can't backup")
+                # TODO：超出30天的观察目标，停止观察
             else:
                 self.notify_user(article_id, URL, open_id, backup_addr)
                 self._db_archive(item)

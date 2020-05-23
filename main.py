@@ -10,7 +10,7 @@ class App(object):
     def __init__(self):
         self.db    = DbOperator()
         self.ob    = Observer()
-        self.timer = RepeatedTimer(60, print, "World")
+        self.timer = RepeatedTimer(60, print, "timer running")
 
     def __del__(self):
         self.timer.stop()
@@ -20,23 +20,52 @@ class App(object):
         reply = ""
 
         if self._is_URL(content):
-            self._handle_URL(msg)
+            reply = self._handle_URL(msg)
         elif self._is_email(content):
-            self._handle_email(msg)
+            reply = self._handle_email(msg)
         elif self._is_cmd(content):
-            self._handle_cmd(msg)
+            reply = self._handle_cmd(msg)
         else: # invalid msg
             reply = "听不懂你在说啥！"
         
-
         return reply
 
     def _handle_URL(self, msg):
-        pass
+        open_id = msg.source
+        URL = msg.content
+
+        success, result = self.db.find_my_article(open_id)
+        if success:
+            for item in result:
+                if URL == item['URL']:
+                    reply = "目标已在观察列表中：" + URL
+                    return reply
+        
+        success = self.ob.ob_this_one(URL, open_id)
+        if not success:
+            reply = "目标初次访问异常，无法进行备份。若确定是误判，请联系管理员：youdangls@gmail.com"
+        else:
+            reply = "收到！开始观察目标！"
+        return reply
+
     def _handle_email(self, msg):
-        pass
+        open_id = msg.source
+        email = msg.content
+        user = (open_id, email)
+        success, _ = self.db.find_user(open_id)
+        if success: # 已有记录
+            result = self.db.update_user(user)
+        else: # 无记录
+            result = self.db.add_user(user)
+        if result:
+            reply = "你的账号成功绑定邮箱：" + email
+        else:
+            # db 操作失败的日志 db 那边会记录
+            reply = "绑定邮箱：" + email + "失败！请联系管理员处理：youdangls@gmail.com"
+        return reply
+
     def _handle_cmd(self, msg):
-        pass
+        return ""
 
 
 
