@@ -8,6 +8,7 @@ from wechatpy.exceptions import (
     InvalidSignatureException,
     InvalidAppIdException,
 )
+from main import get_main_logic
 
 # set token or get from environments
 TOKEN = os.getenv("WECHAT_TOKEN", "123456")
@@ -15,7 +16,6 @@ AES_KEY = os.getenv("WECHAT_AES_KEY", "")
 APPID = os.getenv("WECHAT_APPID", "")
 
 app = Flask(__name__)
-
 
 @app.route("/")
 def index():
@@ -43,7 +43,12 @@ def wechat():
         # plaintext mode
         msg = parse_message(request.data)
         if msg.type == "text":
-            reply = create_reply(msg.content, msg)
+            # reply = create_reply(msg.content, msg)
+            main_logic = get_main_logic()
+            reply_text = main_logic.handle_msg(msg)
+            reply = create_reply(reply_text, msg)
+        elif msg.type == "event":
+            reply = create_reply("欢迎关注，机器人功能仍在施工中，见谅", msg)
         else:
             reply = create_reply("Sorry, can not handle this for now", msg)
         return reply.render()
@@ -66,4 +71,4 @@ def wechat():
 
 
 if __name__ == "__main__":
-    app.run("0.0.0.0", 80, debug=True)
+    app.run("0.0.0.0", 80, debug=True, use_reloader=False)

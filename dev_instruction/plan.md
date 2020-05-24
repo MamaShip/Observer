@@ -75,7 +75,7 @@
 - [x] 搞一个微信公众号 1h
 - [x] 搞个能用的 Linux 服务器  ~~1h~~ 3h
 - [ ] 微信消息接口调试  12h
-- [ ] 主逻辑   4h
+- [x] 主逻辑   4h
 - [x] mail server   8h
 - [x] MySQL 部署及 DB_Operator  12h
 - [ ] Article_Checker 12h

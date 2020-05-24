@@ -144,7 +144,7 @@ class DbOperator:
         """
         success = True
         query = ("SELECT user_id, email, reg_date FROM users "
-                 "WHERE open_id = %s;")
+                 "WHERE open_id=%s;")
         query_result = self._execute_cmd(query, (open_id,))
         result = {}
         for (user_id, email, reg_date) in query_result:
@@ -204,7 +204,7 @@ class DbOperator:
             "VALUES (%s, %s, %s, NOW(), 1);")  # status 目前没有使用，强制赋1
         return self._commit_cmd(insert_new_article, article)
 
-    def find_my_article(self, open_id):  # TODO
+    def find_my_article(self, open_id):
         """Get article list of one user.
         Get article info from database. If article dosn't exist,
         return False and empty list.
@@ -219,7 +219,7 @@ class DbOperator:
         """
         success = True
         query = ("SELECT article_id, URL, backup_addr, start_date, status FROM articles "
-                 "WHERE open_id = %s;")
+                 "WHERE open_id=%s;")
         query_result = self._execute_cmd(query, (open_id,))
         result = []
         for (article_id, URL, backup_addr, start_date, status) in query_result:
@@ -364,10 +364,41 @@ class DbCreator:
                 logging.info("create_table() OK")
         cursor.close()
 
+    def delete_table(self):
+        """Delete table.
+        Delete tables defined by global variables: TABLES
+        """
+        cursor = self.db.cursor()        # 获取操作游标
+        logging.warning("try delete_table()")
+        for table_name in TABLES:
+            delete_cmd = "DROP TABLE " + table_name + ";"
+
+            try:
+                cursor.execute(delete_cmd)
+                # Commit the changes
+                self.db.commit()
+            except:
+                self.db.rollback()
+                success = False
+                # log it
+                print("delete table fail:", table_name)
+            else:
+                print("delete table " + table_name + " OK")
+                logging.warning("table " + table_name + " deleted.")
+        cursor.close()
+
+
 
 if __name__ == "__main__":
-    # 创建数据表是一次性操作，此后不再需要执行
+    do = input("1 for create; 2 for delete:")
     worker = DbCreator()
-    worker.create_table()
-    print("create tables finish")
+    if do == '1':
+        # 创建数据表是一次性操作，此后不再需要执行
+        worker.create_table()
+        print("create tables finish")
+    elif do == '2':
+        worker.delete_table()
+        print("delete tables finish")
+
+
 

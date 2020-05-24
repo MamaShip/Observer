@@ -4,28 +4,26 @@ from database.db_operator import DbOperator
 from ob import Observer
 from my_timer import RepeatedTimer
 
+
 EMAIL_RULE = re.compile(r'^[a-zA-Z0-9\._\-\+]{1,64}@([A-Za-z0-9_\-\.]){1,128}\.([A-Za-z]{2,8})$')
 # CMD_LIST = ["help", "status", "list", "admin-status", "admin-list"]
-
-class App(object):
+ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks"]
+class MainLogic(object):
     def __init__(self):
         self.db    = DbOperator()
-        self.ob    = Observer()
-        self.timer = RepeatedTimer(60, print, "timer running")
-        self.cmd_list = {"help" : self._help, 
-                        "status" : self._status, 
-                        "list" : self._list, 
+        self.ob    = Observer(self.db)
+        self.timer = RepeatedTimer(60, self.ob.ob_all)
+        self.cmd_list = {"help"        : self._help, 
+                        "status"       : self._status, 
+                        "list"         : self._list, 
                         "admin-status" : self._admin_status, 
-                        "admin-list" : self._admin_list}
+                        "admin-list"   : self._admin_list}
 
     def __del__(self):
         self.timer.stop()
 
     def handle_msg(self, msg):
-        print(msg.content)
-        print(msg.source)
-        print(msg.target)
-        print(msg.create_time)
+        print(msg.source, msg.content, msg.create_time) # tmp for debug
         content = msg.content
         reply = ""
 
@@ -36,7 +34,7 @@ class App(object):
         elif self._is_cmd(content):
             reply = self._handle_cmd(msg)
         else: # invalid msg
-            reply = "听不懂你在说啥！\n(不要有无意义的空格、分号、换行符等)"
+            reply = "听不懂你在说啥！\n--------------\n观察目标暂时只接受微信公众号文章。\n不要有无意义的空格、分号、换行符等。\n请回复「help」查看规则"
         
         return reply
 
@@ -56,6 +54,10 @@ class App(object):
             reply = "目标初次访问异常，无法进行备份。若确定是误判，请联系管理员：youdangls@gmail.com"
         else:
             reply = "收到！开始观察目标！"
+        # 判断一下用户是否绑定邮箱，没绑定的话提供警告
+        success, _ = self.db.find_user(open_id)
+        if not success:
+            reply = reply + "\n--------------\n【警告】你的账号未绑定邮箱，无法收到备份及通知。请回复「help」查看规则"
         return reply
 
     def _handle_email(self, msg):
@@ -108,3 +110,9 @@ class App(object):
             return True
         else:
             return False
+
+
+MAIN_LOGIC = MainLogic()
+
+def get_main_logic():
+    return MAIN_LOGIC
