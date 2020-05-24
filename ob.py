@@ -12,9 +12,9 @@ DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
 
 class Observer:
-    def __init__(self):
+    def __init__(self, db_connector):
         self.ckr = Checker()
-        self.db  = DbOperator()
+        self.db  = db_connector
 
     def backup_article(self, URL, article_id):
         # TODO: 这部分要确认过 Article_Checker 的功能之后再确认怎么写
@@ -41,7 +41,8 @@ class Observer:
     def save_file(self, path, web):
         # TODO: 取决于 Article_Checker 是怎么写的
         # 这里可能只是个mv动作
-        pass
+        print("pretend save file to:", path)
+        return True
             
     def _db_add(self, URL, open_id, backup_addr):
         """Private function for first time add info to database.
@@ -114,9 +115,7 @@ class Observer:
             success: bool
         """
         if self.ckr.check_validation(URL):
-            success, article_id = self._db_add(URL, open_id, FAKE_PATH_PLACE_HOLDER)
-            if not success:
-                return False
+            _, article_id = self._db_add(URL, open_id, FAKE_PATH_PLACE_HOLDER)
             # 先添加一次，然后获取 article_id 进行备份，再更新一次
             path = self.backup_article(URL, article_id)
             if path:
@@ -140,6 +139,9 @@ class Observer:
         Returns:
             success: bool
         """
+        # tmp code
+        print("ob_all running")
+        # tmp code end
         success, watch_list = self.db.fetch_all_article()
         if not success:
             logging.warning("ob_all find nothing")
@@ -160,6 +162,7 @@ class Observer:
                     else:
                         logging.warning("article valid, but backup fail: " + URL)
                         print("can't backup")
+                # TODO：超出30天的观察目标，停止观察
             else:
                 self.notify_user(article_id, URL, open_id, backup_addr)
                 self._db_archive(item)
