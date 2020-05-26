@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime
-from article_checker import Checker
+from article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
 
@@ -11,96 +11,89 @@ logging.basicConfig(filename='observer.log',
 DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
 
-class Observer:
-    def __init__(self, db_connector):
-        self.ckr = Checker()
-        self.db  = db_connector
 
-    def backup_article(self, URL, article_id):
-        # TODO: 这部分要确认过 Article_Checker 的功能之后再确认怎么写
-        try:
-            web = self.ckr.get_content(URL)
-        except:
-            print("get_content fail")
-            # log it
-            return None
-        if web:
-            path = self.get_path()
-            file_path = os.path.join(path, str(article_id) + '.pdf')
-            self.save_file(file_path, web)
-            return file_path
+def notify_user(email, URL, backup_addr):
+    """Send email to users.
+    Send email to users for notifying article expiration.
+    With backup file attached.
+
+    Args:
+        URL : str
+        backup_addr : str
+
+    Returns:
+        success: bool
+    """
+    receiver = [email]
+
+    if backup_addr == None:
+        addition = '\n截止观察结束时，没有成功备份的文档存留。\n如有疑问请联系管理员：youdangls@gmail.com'
+    else:
+        addition = '\n附件是文章备份，请查收。'
+    body_text = '您观察的文章：' + URL + '已失效。' + addition
+    msg = {'Subject': '您的观察目标有状态更新', 'Body': body_text}
+    attach = [backup_addr]
+    return send_mail(receiver, contents=msg, attachments=attach)
+
+
+def update_article_status(article_id, valid, backup_path=None):
+    # 做点准备工作
+    db = DbOperator()
+    success, item = db.find_article(article_id)
+    if not success:
+        # log it
+        return False
+    URL = item['URL']
+    open_id = item['open_id']
+    success, result = db.find_user(open_id)
+    if not success:
+        logging.error("article & user no match: "
+                      + " ".join(map(str, [article_id, open_id])))
+        return False
+    email = result['email']
+
+    if not valid:  # 当文章已不可访问
+        if item['backup_addr'] == FAKE_PATH_PLACE_HOLDER:
+            backup_addr = None  # 是否会导致发送邮件出问题，暂未验证
         else:
-            return None
+            backup_addr = item['backup_addr']
+        notify_user(email, URL, backup_addr)
+        db.archive_article(item)
+        logging.info("article expired, move to archive: "
+                     + " ".join(map(str, [article_id, URL])))
+    else:
+        prev_status = item['status']
+        if prev_status == 1:  # 正常观察状态,无需额外操作
+            return True
+        elif prev_status == 0:  # 初次完成观察，制作备份
+            if backup_path == None:
+                print("backup addr not valid")
+                return False
+            else:
+                new_path = _backup_article(article_id, backup_path)
+                if new_path == None:
+                    return False
+                return _db_update(db, article_id, new_path, 1)  # 制作备份完成，状态更新成1
+        else:
+            print("unknown status!")
+            logging.error("article status Error: "
+                          + " ".join(map(str, [article_id, open_id, prev_status])))
 
-    def get_path(self):
-        # 从当前日期生成存档路径
-        now = datetime.now()
-        date = now.strftime('%Y%m')
-        return os.path.join(DEFAULT_PATH, date)
+    return True
 
-    def save_file(self, path, web):
-        # TODO: 取决于 Article_Checker 是怎么写的
-        # 这里可能只是个mv动作
-        print("pretend save file to:", path)
-        return True
-            
-    def _db_add(self, URL, open_id, backup_addr):
-        """Private function for first time add info to database.
 
-        Args:
-            URL : str
-            open_id : str
-                user id offered by wechat.
-            backup_addr: str
-                the path of archive file.
-        
-        Returns:
-            success: bool
-        """
-        article = (URL, open_id, backup_addr)
-        if not self.db.add_article(article): # 执行add操作
-            logging.warning("_db_add fail, with paras:" 
-                            + " ".join(map(str, article)))
-            return False, None
-        _, result = self.db.find_my_article(open_id) # add完读出来获取 article_id
-        for item in result:
-            if item['URL'] == URL:
-                return True, item['article_id']
-        logging.warning("_db_add success, but can't read. with paras:"
-                        + " ".join(map(str, article)))
-        return False, None
+class Observer:
+    def __init__(self):
+        self.db = DbOperator()
+        self.q = Checker_Queue(max_size=500)
 
-    def _db_update(self, article_id, backup_addr, status):
-        """Private function for update status to database.
+    def init_checker(self):
+        self.ac = Article_Checker(
+            self.q, sleeping_time=3, saving_path='', call_back_func=update_article_status)
+        self.ac.start()
 
-        Args:
-            article_id : int
-            backup_addr : str
-                the path of archive file.
-            status: int
-                watch status.(temporarily not used)
-        
-        Returns:
-            success: bool
-        """
-        article = (article_id, backup_addr, status)
-        return self.db.update_article(article)
-
-    def _db_archive(self, item):
-        """Move watch item to archive database.
-        Because this article is no longer valid. We don't
-        have to watch it later. But archive for total report
-        or sth. 
-
-        Args:
-            item : dict
-                {'article_id', 'URL', 'open_id', 'backup_addr',
-                'start_date','status'}
-        
-        Returns:
-            success: bool
-        """
-        return self.db.archive_article(item)
+    def __del__(self):
+        self.ac.join()
 
     def ob_this_one(self, URL, open_id):
         """Add a new article to watch list.
@@ -110,23 +103,21 @@ class Observer:
 
         Args:
             URL : str
-        
+
         Returns:
             success: bool
         """
-        if self.ckr.check_validation(URL):
-            _, article_id = self._db_add(URL, open_id, FAKE_PATH_PLACE_HOLDER)
-            # 先添加一次，然后获取 article_id 进行备份，再更新一次
-            path = self.backup_article(URL, article_id)
-            if path:
-                self._db_update(article_id, path, 0)
-            else:
-                # log it
-                logging.warning("article valid, but backup fail: " + URL)
-                print("can't backup")
-        else:
-            return False # 初次检查就不可访问时，由主逻辑处理这个错误
-                         # 向发送信息的用户回复内容有误，观察结束。
+        # 先添加一次，然后获取 article_id 给 Checker 用
+        success, article_id = _db_add(
+            self.db, URL, open_id, FAKE_PATH_PLACE_HOLDER)
+        if not success:
+            print("_db_add FAIL!!!")
+            logging.warning("ob_this_one fail, add db fail: "
+                            + " ".join(map(str, [article_id, URL, open_id])))
+            return False
+        self.q.put(article_id=article_id, url=URL,
+                   download=True, block=True, timeout=1)
+        # 放进 Checker 的队列就不管了。后续由回调函数实现
         return True
 
     def ob_all(self):
@@ -135,7 +126,7 @@ class Observer:
         then loop through all items.
 
         Args:
-        
+
         Returns:
             success: bool
         """
@@ -147,54 +138,111 @@ class Observer:
             logging.warning("ob_all find nothing")
             return False
         for item in watch_list:
-            article_id  = item['article_id']
-            URL         = item['URL']
-            open_id     = item['open_id']
-            backup_addr = item['backup_addr']
-            status      = item['status']
+            article_id = item['article_id']
+            URL = item['URL']
+            status = item['status']
+            start_date = item['start_date']
 
-            if self.ckr.check_validation(URL):
-                # check backup
-                if FAKE_PATH_PLACE_HOLDER == backup_addr: # need try backup again
-                    path = self.backup_article(URL, article_id)
-                    if path:
-                        self._db_update(article_id, path, status)
-                    else:
-                        logging.warning("article valid, but backup fail: " + URL)
-                        print("can't backup")
-                # TODO：超出30天的观察目标，停止观察
+            if _out_of_date(start_date):
+                # 超出30天的观察目标，停止观察
+                backup_addr = item['backup_addr']
+                update_article_status(article_id, False, backup_addr)
+                pass
             else:
-                self.notify_user(article_id, URL, open_id, backup_addr)
-                self._db_archive(item)
-                logging.info("article expired, move to archive: " 
-                            + " ".join(map(str, [article_id, URL])))
+                if status == 0:  # 初次观察，需要制作备份
+                    self.q.put(article_id=article_id, url=URL,
+                               download=True, block=True, timeout=1)
+                elif status == 1:  # 正常观察期，不再制作备份
+                    self.q.put(article_id=article_id, url=URL,
+                               download=False, block=True, timeout=1)
+                else:
+                    logging.error("Unknow article status: "
+                                  + " ".join(map(str, [article_id, URL, status])))
         return True
-    
-    def notify_user(self, article_id, URL, open_id, backup_addr):
-        """Send email to users.
-        Send email to users for notifying article expiration.
-        With backup file attached.
-
-        Args:
-            article_id : int
-            URL : str
-            open_id : str
-            backup_addr : str
-        
-        Returns:
-            success: bool
-        """
-        success, result = self.db.find_user(open_id)
-        if not success:
-            logging.error("article & user no match: " 
-                        + " ".join(map(str, [article_id, open_id])))
-            return False
-        email    = result['email']
-        receiver = [email]
-        msg      = {'Subject': '您的观察目标有状态更新',
-                    'Body': '您观察的文章：' + URL
-                            + '已失效。\n附件是文章备份，请查收。'}
-        attach   = [backup_addr]
-        return send_mail(receiver, contents=msg, attachments=attach)
 
 
+def _backup_article(article_id, article_path):
+    path = _get_path()
+    file_path = os.path.join(path, str(article_id) + '.docx')
+    _save_file(file_path, article_path)
+    return file_path
+
+
+def _get_path():
+    # 从当前日期生成存档路径
+    now = datetime.now()
+    date = now.strftime('%Y%m')
+    return os.path.join(DEFAULT_PATH, date)
+
+
+def _save_file(new_path, old_path):
+    # TODO: 取决于 Article_Checker 是怎么写的
+    # 这里可能只是个mv动作
+    print("pretend save file to:", new_path)
+    return True
+
+
+def _out_of_date(date):
+    # TODO
+    return False
+
+
+def _db_add(db, URL, open_id, backup_addr):
+    """Private function for first time add info to database.
+
+    Args:
+        URL : str
+        open_id : str
+            user id offered by wechat.
+        backup_addr: str
+            the path of archive file.
+
+    Returns:
+        success: bool
+    """
+    article = (URL, open_id, backup_addr)
+    if not db.add_article(article):  # 执行add操作
+        logging.warning("_db_add fail, with paras:"
+                        + " ".join(map(str, article)))
+        return False, None
+    _, result = db.find_my_article(open_id)  # add完读出来获取 article_id
+    for item in result:
+        if item['URL'] == URL:
+            return True, item['article_id']
+    logging.warning("_db_add success, but can't read. with paras:"
+                    + " ".join(map(str, article)))
+    return False, None
+
+
+def _db_update(db, article_id, backup_addr, status):
+    """Private function for update status to database.
+
+    Args:
+        article_id : int
+        backup_addr : str
+            the path of archive file.
+        status: int
+            watch status.(temporarily not used)
+
+    Returns:
+        success: bool
+    """
+    article = (article_id, backup_addr, status)
+    return db.update_article(article)
+
+
+def _db_archive(db, item):
+    """Move watch item to archive database.
+    Because this article is no longer valid. We don't
+    have to watch it later. But archive for total report
+    or sth. 
+
+    Args:
+        item : dict
+            {'article_id', 'URL', 'open_id', 'backup_addr',
+            'start_date','status'}
+
+    Returns:
+        success: bool
+    """
+    return db.archive_article(item)
