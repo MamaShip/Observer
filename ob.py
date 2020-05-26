@@ -52,9 +52,9 @@ def update_article_status(article_id, valid, backup_path=None):
         return False
     email = result['email']
 
-    if not valid: # 当文章已不可访问
+    if not valid:  # 当文章已不可访问
         if item['backup_addr'] == FAKE_PATH_PLACE_HOLDER:
-            backup_addr = None # 是否会导致发送邮件出问题，暂未验证
+            backup_addr = None  # 是否会导致发送邮件出问题，暂未验证
         else:
             backup_addr = item['backup_addr']
         notify_user(email, URL, backup_addr)
@@ -88,8 +88,12 @@ class Observer:
         self.q = Checker_Queue(max_size=500)
 
     def init_checker(self):
-        self.ac = Article_Checker(self.q, sleeping_time=3, saving_path='', update_article_status)
+        self.ac = Article_Checker(
+            self.q, sleeping_time=3, saving_path='', call_back_func=update_article_status)
         self.ac.start()
+
+    def __del__(self):
+        self.ac.join()
 
     def ob_this_one(self, URL, open_id):
         """Add a new article to watch list.
