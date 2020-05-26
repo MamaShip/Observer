@@ -201,8 +201,36 @@ class DbOperator:
         """
         insert_new_article = (
             "INSERT INTO articles (URL, open_id, backup_addr, start_date, status) "
-            "VALUES (%s, %s, %s, NOW(), 1);")  # status 目前没有使用，强制赋1
+            "VALUES (%s, %s, %s, NOW(), 0);")  # status 0 表示初次添加，状态未知
         return self._commit_cmd(insert_new_article, article)
+
+    def find_article(self, article_id):
+        """Find article by article_id.
+
+        Args:
+            article_id: int
+
+        Returns:
+            success: bool
+        """
+        query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles "
+                "WHERE article_id=%s;")
+        query_result = self._execute_cmd(query, (article_id,))
+        for (_, URL, open_id, backup_addr, start_date, status) in query_result:
+            item = {}
+            item['article_id'] = article_id
+            item['URL'] = URL
+            item['open_id'] = open_id
+            item['backup_addr'] = backup_addr
+            item['start_date'] = start_date
+            item['status'] = status
+
+        if item:
+            return True, item
+        else:
+            # log it
+            logging.info("find_article fail with article_id: " + str(article_id))
+            return False, None
 
     def find_my_article(self, open_id):
         """Get article list of one user.
@@ -379,7 +407,6 @@ class DbCreator:
                 self.db.commit()
             except:
                 self.db.rollback()
-                success = False
                 # log it
                 print("delete table fail:", table_name)
             else:

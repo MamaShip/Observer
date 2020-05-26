@@ -11,13 +11,14 @@ ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks"]
 class MainLogic(object):
     def __init__(self):
         self.db    = DbOperator()
-        self.ob    = Observer(self.db)
+        self.ob    = Observer()
         self.timer = RepeatedTimer(60, self.ob.ob_all)
         self.cmd_list = {"help"        : self._help, 
                         "status"       : self._status, 
                         "list"         : self._list, 
                         "admin-status" : self._admin_status, 
                         "admin-list"   : self._admin_list}
+        self.ob.init_checker()
 
     def __del__(self):
         self.timer.stop()
