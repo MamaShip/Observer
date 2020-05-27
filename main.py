@@ -93,7 +93,23 @@ class MainLogic(object):
         return "admin-status命令暂不支持"
 
     def _admin_list(self, msg):
-        return "admin-list命令暂不支持"
+        user = msg.source
+        if user not in ADMIN_LIST:
+            return "非管理员账号，无法执行admin命令"
+        
+        success, result = self.db.fetch_all_article()
+        if not success:
+            return "admin-list 查询失败，结果为空"
+            
+        output = []
+        for item in result:
+            output.append(item['article_id'])
+            output.append(item['URL'])
+            output.append(item['open_id'])
+            output.append(item['backup_addr'])
+            output.append(item['start_date'])
+            output.append(item['status'])
+        return "\n".join(map(str, output))
 
     def _is_URL(self, string):
         # 特殊处理，暂时只接受微信文章地址
