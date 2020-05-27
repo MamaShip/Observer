@@ -100,7 +100,7 @@ class MainLogic(object):
         success, result = self.db.fetch_all_article()
         if not success:
             return "admin-list 查询失败，结果为空"
-            
+
         output = []
         for item in result:
             output.append(item['article_id'])
@@ -109,6 +109,7 @@ class MainLogic(object):
             output.append(item['backup_addr'])
             output.append(item['start_date'])
             output.append(item['status'])
+            output.append('--------')
         return "\n".join(map(str, output))
 
     def _is_URL(self, string):
