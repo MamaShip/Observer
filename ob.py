@@ -103,7 +103,7 @@ class Observer:
 
     def init_checker(self):
         self.ac = Article_Checker(
-            self.q, sleeping_time=3, saving_path='', call_back_func=update_article_status)
+            self.q, sleeping_time=6, saving_path='', call_back_func=update_article_status)
         self.ac.start()
 
     def __del__(self):
