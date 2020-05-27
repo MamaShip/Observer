@@ -50,7 +50,7 @@ class MainLogic(object):
 
     def _handle_URL(self, msg):
         open_id = msg.source
-        URL = msg.content
+        URL = self._trim_URL(msg.content)
 
         success, result = self.db.find_my_article(open_id)
         if success:
@@ -172,6 +172,17 @@ class MainLogic(object):
             return True
         else:
             return False
+
+    def _trim_URL(self, URL):
+        if "&chksm=" in URL:
+            try:
+                short_ver = URL.split("&chksm=")[0]
+            except:
+                logger.warning("_trim_URL fail: " + URL)
+                return URL
+            return short_ver
+        else:
+            return URL
 
 
 MAIN_LOGIC = MainLogic()
