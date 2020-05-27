@@ -9,10 +9,15 @@ import mysql.connector
 from mysql.connector import errorcode
 
 # !!! 已知问题：当数据库内没有目标项目时，对其做 update/delete 都不会报错
-
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(filename='mysql.log',
-                    level=logging.DEBUG, format=LOG_FORMAT)
+#先声明一个 Logger 对象
+logger = logging.getLogger("mysql")
+logger.setLevel(level=logging.DEBUG)
+#然后指定其对应的 Handler 为 FileHandler 对象
+handler = logging.FileHandler('mysql.log')
+#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 DB_NAME = 'ObDb'
 TABLES = {}
@@ -88,8 +93,8 @@ class DbOperator:
             self.db.rollback()
             success = False
             # log it
-            logging.warning("commit fail when executing cmd: " + cmd)
-            logging.warning("> with parameters: "
+            logger.warning("commit fail when executing cmd: " + cmd)
+            logger.warning("> with parameters: "
                             + " ".join(map(str, parameters)))
         cursor.close()
         return success
@@ -155,8 +160,8 @@ class DbOperator:
         if len(result) == 0:
             success = False
             # log it
-            logging.info("fetch no item with cmd:" + query)
-            logging.info("> open_id= " + str(open_id))
+            logger.info("fetch no item with cmd:" + query)
+            logger.info("> open_id= " + str(open_id))
         return success, result
 
     def update_user(self, user):
@@ -213,6 +218,7 @@ class DbOperator:
         Returns:
             success: bool
         """
+        success = False
         query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles "
                 "WHERE article_id=%s;")
         query_result = self._execute_cmd(query, (article_id,))
@@ -224,13 +230,14 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            success = True
 
-        if item:
-            return True, item
+        if success:
+            return success, item
         else:
             # log it
-            logging.info("find_article fail with article_id: " + str(article_id))
-            return False, None
+            logger.info("find_article fail with article_id: " + str(article_id))
+            return success, None
 
     def find_my_article(self, open_id):
         """Get article list of one user.
@@ -262,8 +269,8 @@ class DbOperator:
         if len(result) == 0:
             success = False
             # log it
-            logging.info("fetch no item with cmd: " + query)
-            logging.info("> open_id= " + str(open_id))
+            logger.info("fetch no item with cmd: " + query)
+            logger.info("> open_id= " + str(open_id))
         return success, result
 
     def update_article(self, article):
@@ -323,7 +330,7 @@ class DbOperator:
         if len(result) == 0:
             success = False
             # log it
-            logging.info("fetch no item with cmd: " + query)
+            logger.info("fetch no item with cmd: " + query)
         return success, result
 
     def archive_article(self, article):
@@ -373,7 +380,7 @@ class DbCreator:
         Create tables defined by global variables: TABLES
         """
         cursor = self.db.cursor()        # 获取操作游标
-        logging.info("try create_table()")
+        logger.info("try create_table()")
         for table_name in TABLES:
             table_description = TABLES[table_name]
             try:
@@ -382,14 +389,14 @@ class DbCreator:
             except mysql.connector.Error as err:
                 if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
                     print("already exists.")
-                    logging.info("table already exists.")
+                    logger.info("table already exists.")
                 else:
                     print(err.msg)
-                    logging.warning("create_table() ERROR.")
-                    logging.warning(err.msg)
+                    logger.warning("create_table() ERROR.")
+                    logger.warning(err.msg)
             else:
                 print("OK")
-                logging.info("create_table() OK")
+                logger.info("create_table() OK")
         cursor.close()
 
     def delete_table(self):
@@ -397,7 +404,7 @@ class DbCreator:
         Delete tables defined by global variables: TABLES
         """
         cursor = self.db.cursor()        # 获取操作游标
-        logging.warning("try delete_table()")
+        logger.warning("try delete_table()")
         for table_name in TABLES:
             delete_cmd = "DROP TABLE " + table_name + ";"
 
@@ -411,7 +418,7 @@ class DbCreator:
                 print("delete table fail:", table_name)
             else:
                 print("delete table " + table_name + " OK")
-                logging.warning("table " + table_name + " deleted.")
+                logger.warning("table " + table_name + " deleted.")
         cursor.close()
 
 

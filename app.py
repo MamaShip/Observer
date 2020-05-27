@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
-
+import logging
 from flask import Flask, request, abort, render_template
 from wechatpy import parse_message, create_reply
 from wechatpy.utils import check_signature
@@ -10,13 +10,17 @@ from wechatpy.exceptions import (
 )
 from main import get_main_logic
 
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+logging.basicConfig(filename='app.log',
+                    level=logging.DEBUG, format=LOG_FORMAT)
+
 # set token or get from environments
 TOKEN = os.getenv("WECHAT_TOKEN", "123456")
 AES_KEY = os.getenv("WECHAT_AES_KEY", "")
 APPID = os.getenv("WECHAT_APPID", "")
 
 app = Flask(__name__)
-
+logging.info(">> service start!")
 @app.route("/")
 def index():
     host = request.url_root

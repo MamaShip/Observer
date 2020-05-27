@@ -5,9 +5,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
 
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(filename='mail.log',
-                    level=logging.DEBUG, format=LOG_FORMAT)
+#先声明一个 Logger 对象
+logger = logging.getLogger("mail")
+logger.setLevel(level=logging.DEBUG)
+#然后指定其对应的 Handler 为 FileHandler 对象
+handler = logging.FileHandler('mail.log')
+#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 MAIL_USERNAME = os.getenv("MAIL_USERNAME", "ObserverZG@gmail.com")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
@@ -47,7 +53,7 @@ def send_mail(receiver, contents=DEFAULT_MSG, attachments=[]):
         print(smtp.connect(HOST, PORT))
     except:
         print('CONNECT ERROR ****')
-        logging.error("Fail to connect")
+        logger.error("Fail to connect")
         result = False
 
     # gmail uses ssl
@@ -60,8 +66,8 @@ def send_mail(receiver, contents=DEFAULT_MSG, attachments=[]):
     except Exception as e:
         print('LOGIN ERROR ****')
         # log it (user password is not allowed to be recorded in log file)
-        logging.error("smtp login fail with username:" + MAIL_USERNAME)
-        logging.error("> %s\n" % (e))
+        logger.error("smtp login fail with username:" + MAIL_USERNAME)
+        logger.error("> %s\n" % (e))
         result = False
 
     # fill content with MIMEText's object
@@ -85,10 +91,10 @@ def send_mail(receiver, contents=DEFAULT_MSG, attachments=[]):
     # print(msg.as_string())
     try:
         smtp.sendmail(sender, receiver, msg.as_string())
-        logging.info("mail sent to %s" % (msg['To']))
+        logger.info("mail sent to %s" % (msg['To']))
     except smtplib.SMTPException as e:
         print("Error: 无法发送邮件")
-        logging.error("sendmail FAIL. reason: %s " % (e))
+        logger.error("sendmail FAIL. reason: %s " % (e))
         result = False
     smtp.quit()
 

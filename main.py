@@ -4,6 +4,15 @@ from database.db_operator import DbOperator
 from ob import Observer
 from my_timer import RepeatedTimer
 
+#先声明一个 Logger 对象
+logger = logging.getLogger("main")
+logger.setLevel(level=logging.DEBUG)
+#然后指定其对应的 Handler 为 FileHandler 对象
+handler = logging.FileHandler('sys.log')
+#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 EMAIL_RULE = re.compile(r'^[a-zA-Z0-9\._\-\+]{1,64}@([A-Za-z0-9_\-\.]){1,128}\.([A-Za-z]{2,8})$')
 # CMD_LIST = ["help", "status", "list", "admin-status", "admin-list"]
@@ -12,7 +21,7 @@ class MainLogic(object):
     def __init__(self):
         self.db    = DbOperator()
         self.ob    = Observer()
-        self.timer = RepeatedTimer(60, self.ob.ob_all)
+        self.timer = RepeatedTimer(3600, self.ob.ob_all)
         self.cmd_list = {"help"        : self._help, 
                         "status"       : self._status, 
                         "list"         : self._list, 
@@ -84,16 +93,68 @@ class MainLogic(object):
         return "help命令暂不支持"
 
     def _status(self, msg):
-        return "status命令暂不支持"
+        open_id = msg.source
+        success, user = self.db.find_user(open_id)
+        if not success:
+            logger.info("_status can't find user:" + open_id)
+            return "没有找到邮箱绑定记录，请重新绑定"
+        email = user['email']
+        return "你的账号现在绑定邮箱为：" + email
 
     def _list(self, msg):
-        return "list命令暂不支持"
+        open_id = msg.source
+        success, article_list = self.db.find_my_article(open_id)
+        if not success:
+            logger.info("_list no record by user:" + open_id)
+            return "没有正在观察中的记录"
+        reply = "现有" + str(len(article_list)) + "条记录观察中\n-------\n"
+        URL_list = []
+        for item in article_list:
+            URL_list.append(item['URL'])
+        reply = reply + "\n".join(URL_list)
+        return reply
 
     def _admin_status(self, msg):
-        return "admin-status命令暂不支持"
+        user = msg.source
+        if user not in ADMIN_LIST:
+            return "非管理员账号，无法执行admin命令"
+        success, result = self.db.fetch_all_article()
+        if not success:
+            logger.info("_admin_status fetch 0")
+            return "admin-list 查询失败，结果为空"
+        cnt = len(result)
+        reply = "现有" + str(cnt) + "条记录观察中"
+        cnt_dict = {}
+        for item in result:
+            status = item['status']
+            if status not in cnt_dict:
+                cnt_dict[status] = 1
+            else:
+                cnt_dict[status] += 1
+        for i in cnt_dict:
+            reply = reply + "\n状态" + str(i) + "的有" + str(cnt_dict[i]) + "条"  
+        return reply
 
     def _admin_list(self, msg):
-        return "admin-list命令暂不支持"
+        user = msg.source
+        if user not in ADMIN_LIST:
+            return "非管理员账号，无法执行admin命令"
+        
+        success, result = self.db.fetch_all_article()
+        if not success:
+            logger.info("_admin_list fetch 0")
+            return "admin-list 查询失败，结果为空"
+
+        output = []
+        for item in result:
+            output.append(item['article_id'])
+            output.append(item['URL'])
+            output.append(item['open_id'])
+            output.append(item['backup_addr'])
+            output.append(item['start_date'])
+            output.append(item['status'])
+            output.append('--------')
+        return "\n".join(map(str, output))
 
     def _is_URL(self, string):
         # 特殊处理，暂时只接受微信文章地址
