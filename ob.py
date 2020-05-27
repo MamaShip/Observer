@@ -5,10 +5,21 @@ import shutil
 from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
-
+'''
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='observer.log',
                     level=logging.DEBUG, format=LOG_FORMAT)
+'''
+#先声明一个 Logger 对象
+logger = logging.getLogger("Observer")
+logger.setLevel(level=logging.DEBUG)
+#然后指定其对应的 Handler 为 FileHandler 对象
+handler = logging.FileHandler('observer.log')
+#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
 DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
 
@@ -45,25 +56,25 @@ def update_article_status(article_id, valid, backup_path=None):
     if not success:
         # log it
         print("can't find article by article_id: " + str(article_id))
-        logging.error("can't find article by article_id: " + str(article_id))
+        logger.error("can't find article by article_id: " + str(article_id))
         return False
     URL = item['URL']
     open_id = item['open_id']
     success, result = db.find_user(open_id)
     if not success:
-        logging.error("article & user no match: "
+        logger.error("article & user no match: "
                       + " ".join(map(str, [article_id, open_id])))
         return False
     email = result['email']
 
     if not valid:  # 当文章已不可访问
         if item['backup_addr'] == FAKE_PATH_PLACE_HOLDER:
-            backup_addr = None  # 是否会导致发送邮件出问题，暂未验证
+            backup_addr = None
         else:
             backup_addr = item['backup_addr']
         notify_user(email, URL, backup_addr)
         db.archive_article(item)
-        logging.info("article expired, move to archive: "
+        logger.info("article expired, move to archive: "
                      + " ".join(map(str, [article_id, URL])))
     else:
         prev_status = item['status']
@@ -80,7 +91,7 @@ def update_article_status(article_id, valid, backup_path=None):
                 return _db_update(db, article_id, new_path, 1)  # 制作备份完成，状态更新成1
         else:
             print("unknown status!")
-            logging.error("article status Error: "
+            logger.error("article status Error: "
                           + " ".join(map(str, [article_id, open_id, prev_status])))
 
     return True
@@ -115,7 +126,7 @@ class Observer:
         success, article_id = _db_add(db, URL, open_id, FAKE_PATH_PLACE_HOLDER)
         if not success:
             print("_db_add FAIL!!!")
-            logging.warning("ob_this_one fail, add db fail: "
+            logger.warning("ob_this_one fail, add db fail: "
                             + " ".join(map(str, [article_id, URL, open_id])))
             return False
         self.q.put(article_id=article_id, url=URL,
@@ -139,7 +150,7 @@ class Observer:
         db = DbOperator()
         success, watch_list = db.fetch_all_article()
         if not success:
-            logging.warning("ob_all find nothing")
+            logger.warning("ob_all find nothing")
             return False
         for item in watch_list:
             article_id = item['article_id']
@@ -160,7 +171,7 @@ class Observer:
                     self.q.put(article_id=article_id, url=URL,
                                download=False, block=True, timeout=1)
                 else:
-                    logging.error("Unknow article status: "
+                    logger.error("Unknow article status: "
                                   + " ".join(map(str, [article_id, URL, status])))
         return True
 
@@ -190,7 +201,7 @@ def _save_file(new_path, old_path):
         shutil.move(old_path, new_path)
     except:
         print("save file fail!:", new_path, old_path)
-        logging.error("save file fail: "
+        logger.error("save file fail: "
                             + " ".join([new_path,old_path]))
         return False
     print("save file done:", new_path)
@@ -217,14 +228,14 @@ def _db_add(db, URL, open_id, backup_addr):
     """
     article = (URL, open_id, backup_addr)
     if not db.add_article(article):  # 执行add操作
-        logging.warning("_db_add fail, with paras:"
+        logger.warning("_db_add fail, with paras:"
                         + " ".join(map(str, article)))
         return False, None
     _, result = db.find_my_article(open_id)  # add完读出来获取 article_id
     for item in result:
         if item['URL'] == URL:
             return True, item['article_id']
-    logging.warning("_db_add success, but can't read. with paras:"
+    logger.warning("_db_add success, but can't read. with paras:"
                     + " ".join(map(str, article)))
     return False, None
 
