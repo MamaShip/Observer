@@ -8,7 +8,7 @@ from my_timer import RepeatedTimer
 logger = logging.getLogger("main")
 logger.setLevel(level=logging.DEBUG)
 #然后指定其对应的 Handler 为 FileHandler 对象
-handler = logging.FileHandler('main.log')
+handler = logging.FileHandler('sys.log')
 #然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)

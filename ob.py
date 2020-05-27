@@ -10,15 +10,8 @@ LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='observer.log',
                     level=logging.DEBUG, format=LOG_FORMAT)
 '''
-#先声明一个 Logger 对象
-logger = logging.getLogger("Observer")
-logger.setLevel(level=logging.DEBUG)
-#然后指定其对应的 Handler 为 FileHandler 对象
-handler = logging.FileHandler('observer.log')
-#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+# 获取 Logger 对象(跟main共用一个logger)
+logger = logging.getLogger("main")
 
 DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
