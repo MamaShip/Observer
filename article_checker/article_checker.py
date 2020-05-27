@@ -7,10 +7,12 @@ import os
 from bs4 import BeautifulSoup
 from io import BytesIO
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Cm, Pt, Inches
+from docx.oxml.ns import qn
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue
 
-def default_callback():
+def default_callback(article_id, valid, backup_path):
     return
 
 def IsValidUrl(url):
@@ -68,7 +70,7 @@ class Article_Checker(Thread):
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, checker_queue, saving_path='', sleeping_time=1, call_back_func=None):
+    def __init__(self, checker_queue, saving_path='', sleeping_time=1, call_back_func=default_callback):
         super(Article_Checker, self).__init__()
         self.queue = checker_queue
         self.saving_path = saving_path # 这里的saving_path是相对地址
@@ -154,12 +156,15 @@ class Article_Checker(Thread):
                 self.DoArticleExist(article_id)
                 if download:
                     file_name = str(article_id) + '.docx'
+
                     try:
                         Save2Doc(page_soup, self.saving_path + file_name)
                     except:
                         self.DoSavingFailed(article_id)
                     else:
-                        self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), file_name)) # 这里用的绝对地址
+                        self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path+file_name)) # 这里用的绝对地址
+                    # Save2Doc(page_soup, self.saving_path + file_name)
+                    # self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path + file_name))
                 continue
 
             else:
@@ -200,28 +205,56 @@ def IsDeleted(page_soup):
     else:
         return False, None
 
-# 保存图片和文字到docx文件中
-def Save2Doc(page_soup, save_path, image_size=1.0):
-    doc = Document()
-    # get title
-    title = page_soup.find(name='h2').text
-    doc.add_heading(title)
-    # get author
-    author = page_soup.find(name='span', attrs={"class": "rich_media_meta rich_media_meta_text"}).text
+def SaveTextTag2Paragraph(doc, text_tag):
     cur_para = doc.add_paragraph()
-    cur_para.add_run('作者：'+author)
+    try:
+        text = text_tag.text.strip()
+    except:
+        cur_para.add_run('获取时出错')
+    else:
+        cur_para.add_run(text)
+    return
+
+def InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=0.74):
+    style = doc.styles['Normal']
+    style.font.name = abc_font
+    style.element.rPr.rFonts.set(qn('w:eastAsia'), chn_font)
+    paragraph_format = style.paragraph_format
+    paragraph_format.first_line_indent = Cm(indent_cm)
+
+# 保存图片和文字到docx文件中
+def Save2Doc(page_soup, save_path, image_size=1.25):
+    doc = Document()
+    # init style for whole document
+    InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=0.74)
+    # get title
+    try:
+        title = page_soup.find(name='h2').text.strip()
+    except:
+        title = doc.add_heading('获取文章标题时出错')
+    else:
+        title = doc.add_heading(title)
+    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    # get author information
+    cur_para = doc.add_paragraph()
+    cur_para.add_run('作者介绍：')
+    author = page_soup.find(name='div', attrs={"class": "profile_inner"})
+    SaveTextTag2Paragraph(doc, author)
     # get texts and pictures
-    for tag in page_soup.findAll(name=['p', 'img', 'section']):
-        # 文字会在p, section之间出现
-        if tag.name in ['p', 'span']:
-            if tag.text:
-                cur_para = doc.add_paragraph()
-                cur_para.add_run(tag.text)
-        # 图片会在'img'中出现
+    cur_para = doc.add_paragraph()
+    cur_para.add_run('正文:')
+    article_content_soup = page_soup.find(name='div', attrs={"id": "js_content"})
+    for tag in article_content_soup.findAll(name=['p', 'img']):
+        # 文字会在<p></p>之间出现
+        if tag.name == 'p' and tag.text:
+            SaveTextTag2Paragraph(doc, tag)
+        # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
             image_io = DownloadImage(tag['data-src'])
-            if image_io:
-                cur_para = doc.add_paragraph()
+            cur_para = doc.add_paragraph()
+            if image_io is None:
+                cur_para.add_run('获取图片时出错')
+            else:
                 cur_run = cur_para.add_run()
                 cur_run.add_picture(image_io, width=Inches(image_size))
     doc.save(save_path)
@@ -248,7 +281,9 @@ class Test_Class(Thread):
         self.urls = [r'https://mp.weixin.qq.com/s/_dX8-fpPzpsxaKpi6Hjw6w',
                      r'https://mp.weixin.qq.com/s/Hr2XfjimJH2PJtYldTD_QA',
                      r'https://mp.weixin.qq.com/s?__biz=MzUyNDQyNTI1OQ==&mid=2247485113&idx=1&sn=fe519905e349eddd69e773769dcd5437&chksm=fa2cc7fdcd5b4eebc2ba2d9b0fe32a465b7603d93e05c1cb24edc44f1cdcf3290c03833de278&mpshare=1&srcid=0513MT9x68x6doNnABCcYwk2&sharer_sharetime=1589305468758&sharer_shareid=afd15624e89a727c2d7ee3f76ef31e5c&from=singlemessage&&sub&clicktime=1589326214&enterid=1589326214&forceh5=1&a&devicetype=android-29&version=27000e37&nettype=WIFI&abtest_cookie=AAACAA%3D%3D&lang=zh_CN&exportkey=A1AWfVCDKp%2FcNDipvHFRRlk%3D&pass_ticket=KJhWTmIcJaAEto1dcH6rJvecoQ7f6uO4KKUCYiKTukH3SEjgH%2B%2BN5CDveDdcGT8V&wx_header=1&scene=1&subscene=10000&clicktime=1589525209&enterid=1589525209',
-                     r'https://mp.weixin.qq.com/s?__biz=MzU3Mjk1OTQ0Ng==&mid=2247484924&idx=1&sn=7d611b8c0a51e179cab51fd308e0a56c&chksm=fcc9ba45cbbe33535d0308c48d8d18d3ba6b18b8e0a2fbe636b3e9f0efaba6038942c98f6e70&mpshare=1&scene=2&srcid=&sharer_sharetime=1582717197787&sharer_shareid=246cb2c7250512fd9647a394d25bd429&from=timeline&key=4e4f4f0e2204deb082c29c40f853d0ea72f1deb6f474bd9c3830cb3efd14b0668fb557c9b25eabae3f65c091b1d76c4537fbddea4f24ebfa0aa067e8daadb1edd10d8b4ee5de2f5e5c278789d6ce108b&ascene=1&uin=ODg5OTA0Nzgw&devicetype=Windows+10+x64&version=62090070&lang=zh_CN&exportkey=A4bF5u75U5NZSImF8sEK6jw%3D&pass_ticket=YoLxbUZxJS4%2Fbmw6eOsgUHyiu9TwY%2BI0uEvVW6TCGknknWACHcEdBVsPGs%2FMy68Z']
+                     r'https://mp.weixin.qq.com/s?__biz=MzU3Mjk1OTQ0Ng==&mid=2247484924&idx=1&sn=7d611b8c0a51e179cab51fd308e0a56c&chksm=fcc9ba45cbbe33535d0308c48d8d18d3ba6b18b8e0a2fbe636b3e9f0efaba6038942c98f6e70&mpshare=1&scene=2&srcid=&sharer_sharetime=1582717197787&sharer_shareid=246cb2c7250512fd9647a394d25bd429&from=timeline&key=4e4f4f0e2204deb082c29c40f853d0ea72f1deb6f474bd9c3830cb3efd14b0668fb557c9b25eabae3f65c091b1d76c4537fbddea4f24ebfa0aa067e8daadb1edd10d8b4ee5de2f5e5c278789d6ce108b&ascene=1&uin=ODg5OTA0Nzgw&devicetype=Windows+10+x64&version=62090070&lang=zh_CN&exportkey=A4bF5u75U5NZSImF8sEK6jw%3D&pass_ticket=YoLxbUZxJS4%2Fbmw6eOsgUHyiu9TwY%2BI0uEvVW6TCGknknWACHcEdBVsPGs%2FMy68Z',
+                     r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A']
+        # self.urls = [r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A']
         self.q = q
 
     def run(self):
