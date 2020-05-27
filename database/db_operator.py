@@ -213,6 +213,7 @@ class DbOperator:
         Returns:
             success: bool
         """
+        success = False
         query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles "
                 "WHERE article_id=%s;")
         query_result = self._execute_cmd(query, (article_id,))
@@ -224,13 +225,14 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            success = True
 
-        if item:
-            return True, item
+        if success:
+            return success, item
         else:
             # log it
             logging.info("find_article fail with article_id: " + str(article_id))
-            return False, None
+            return success, None
 
     def find_my_article(self, open_id):
         """Get article list of one user.

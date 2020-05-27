@@ -1,7 +1,8 @@
 import os
 import logging
 from datetime import datetime
-from article_checker import Checker_Queue, Article_Checker
+import shutil
+from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
 
@@ -28,11 +29,12 @@ def notify_user(email, URL, backup_addr):
 
     if backup_addr == None:
         addition = '\n截止观察结束时，没有成功备份的文档存留。\n如有疑问请联系管理员：youdangls@gmail.com'
+        attach = []
     else:
         addition = '\n附件是文章备份，请查收。'
-    body_text = '您观察的文章：' + URL + '已失效。' + addition
+        attach = [backup_addr]
+    body_text = '您观察的文章：' + URL + ' 已失效。' + addition
     msg = {'Subject': '您的观察目标有状态更新', 'Body': body_text}
-    attach = [backup_addr]
     return send_mail(receiver, contents=msg, attachments=attach)
 
 
@@ -42,6 +44,8 @@ def update_article_status(article_id, valid, backup_path=None):
     success, item = db.find_article(article_id)
     if not success:
         # log it
+        print("can't find article by article_id: " + str(article_id))
+        logging.error("can't find article by article_id: " + str(article_id))
         return False
     URL = item['URL']
     open_id = item['open_id']
@@ -84,7 +88,6 @@ def update_article_status(article_id, valid, backup_path=None):
 
 class Observer:
     def __init__(self):
-        self.db = DbOperator()
         self.q = Checker_Queue(max_size=500)
 
     def init_checker(self):
@@ -107,9 +110,9 @@ class Observer:
         Returns:
             success: bool
         """
+        db = DbOperator()
         # 先添加一次，然后获取 article_id 给 Checker 用
-        success, article_id = _db_add(
-            self.db, URL, open_id, FAKE_PATH_PLACE_HOLDER)
+        success, article_id = _db_add(db, URL, open_id, FAKE_PATH_PLACE_HOLDER)
         if not success:
             print("_db_add FAIL!!!")
             logging.warning("ob_this_one fail, add db fail: "
@@ -133,7 +136,8 @@ class Observer:
         # tmp code
         print("ob_all running")
         # tmp code end
-        success, watch_list = self.db.fetch_all_article()
+        db = DbOperator()
+        success, watch_list = db.fetch_all_article()
         if not success:
             logging.warning("ob_all find nothing")
             return False
@@ -163,9 +167,13 @@ class Observer:
 
 def _backup_article(article_id, article_path):
     path = _get_path()
+    if not os.path.exists(path):
+        os.makedirs(path)
     file_path = os.path.join(path, str(article_id) + '.docx')
-    _save_file(file_path, article_path)
-    return file_path
+    if _save_file(file_path, article_path):
+        return file_path
+    else:
+        return None
 
 
 def _get_path():
@@ -176,9 +184,16 @@ def _get_path():
 
 
 def _save_file(new_path, old_path):
-    # TODO: 取决于 Article_Checker 是怎么写的
-    # 这里可能只是个mv动作
-    print("pretend save file to:", new_path)
+    # 由调用者保证目标路径存在
+    # 只是个mv动作
+    try:
+        shutil.move(old_path, new_path)
+    except:
+        print("save file fail!:", new_path, old_path)
+        logging.error("save file fail: "
+                            + " ".join([new_path,old_path]))
+        return False
+    print("save file done:", new_path)
     return True
 
 

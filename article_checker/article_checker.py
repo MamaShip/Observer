@@ -3,7 +3,7 @@
 import requests
 from threading import Lock, Thread
 from time import sleep
-from os import getcwd
+import os
 from bs4 import BeautifulSoup
 from io import BytesIO
 from docx import Document
@@ -78,58 +78,58 @@ class Article_Checker(Thread):
 
     def DoSavingFailed(self, article_id):
         # to do
-        # print('article {} fail to save'.format(article_id))
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        print('article {} fail to save'.format(article_id))
+        self.call_back_func(article_id=article_id, valid=True, backup_path=None)
         return
 
     def DoSavingSucceed(self, article_id, saving_path): # saving_path 是 绝对地址
         # to do
-        # print('article {} saved'.format(article_id))
+        print('article {} saved'.format(article_id))
         self.call_back_func(article_id=article_id, valid=True, backup_path=saving_path)
         return
 
     def DoArticleExist(self, article_id):
         # to do
-        # print('article {} exist'.format(article_id))
-        self.call_back_func(article_id=article_id, valid=True, backup_path=None)
+        print('article {} exist'.format(article_id))
+        # self.call_back_func(article_id=article_id, valid=True, backup_path=None)
         return
 
     def DoArticleDeleted(self, article_id, url, delete_reason):
-        # print('article id {} deleted for {}'.format(article_id, delete_reason))
+        print('article id {} deleted for {}'.format(article_id, delete_reason))
         # to do
         self.call_back_func(article_id=article_id, valid=False, backup_path=None)
         return
 
     def DoArticleDeletedWithoutDownload(self, article_id, url, delete_reason):
         # to do
-        # print('article id {} deleted for {}'.format(article_id, delete_reason))
-        self.call_back_func(article_id=article_id, valid=True, backup_path=None)
+        print('article id {} deleted for {}'.format(article_id, delete_reason))
+        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
         return
 
     def DoConnectionError(self, url):
         # to do
-        # print('Connection Error : {}'.format(url))
+        print('Connection Error : {}'.format(url))
         return
 
     def DoInvalidUrl(self, article_id, url):
         # to do
-        # print('Invalid Url : {}'.format(url))
+        print('Invalid Url : {}'.format(url))
         self.call_back_func(article_id=article_id, valid=False, backup_path=None)
         return
 
     def DoRequestError(self, url):
         # to do
-        # print('request failed for {}'.format(url))
+        print('request failed for {}'.format(url))
         return
 
     def run(self):
         while True:
             (article_id, url, download) = self.queue.get(block=True, timeout=1)
-            print('article {} get'.format(article_id))
+            #print('article {} get'.format(article_id))
             if not url:
                 sleep(self.sleeping_time)
                 continue
-
+            print('article {} get'.format(article_id))
             try:
                 page_soup = GetPageSoup(url, features='lxml')
             except requests.exceptions.ConnectionError:
@@ -159,7 +159,7 @@ class Article_Checker(Thread):
                     except:
                         self.DoSavingFailed(article_id)
                     else:
-                        self.DoSavingSucceed(article_id, getcwd()+file_name) # 这里用的绝对地址
+                        self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), file_name)) # 这里用的绝对地址
                 continue
 
             else:

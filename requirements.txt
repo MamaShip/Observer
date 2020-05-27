@@ -1,5 +1,6 @@
 Flask
 wechatpy
-gunicorn
-mysql.connector
+bs4
+python_docx
+mysql-connector
 
