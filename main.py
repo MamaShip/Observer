@@ -52,7 +52,8 @@ class MainLogic(object):
         open_id = msg.source
         URL = self._trim_URL(msg.content)
 
-        success, result = self.db.find_my_article(open_id)
+        db = DbOperator()
+        success, result = db.find_my_article(open_id)
         if success:
             for item in result:
                 if URL == item['URL']:
@@ -65,7 +66,7 @@ class MainLogic(object):
         else:
             reply = "收到！开始观察目标！"
         # 判断一下用户是否绑定邮箱，没绑定的话提供警告
-        success, _ = self.db.find_user(open_id)
+        success, _ = db.find_user(open_id)
         if not success:
             reply = reply + "\n--------------\n【警告】你的账号未绑定邮箱，无法收到备份及通知。请回复「help」查看规则"
         return reply
@@ -74,11 +75,12 @@ class MainLogic(object):
         open_id = msg.source
         email = msg.content
         user = (open_id, email)
-        success, _ = self.db.find_user(open_id)
+        db = DbOperator()
+        success, _ = db.find_user(open_id)
         if success: # 已有记录，更新绑定关系
-            result = self.db.update_user(user)
+            result = db.update_user(user)
         else: # 无记录，添加绑定关系
-            result = self.db.add_user(user)
+            result = db.add_user(user)
         if result:
             reply = "你的账号成功绑定邮箱：" + email
         else:
@@ -94,7 +96,8 @@ class MainLogic(object):
 
     def _status(self, msg):
         open_id = msg.source
-        success, user = self.db.find_user(open_id)
+        db = DbOperator()
+        success, user = db.find_user(open_id)
         if not success:
             logger.info("_status can't find user:" + open_id)
             return "没有找到邮箱绑定记录，请重新绑定"
@@ -103,7 +106,8 @@ class MainLogic(object):
 
     def _list(self, msg):
         open_id = msg.source
-        success, article_list = self.db.find_my_article(open_id)
+        db = DbOperator()
+        success, article_list = db.find_my_article(open_id)
         if not success:
             logger.info("_list no record by user:" + open_id)
             return "没有正在观察中的记录"
@@ -118,7 +122,8 @@ class MainLogic(object):
         user = msg.source
         if user not in ADMIN_LIST:
             return "非管理员账号，无法执行admin命令"
-        success, result = self.db.fetch_all_article()
+        db = DbOperator()
+        success, result = db.fetch_all_article()
         if not success:
             logger.info("_admin_status fetch 0")
             return "admin-list 查询失败，结果为空"
@@ -139,8 +144,8 @@ class MainLogic(object):
         user = msg.source
         if user not in ADMIN_LIST:
             return "非管理员账号，无法执行admin命令"
-        
-        success, result = self.db.fetch_all_article()
+        db = DbOperator()
+        success, result = db.fetch_all_article()
         if not success:
             logger.info("_admin_list fetch 0")
             return "admin-list 查询失败，结果为空"
