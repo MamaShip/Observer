@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+import datetime
 import shutil
 from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
@@ -15,7 +15,7 @@ logger = logging.getLogger("main")
 
 DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
-
+MAX_OB_DAYS = 30
 
 def notify_user(email, URL, backup_addr):
     """Send email to users.
@@ -37,7 +37,7 @@ def notify_user(email, URL, backup_addr):
     else:
         addition = '\n附件是文章备份，请查收。'
         attach = [backup_addr]
-    body_text = '您观察的文章：' + URL + ' 已失效。' + addition
+    body_text = '您观察的文章：' + URL + ' 已失效/超出观察期。' + addition
     msg = {'Subject': '您的观察目标有状态更新', 'Body': body_text}
     return send_mail(receiver, contents=msg, attachments=attach)
 
@@ -141,9 +141,6 @@ class Observer:
         Returns:
             success: bool
         """
-        # tmp code
-        print("ob_all running")
-        # tmp code end
         db = DbOperator()
         success, watch_list = db.fetch_all_article()
         if not success:
@@ -159,7 +156,9 @@ class Observer:
                 # 超出30天的观察目标，停止观察
                 backup_addr = item['backup_addr']
                 update_article_status(article_id, False, backup_addr)
-                pass
+                logger.info("move article to archive: "
+                            + " ".join(map(str, [article_id, status, start_date])))
+                continue
             else:
                 if status == 0:  # 初次观察，需要制作备份
                     self.q.put(article_id=article_id, url=URL,
@@ -186,7 +185,7 @@ def _backup_article(article_id, article_path):
 
 def _get_path():
     # 从当前日期生成存档路径
-    now = datetime.now()
+    now = datetime.datetime.now()
     date = now.strftime('%Y%m')
     return os.path.join(DEFAULT_PATH, date)
 
@@ -206,8 +205,20 @@ def _save_file(new_path, old_path):
 
 
 def _out_of_date(date):
-    # TODO
-    return False
+    """Is record out of date?
+    We only observe each record for 30 days. After that,
+    record will expire.
+
+    Args:
+        date : <class 'datetime.date'>
+
+    Returns:
+        answer : bool
+    """
+    today = datetime.date.today()
+    interval = today - date # 两日期差距
+    days = interval.days # 具体的天数(int)
+    return (days > MAX_OB_DAYS)
 
 
 def _db_add(db, URL, open_id, backup_addr):

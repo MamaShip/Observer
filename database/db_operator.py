@@ -356,8 +356,6 @@ class DbOperator:
             "VALUES (%s, %s, %s, %s, %s, NOW(), 8);")  # status 8 用来表示存档的文件
         return self._commit_cmd(insert_new_article, article)
 
-    def is_table_exist(self, table_name):  # 代码里不打算做这个检测了，由用户保证
-        return True
 
 
 class DbCreator:
