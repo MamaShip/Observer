@@ -56,7 +56,7 @@ def update_article_status(article_id, valid, backup_path=None):
     success, result = db.find_user(open_id)
     if not success:
         logger.error("article & user no match: "
-                      + " ".join(map(str, [article_id, open_id])))
+                     + " ".join(map(str, [article_id, open_id])))
         return False
     email = result['email']
 
@@ -68,7 +68,7 @@ def update_article_status(article_id, valid, backup_path=None):
         notify_user(email, URL, backup_addr)
         db.archive_article(item)
         logger.info("article expired, move to archive: "
-                     + " ".join(map(str, [article_id, URL])))
+                    + " ".join(map(str, [article_id, URL])))
     else:
         prev_status = item['status']
         if prev_status == 1:  # 正常观察状态,无需额外操作
@@ -85,7 +85,7 @@ def update_article_status(article_id, valid, backup_path=None):
         else:
             print("unknown status!")
             logger.error("article status Error: "
-                          + " ".join(map(str, [article_id, open_id, prev_status])))
+                         + " ".join(map(str, [article_id, open_id, prev_status])))
 
     return True
 
@@ -95,9 +95,13 @@ class Observer:
         self.q = Checker_Queue(max_size=500)
 
     def init_checker(self):
-        self.ac = Article_Checker(
-            self.q, sleeping_time=6, saving_path='', call_back_func=update_article_status)
-        self.ac.start()
+        try:
+            self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='',
+                                        call_back_func=update_article_status)
+            self.ac.start()
+            logger.info("Article_Checker init done")
+        except:
+            logger.error("Article_Checker init FAIL!")
 
     def __del__(self):
         self.ac.join()
@@ -120,7 +124,7 @@ class Observer:
         if not success:
             print("_db_add FAIL!!!")
             logger.warning("ob_this_one fail, add db fail: "
-                            + " ".join(map(str, [article_id, URL, open_id])))
+                           + " ".join(map(str, [article_id, URL, open_id])))
             return False
         self.q.put(article_id=article_id, url=URL,
                    download=True, block=True, timeout=1)
@@ -165,7 +169,7 @@ class Observer:
                                download=False, block=True, timeout=1)
                 else:
                     logger.error("Unknow article status: "
-                                  + " ".join(map(str, [article_id, URL, status])))
+                                 + " ".join(map(str, [article_id, URL, status])))
         return True
 
 
@@ -195,7 +199,7 @@ def _save_file(new_path, old_path):
     except:
         print("save file fail!:", new_path, old_path)
         logger.error("save file fail: "
-                            + " ".join([new_path,old_path]))
+                     + " ".join([new_path, old_path]))
         return False
     print("save file done:", new_path)
     return True
@@ -222,14 +226,14 @@ def _db_add(db, URL, open_id, backup_addr):
     article = (URL, open_id, backup_addr)
     if not db.add_article(article):  # 执行add操作
         logger.warning("_db_add fail, with paras:"
-                        + " ".join(map(str, article)))
+                       + " ".join(map(str, article)))
         return False, None
     _, result = db.find_my_article(open_id)  # add完读出来获取 article_id
     for item in result:
         if item['URL'] == URL:
             return True, item['article_id']
     logger.warning("_db_add success, but can't read. with paras:"
-                    + " ".join(map(str, article)))
+                   + " ".join(map(str, article)))
     return False, None
 
 

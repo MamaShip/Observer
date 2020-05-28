@@ -11,7 +11,7 @@ from mysql.connector import errorcode
 # !!! 已知问题：当数据库内没有目标项目时，对其做 update/delete 都不会报错
 #先声明一个 Logger 对象
 logger = logging.getLogger("mysql")
-logger.setLevel(level=logging.DEBUG)
+logger.setLevel(level=logging.INFO)
 #然后指定其对应的 Handler 为 FileHandler 对象
 handler = logging.FileHandler('mysql.log')
 #然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
@@ -62,12 +62,12 @@ class DbOperator:
             user="DbOperator",           # 数据库用户名
             passwd="DoNotAnswer2048!",   # 数据库密码
             database=DB_NAME)            # 直接选择特定数据库
-        print("db connection created")
+        logger.debug("db connection created")
 
     def __del__(self):
         # 关闭数据库连接
         self.db.close()
-        print("db connection deleted")
+        logger.debug("db connection deleted")
 
     def _commit_cmd(self, cmd, parameters):
         """Commit a cmd.
