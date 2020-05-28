@@ -44,47 +44,47 @@
 ****
 
 ## 接口定义
-我们常驻后台运行的其实是 **Msg_Handler**
+我们程序的总启动入口是 **app.py**，它调用 wechatpy 的 SDK 接受微信 API 的消息。
 
-它调用主逻辑，因此主逻辑给它提供接口。
+然后调用主逻辑进行处理，因此主逻辑为它提供接口。
 ### 主逻辑接口
-* Add_User
-* Update_User
-* Remove_User
-* Add_OB_Article
+* handle_msg
 ### DB_Operator接口
 * Add_User
 * Find_User
 * Update_User
 * Remove_User
 * Add_Article
+* Find_Article
+* Find_Ny_Article
 * Remove_Article
-* Update_Article (tag)
+* Update_Article
+* Fetch_All_Article
+* Archive_Article
 ### Observer接口
 * Ob_This_One
 * Ob_All
 ### Article_Checker接口
-* Check_Validation
-* Get_Content
+* Checker_Queue.put
 ### Mail_Server接口
-* Send
+* send_mail
 
 ****
 
 ## 工作量及任务规划
 - [x] 搞一个微信公众号 1h
 - [x] 搞个能用的 Linux 服务器  ~~1h~~ 3h
-- [ ] 微信消息接口调试  12h
+- [x] 微信消息接口调试  ~~12h~~ 8h
 - [x] 主逻辑   4h
 - [x] mail server   8h
 - [x] MySQL 部署及 DB_Operator  12h
-- [ ] Article_Checker 12h
+- [x] Article_Checker  12h
 - [x] Observer   5h
-- [ ] 联调联测    2h
+- [x] 联调联测   2h
 
 
 ## More features
-* 用于查看当前状态/统计信息的管理页面（PHP技能需要
+* 用于查看当前状态/统计信息的管理页面（也许需要PHP技能，或者Flask可以直接实现？）
 * 多个用户提交相同页面时的去重
 
 ****

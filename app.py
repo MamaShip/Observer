@@ -47,12 +47,11 @@ def wechat():
         # plaintext mode
         msg = parse_message(request.data)
         if msg.type == "text":
-            # reply = create_reply(msg.content, msg)
             main_logic = get_main_logic()
             reply_text = main_logic.handle_msg(msg)
             reply = create_reply(reply_text, msg)
         elif msg.type == "event":
-            reply = create_reply("欢迎关注，机器人功能仍在施工中，见谅", msg)
+            reply = create_reply("欢迎关注，回复[help]查看基础指引。\n机器人功能仍在施工中，见谅", msg)
         else:
             reply = create_reply("Sorry, can not handle this for now", msg)
         return reply.render()
