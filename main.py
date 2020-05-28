@@ -17,6 +17,14 @@ logger.addHandler(handler)
 EMAIL_RULE = re.compile(r'^[a-zA-Z0-9\._\-\+]{1,64}@([A-Za-z0-9_\-\.]){1,128}\.([A-Za-z]{2,8})$')
 # CMD_LIST = ["help", "status", "list", "admin-status", "admin-list"]
 ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks"]
+HELP_MSG = """初次使用请直接发送邮箱地址进行关系绑定。
+此后直接发送微信公众号文章地址即可启动观察。
+-------------------
+也可直接发送查询命令：
+[status]  - 查看邮箱绑定状态
+[list]    - 查看正在观察的文章列表
+更多信息参见： https://wx.twisted-meadows.com
+"""
 class MainLogic(object):
     def __init__(self):
         self.db    = DbOperator()
@@ -68,7 +76,7 @@ class MainLogic(object):
         # 判断一下用户是否绑定邮箱，没绑定的话提供警告
         success, _ = db.find_user(open_id)
         if not success:
-            reply = reply + "\n--------------\n【警告】你的账号未绑定邮箱，无法收到备份及通知。请回复「help」查看规则"
+            reply = reply + "\n--------------\n【警告】你的账号未绑定邮箱，无法收到备份及通知。请回复[help]查看规则"
         return reply
 
     def _handle_email(self, msg):
@@ -92,7 +100,7 @@ class MainLogic(object):
         return self.cmd_list[msg.content](msg)
 
     def _help(self, msg):
-        return "help命令暂不支持"
+        return HELP_MSG
 
     def _status(self, msg):
         open_id = msg.source
