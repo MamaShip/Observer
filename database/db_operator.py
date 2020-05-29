@@ -4,6 +4,7 @@ Work on MySQL. Offerring a class called DbOperator, which
 handle the connection of MySQL and provide several basic
 operations. 
 '''
+import os
 import logging
 import mysql.connector
 from mysql.connector import errorcode
@@ -20,6 +21,8 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 DB_NAME = 'ObDb'
+DB_USER = os.getenv("DB_USER", "DbOperator")
+DB_PASSWD = os.getenv("DB_PASSWD", "")
 TABLES = {}
 TABLES['users'] = (
     "CREATE TABLE `users` ("
@@ -59,8 +62,8 @@ class DbOperator:
         # 打开数据库连接
         self.db = mysql.connector.connect(
             host="localhost",            # 数据库主机地址
-            user="DbOperator",           # 数据库用户名
-            passwd="DoNotAnswer2048!",   # 数据库密码
+            user=DB_USER,                # 数据库用户名
+            passwd=DB_PASSWD,            # 数据库密码
             database=DB_NAME)            # 直接选择特定数据库
         logger.debug("db connection created")
 
@@ -363,8 +366,8 @@ class DbCreator:
         # 打开数据库连接
         self.db = mysql.connector.connect(
             host="localhost",            # 数据库主机地址
-            user="DbOperator",           # 数据库用户名
-            passwd="DoNotAnswer2048!",   # 数据库密码
+            user=DB_USER,                # 数据库用户名
+            passwd=DB_PASSWD,            # 数据库密码
             database=DB_NAME)            # 直接选择特定数据库
         print("db connection created")
 
