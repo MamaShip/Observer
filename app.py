@@ -8,7 +8,7 @@ from wechatpy.exceptions import (
     InvalidSignatureException,
     InvalidAppIdException,
 )
-from main import get_main_logic
+from main import MainLogic
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 logging.basicConfig(filename='app.log',
@@ -20,12 +20,12 @@ AES_KEY = os.getenv("WECHAT_AES_KEY", "")
 APPID = os.getenv("WECHAT_APPID", "")
 
 app = Flask(__name__)
-logging.info(">> service start!")
+MAIN_LOGIC = MainLogic()
+
 @app.route("/")
 def index():
     host = request.url_root
     return render_template("index.html", host=host)
-
 
 @app.route("/wx", methods=["GET", "POST"])
 def wechat():
@@ -47,10 +47,9 @@ def wechat():
         # plaintext mode
         msg = parse_message(request.data)
         if msg.type == "text":
-            main_logic = get_main_logic()
-            reply_text = main_logic.handle_msg(msg)
+            reply_text = MAIN_LOGIC.handle_msg(msg)
             reply = create_reply(reply_text, msg)
-        elif msg.type == "event":
+        elif _is_subscribe_event(msg):
             reply = create_reply("欢迎关注，回复[help]查看基础指引。\n机器人功能仍在施工中，见谅", msg)
         else:
             reply = create_reply("Sorry, can not handle this for now", msg)
@@ -72,6 +71,13 @@ def wechat():
                 reply = create_reply("Sorry, can not handle this for now", msg)
             return crypto.encrypt_message(reply.render(), nonce, timestamp)
 
+def _is_subscribe_event(msg):
+    if msg.type != "event":
+        return False
+    if msg.event == "subscribe":
+        return True
+    return False
 
 if __name__ == "__main__":
     app.run("0.0.0.0", 80, debug=True, use_reloader=False)
+    logging.info(">> service start!")

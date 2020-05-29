@@ -1,7 +1,7 @@
 import re
 import logging
 from database.db_operator import DbOperator
-from ob import Observer
+from observer import Observer
 from my_timer import RepeatedTimer
 
 #先声明一个 Logger 对象
@@ -26,10 +26,16 @@ HELP_MSG = """初次使用请直接发送邮箱地址进行关系绑定。
 更多信息参见： https://wx.twisted-meadows.com
 """
 class MainLogic(object):
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = object.__new__(cls, *args, **kwargs)
+        return cls._instance
+
     def __init__(self):
-        self.db    = DbOperator()
         self.ob    = Observer()
-        self.timer = RepeatedTimer(3600, self.ob.ob_all)
+        self.timer = RepeatedTimer(7200, self.ob.ob_all)
         self.cmd_list = {"help"        : self._help, 
                         "status"       : self._status, 
                         "list"         : self._list, 
@@ -41,7 +47,7 @@ class MainLogic(object):
         self.timer.stop()
 
     def handle_msg(self, msg):
-        print(msg.source, msg.content, msg.create_time) # tmp for debug
+        # print(msg.source, msg.content, msg.create_time)
         content = msg.content
         reply = ""
 
@@ -196,9 +202,3 @@ class MainLogic(object):
             return short_ver
         else:
             return URL
-
-
-MAIN_LOGIC = MainLogic()
-
-def get_main_logic():
-    return MAIN_LOGIC
