@@ -1,8 +1,11 @@
+<p align="center">
+  <img alt="logo" src="./img/logo.jpg" width="150px" />
+  <h1 align="center">Observer 折光观察者</h1>
+</p>
 
-# Observer 折光观察者
-![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg)](#contributors-)
+![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 A simple tool for checking accessibility of specific articles

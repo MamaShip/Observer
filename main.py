@@ -61,6 +61,13 @@ class MainLogic(object):
             reply = "听不懂你在说啥！\n--------------\n观察目标暂时只接受微信公众号文章。\n不要有无意义的空格、分号、换行符等。\n请回复「help」查看规则"
         
         return reply
+    
+    def handle_event(self, evt):
+        if self._is_subscribe_event(evt):
+            reply = "欢迎关注，回复[help]查看基础指引。\n机器人功能仍在施工中，见谅"
+        else:
+            reply = "Sorry, can not handle this for now"
+        return reply
 
     def _handle_URL(self, msg):
         open_id = msg.source
@@ -202,3 +209,8 @@ class MainLogic(object):
             return short_ver
         else:
             return URL
+    
+    def _is_subscribe_event(self, msg):
+        if msg.event == "subscribe":
+            return True
+        return False

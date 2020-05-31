@@ -359,6 +359,34 @@ class DbOperator:
             "VALUES (%s, %s, %s, %s, %s, NOW(), 8);")  # status 8 用来表示存档的文件
         return self._commit_cmd(insert_new_article, article)
 
+    def db_add_helper(self, URL, open_id, backup_addr):
+        """This function if for special purpose when adding info to database.
+        It returns article_id if adding successed.
+
+        Args:
+            URL : str
+            open_id : str
+                user id offered by wechat.
+            backup_addr: str
+                the path of archive file.
+
+        Returns:
+            success: bool
+            article_id: int
+        """
+        article = (URL, open_id, backup_addr)
+        if not self.add_article(article):  # 执行add操作
+            logger.warning("add_article fail, with paras:"
+                        + " ".join(map(str, article)))
+            return False, None
+        _, result = self.find_my_article(open_id)  # add完读出来获取 article_id
+        for item in result:
+            if item['URL'] == URL:
+                return True, item['article_id']
+        logger.warning("add_article success, but can't read. with paras:"
+                    + " ".join(map(str, article)))
+        return False, None
+
 
 
 class DbCreator:

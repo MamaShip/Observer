@@ -49,8 +49,9 @@ def wechat():
         if msg.type == "text":
             reply_text = MAIN_LOGIC.handle_msg(msg)
             reply = create_reply(reply_text, msg)
-        elif _is_subscribe_event(msg):
-            reply = create_reply("欢迎关注，回复[help]查看基础指引。\n机器人功能仍在施工中，见谅", msg)
+        elif msg.type == "event":
+            reply_text = MAIN_LOGIC.handle_event(msg)
+            reply = create_reply(reply_text, msg)
         else:
             reply = create_reply("Sorry, can not handle this for now", msg)
         return reply.render()
@@ -71,12 +72,6 @@ def wechat():
                 reply = create_reply("Sorry, can not handle this for now", msg)
             return crypto.encrypt_message(reply.render(), nonce, timestamp)
 
-def _is_subscribe_event(msg):
-    if msg.type != "event":
-        return False
-    if msg.event == "subscribe":
-        return True
-    return False
 
 if __name__ == "__main__":
     app.run("0.0.0.0", 80, debug=True, use_reloader=False)
