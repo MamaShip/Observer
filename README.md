@@ -1,5 +1,9 @@
+
 # Observer 折光观察者
 ![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 A simple tool for checking accessibility of specific articles
 
@@ -20,8 +24,23 @@ A simple tool for checking accessibility of specific articles
 
 开发文档见：[plan](dev_docs/plan.md)
 
-## Contributors
 
-### Code Contributors
-<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-<!-- ALL-CONTRIBUTORS-BADGE:END -->
+## Contributors ✨
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tr>
+    <td align="center"><a href="http://www.twisted-meadows.com"><img src="https://avatars3.githubusercontent.com/u/7104870?v=4" width="100px;" alt=""/><br /><sub><b>游荡</b></sub></a><br /><a href="https://github.com/MamaShip/Observer/commits?author=MamaShip" title="Code">💻</a> <a href="https://github.com/MamaShip/Observer/commits?author=MamaShip" title="Documentation">📖</a> <a href="#maintenance-MamaShip" title="Maintenance">🚧</a></td>
+  </tr>
+</table>
+
+<!-- markdownlint-enable -->
+<!-- prettier-ignore-end -->
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
+
