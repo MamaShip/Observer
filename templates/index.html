@@ -1,6 +1,6 @@
 <html>
  <head>
-   <title>Coding wechatpy Demo</title>
+   <title>时间从来不回答~</title>
    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
    <style type="text/css">
      body {
@@ -100,17 +100,72 @@
  </head>
  <body>
     <div class="wrapper">
-        <h1>wechatpy</h1>
-        <p>这是 <a href="https://coding.net" target="_blank">Coding</a> 演示平台 <a href="https://coding.net/u/messense/p/wechatpy/git" target="_blank">wechatpy</a> 示例项目运行效果页面。</p>
-        <p>微信公众号回调地址：{{ host }}wechat</p>
-        <p>请在微信公共平台后台使用上述地址开启回调模式。</p>
+        <h1>时间从来不回答</h1>
+        <p>这是<a href="https://github.com/MamaShip/Observer" target="_blank">「折光观察者」</a>项目所属微信公众号「时间从来不回答」的用户欢迎页面。</p>
+        <p>向初次使用的用户提供指导文档。<br />
+          文档内容施工中</p>
         <div>
-            <h2>演示平台环境变量配置</h2>
+          <h2>简介</h2>
+          <p>鉴于微信公众号平台存在不透明的监管机制。用户往往无从得知自己关心的文章何时、因何被删。</p>
+          <p>我们提供一项免费观察服务：</p>
+          <ul>
+            <li>当你认为某篇文章可能敏感时，将该文链接发送给公众号「<strong>时间从来不回答</strong>」。</li>
+            <li>bot会自动对链接进行定时观察，当文章链接失效时，发送邮件通知你，并将文章备份发送给你。</li>
+          </ul>
+        </div>
+        <div>
+            <h2>初次使用</h2>
             <ul>
-                <li><strong>WECHAT_TOKEN</strong>: 微信回调 token</li>
+                <li><strong>关注公众号</strong>: 搜索微信公众号「时间从来不回答」并添加</li>
+                <li><strong>绑定邮箱</strong>: 邮箱用于接收观察结果及文章备份文件，直接向公众号发送自己的邮箱地址即可</li>
+                <li><strong>发送观察目标</strong>: 在文章右上角菜单键中找到[复制链接]选项，将复制的链接发送给公众号。收到确切回复即代表开始观察。</li>
             </ul>
         </div>
-        <span id="forkongithub"><a href="https://coding.net/u/messense/p/wechatpy/git">Fork me on Coding</a></span>
+        <div>
+          <h2>进阶</h2>
+          <ul>
+              <li><strong>help</strong>: 直接向公众号发送「help」命令可以查看基本操作介绍。</li>
+              <li><strong>status</strong>: 直接向公众号发送「status」命令可以查看邮箱绑定状态。</li>
+              <li><strong>list</strong>: 直接向公众号发送「list」命令可以查看自己的现有观察目标。</li>
+              <li><strong>换绑邮箱</strong>: 直接向公众号发送新的邮箱地址，会解除对原邮箱的绑定，并绑定新邮箱。</li>
+          </ul>
+        </div>
+        <div>
+          <h2>Q & A</h2>
+          <ul>
+            <li><strong>最长观察时间？</strong><br />
+              通常情况下，会持续观察直到文章失效。但一篇文章的最长观察时间是30天。30天后自动结束观察并发送备份。</li>
+            <li><strong>我的隐私?</strong><br />
+              你的微信号是脱敏的。我们后台收到的消息已被微信服务器处理过，用户ID以类似这样的形式呈现：ouwzNwvhpmyUVA8yGWtc0K22yHks<br />
+              因此我们无从得知你的身份。<br />
+              但是观察目标（网址）是明文传输的。亦有可能被用于后续的数据分析。所以你应该将观察目标视为公开信息，不要发送不合适的内容。
+            </li>
+            <li><strong>为什么是微信公众号？还是个订阅号？</strong><br />
+              微信有远强于所有其他平台的权限管理规则。所以我们无法使用微信个人号为你提供服务。而公众号的诸多类型中，只有「个人订阅号」不需要进行企业资质认证。<br />
+              作为一个非营利性的个人项目，我们没有打算在这上面耗费太多成本。
+            </li>
+            <li><strong>文章备份会是什么样的？</strong><br />
+              目前，暂时，会把微信公众号文章备份为docx文档。其中的图片大小和文字格式都以一种非常单纯的方式呈现，给用户留有自行编辑的空间。</li>
+            <li><strong>更多功能？</strong><br />
+              本服务代码通过 GPL-3.0 协议完全开源在<a href="https://github.com/MamaShip/Observer" target="_blank">「折光观察者」</a> Github 项目中。<br />
+              如果想要反馈 bug 或申请更多功能，请到 issue 区提交新 issue。<br />
+              如果想参与开发，欢迎认领 issue 、提交 PR。
+            </li>
+            <li><strong>运行这套服务的开销？</strong><br />
+              65 RMB/月。目前我们租用了一个便宜的 VPS 来运行服务。后续可能会视情况升级或降级。<br />
+              如果你喜欢这个服务，希望它长期运行，请<strong>考虑捐赠</strong>！
+            </li>
+        </ul>
+        </div>
+        <div>
+          <h2>公众号二维码</h2>
+          <img src="qrcode.jpg" width="250"/>
+          <p>欢迎关注！</p>
+          <h2>想请我喝茶？</h2>
+          <img src="donation.jpg" width="250"/>
+          <p>支付宝捐赠链接</p>
+        </div>
+        <span id="forkongithub"><a href="https://github.com/MamaShip/Observer">Fork me on Github</a></span>
     </div>
  </body>
 </html>
