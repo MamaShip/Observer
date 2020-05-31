@@ -64,10 +64,13 @@ class Checker_Queue:
 # 若存在且要下载，则下载到docx文件中
 class Article_Checker(Thread):
     _instance = None
+    _lock = Lock()
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if not cls._instance:
+                    cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self, checker_queue, saving_path='', sleeping_time=1, call_back_func=default_callback):
@@ -223,7 +226,7 @@ def InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=
     paragraph_format.first_line_indent = Cm(indent_cm)
 
 # 保存图片和文字到docx文件中
-def Save2Doc(page_soup, save_path, image_size=1.25):
+def Save2Doc(page_soup, save_path, image_size=4.0):
     doc = Document()
     # init style for whole document
     InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=0.74)
