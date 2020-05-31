@@ -23,7 +23,7 @@ HELP_MSG = """初次使用请直接发送邮箱地址进行关系绑定。
 也可直接发送查询命令：
 [status]  - 查看邮箱绑定状态
 [list]    - 查看正在观察的文章列表
-更多信息参见： https://wx.twisted-meadows.com
+更多信息参见： http://wx.twisted-meadows.com
 """
 class MainLogic(object):
     _instance = None
