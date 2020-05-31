@@ -2,7 +2,7 @@
 # Observer 折光观察者
 ![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 A simple tool for checking accessibility of specific articles
