@@ -4,7 +4,7 @@
 </p>
 
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-3-orange.svg)](#contributors)
 ![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
@@ -43,6 +43,7 @@ Thanks goes to these wonderful people:
   <tr>
     <td align="center"><a href="http://www.twisted-meadows.com"><img src="https://avatars3.githubusercontent.com/u/7104870?v=4" width="100px;" alt=""/><br /><sub><b>游荡</b></sub></a><br /><a href="https://github.com/MamaShip/Observer/commits?author=MamaShip" title="Code">💻</a> <a href="https://github.com/MamaShip/Observer/commits?author=MamaShip" title="Documentation">📖</a> <a href="#maintenance-MamaShip" title="Maintenance">🚧</a></td>
     <td align="center"><a href="https://github.com/ChenliangLi205"><img src="https://avatars2.githubusercontent.com/u/33442091?v=4" width="100px;" alt=""/><br /><sub><b>ChenliangLi205</b></sub></a><br /><a href="https://github.com/MamaShip/Observer/commits?author=ChenliangLi205" title="Code">💻</a> <a href="#maintenance-ChenliangLi205" title="Maintenance">🚧</a></td>
+    <td align="center"><a href="https://github.com/Friiiii"><img src="https://avatars2.githubusercontent.com/u/66207271?v=4" width="100px;" alt=""/><br /><sub><b>Friiiii</b></sub></a><br /><a href="#design-Friiiii" title="Design">🎨</a></td>
   </tr>
 </table>
 
