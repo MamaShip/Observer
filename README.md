@@ -14,7 +14,7 @@ A simple tool for checking accessibility of specific articles
 
 ## Usage
 直接关注公众号：
-![时间从来不回答](templates/qrcode.jpg)
+![时间从来不回答](static/qrcode.jpg)
 
 向其发送文章链接，即可开始观察。（暂时只支持观察微信公众号文章，其他平台待开发）
 
