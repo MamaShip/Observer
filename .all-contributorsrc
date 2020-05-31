@@ -11,7 +11,9 @@
       "avatar_url": "https://avatars3.githubusercontent.com/u/7104870?v=4",
       "profile": "http://www.twisted-meadows.com",
       "contributions": [
-        "code"
+        "code",
+        "doc",
+        "maintenance"
       ]
     }
   ],
