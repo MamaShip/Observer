@@ -12,6 +12,10 @@ A simple tool for checking accessibility of specific articles
 
 基于微信公众号的文章可访问性检查服务。
 
+实现了一个运行在微信平台上的自动备份机器人。用户将文章链接转发给它，它能自动备份文章，并定期观察该文是否被删。事后邮件通知用户。
+
+开发文档见：[plan](dev_docs/plan.md)
+
 ## Usage
 直接关注公众号：
 ![时间从来不回答](static/qrcode.jpg)
@@ -22,11 +26,11 @@ A simple tool for checking accessibility of specific articles
 
 ## Background
 受启发于[端点星计划](https://github.com/Terminus2049/Terminus2049.github.io)。
+(该项目已被破坏，参见[维基词条](https://zh.wikipedia.org/wiki/%E7%AB%AF%E7%82%B9%E6%98%9F%E4%BA%8B%E4%BB%B6))
 
-实现了一个运行在微信平台上的自动备份机器人。用户将文章链接转发给它，它能自动备份文章，并定期观察该文是否被删。事后邮件通知用户。
+本项目仅为个人用户提供关注文章的备份，不致力于进行被审查文章的全备份。
 
-开发文档见：[plan](dev_docs/plan.md)
-
+~~被审查文章的全备份工作已有香港大学的 [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/) 项目在做。~~
 
 ## Contributors ✨
 
