@@ -96,7 +96,7 @@ class Article_Checker(Thread):
     def DoArticleExist(self, article_id):
         # to do
         print('article {} exist'.format(article_id))
-        # self.call_back_func(article_id=article_id, valid=True, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=True, backup_path=None)
         return
 
     def DoArticleDeleted(self, article_id, url, delete_reason):
@@ -156,10 +156,10 @@ class Article_Checker(Thread):
                 continue
 
             if not delete_flag:
-                self.DoArticleExist(article_id)
-                if download:
+                if not download:
+                    self.DoArticleExist(article_id)
+                else: # need download
                     file_name = str(article_id) + '.docx'
-
                     try:
                         Save2Doc(page_soup, self.saving_path + file_name)
                     except:
