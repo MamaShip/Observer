@@ -81,7 +81,8 @@ def update_article_status(article_id, valid, backup_path=None):
                 new_path = _backup_article(article_id, backup_path)
                 if new_path == None:
                     return False
-                return _db_update(db, article_id, new_path, 1)  # 制作备份完成，状态更新成1
+                article_info = (article_id, new_path, 1) # 制作备份完成，状态更新成1
+                return db.update_article(article_info)
         else:
             print("unknown status!")
             logger.error("article status Error: "
@@ -103,9 +104,6 @@ class Observer:
         except:
             logger.error("Article_Checker init FAIL!")
 
-    def __del__(self):
-        self.ac.join()
-
     def ob_this_one(self, URL, open_id):
         """Add a new article to watch list.
         This function receive a unique(guaranteed by caller) article URL to be
@@ -120,9 +118,9 @@ class Observer:
         """
         db = DbOperator()
         # 先添加一次，然后获取 article_id 给 Checker 用
-        success, article_id = _db_add(db, URL, open_id, FAKE_PATH_PLACE_HOLDER)
+        success, article_id = db.db_add_helper(URL, open_id, FAKE_PATH_PLACE_HOLDER)
         if not success:
-            print("_db_add FAIL!!!")
+            print("db_add_helper FAIL!!!")
             logger.warning("ob_this_one fail, add db fail: "
                            + " ".join(map(str, [article_id, URL, open_id])))
             return False
@@ -219,64 +217,3 @@ def _out_of_date(date):
     interval = today - date # 两日期差距
     days = interval.days # 具体的天数(int)
     return (days > MAX_OB_DAYS)
-
-
-def _db_add(db, URL, open_id, backup_addr):
-    """Private function for first time add info to database.
-
-    Args:
-        URL : str
-        open_id : str
-            user id offered by wechat.
-        backup_addr: str
-            the path of archive file.
-
-    Returns:
-        success: bool
-    """
-    article = (URL, open_id, backup_addr)
-    if not db.add_article(article):  # 执行add操作
-        logger.warning("_db_add fail, with paras:"
-                       + " ".join(map(str, article)))
-        return False, None
-    _, result = db.find_my_article(open_id)  # add完读出来获取 article_id
-    for item in result:
-        if item['URL'] == URL:
-            return True, item['article_id']
-    logger.warning("_db_add success, but can't read. with paras:"
-                   + " ".join(map(str, article)))
-    return False, None
-
-
-def _db_update(db, article_id, backup_addr, status):
-    """Private function for update status to database.
-
-    Args:
-        article_id : int
-        backup_addr : str
-            the path of archive file.
-        status: int
-            watch status.(temporarily not used)
-
-    Returns:
-        success: bool
-    """
-    article = (article_id, backup_addr, status)
-    return db.update_article(article)
-
-
-def _db_archive(db, item):
-    """Move watch item to archive database.
-    Because this article is no longer valid. We don't
-    have to watch it later. But archive for total report
-    or sth. 
-
-    Args:
-        item : dict
-            {'article_id', 'URL', 'open_id', 'backup_addr',
-            'start_date','status'}
-
-    Returns:
-        success: bool
-    """
-    return db.archive_article(item)
