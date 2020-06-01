@@ -20,3 +20,4 @@ mail:
 * [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/)
 * [使用 linux screen 在后台运行程序](https://www.cnblogs.com/mchina/archive/2013/01/30/2880680.html)
 * [Mail::RFC822::Address: regexp-based address validation](http://www.ex-parrot.com/~pdw/Mail-RFC822-Address.html)
+* [用于自动生成 change log 的 commit 提交规范](https://github.com/git-chglog/git-chglog/blob/master/CONTRIBUTING.md)
