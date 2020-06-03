@@ -1,7 +1,7 @@
 import re
 import logging
 from database.db_operator import DbOperator
-from observer import Observer
+from observer import Observer, update_article_status
 from my_timer import RepeatedTimer
 
 #先声明一个 Logger 对象
@@ -39,6 +39,7 @@ class MainLogic(object):
         self.cmd_list = {"help"        : self._help, 
                         "status"       : self._status, 
                         "list"         : self._list, 
+                        "delete"       : self._delete,
                         "admin-status" : self._admin_status, 
                         "admin-list"   : self._admin_list}
         self.ob.init_checker()
@@ -181,6 +182,31 @@ class MainLogic(object):
             output.append(item['status'])
             output.append('--------')
         return "\n".join(map(str, output))
+
+    def _delete(self, msg):
+        string = msg.content
+        try:
+            argv = string.split()
+            article_id = int(argv[1])
+        except:
+            logger.info("_delete parse string fail: " + string)
+            return "delete 失败，不是合法的输入，请检查格式"
+        
+        db = DbOperator()
+        success, result = db.find_article(article_id)
+        if not success:
+            logger.debug("_delete fetch nothing: " + string)
+            return "试图删除编号为" + str(article_id) + "的文章，但未找到"
+        user = msg.source
+        if result['open_id'] == user: # 确实是本人的观察目标
+            if update_article_status(article_id, False):
+                return "成功删除观察目标：" + str(article_id)
+            else:
+                logger.error("_delete process fail: " + string)
+                return "您的输入合法，但后台处理失败，请联系管理员"
+        else:
+            logger.info(user + " try to delete article: " + str(article_id))
+            return str(article_id) + " 不是您的观察目标，无法删除"
 
     def _is_URL(self, string):
         # 特殊处理，暂时只接受微信文章地址
