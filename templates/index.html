@@ -125,7 +125,12 @@
           <ul>
               <li><strong>help</strong>: 直接向公众号发送「help」命令可以查看基本操作介绍。</li>
               <li><strong>status</strong>: 直接向公众号发送「status」命令可以查看邮箱绑定状态。</li>
-              <li><strong>list</strong>: 直接向公众号发送「list」命令可以查看自己的现有观察目标。</li>
+              <li><strong>list</strong>: 直接向公众号发送「list」命令可以查看自己的现有观察目标。每条记录以「文章编号  URL地址」的形式呈现，文章编号可用于其他命令。</li>
+              <li><strong>delete</strong>: 直接向公众号发送「delete 文章编号」即可删除自己指定的观察目标。<br />
+                <ul>
+                  <li>我们允许用户将公众号仅作为备份工具来使用，因此你可以在发送命令启动观察后，查询到已在观察中，就直接delete掉目标获取备份。</li>
+                  <li>如果既要获取备份也要观察目标，可以delete后再次发送地址启动观察。</li>
+                </ul></li>
               <li><strong>换绑邮箱</strong>: 直接向公众号发送新的邮箱地址，会解除对原邮箱的绑定，并绑定新邮箱。</li>
           </ul>
         </div>
@@ -144,7 +149,7 @@
               作为一个非营利性的个人项目，我们没有打算在这上面耗费太多成本。<br />
             </li>
             <li><strong>文章备份会是什么样的？</strong><br />
-              目前，暂时，会把微信公众号文章备份为docx文档。其中的图片大小和文字格式都以一种非常单纯的方式呈现，给用户留有自行编辑的空间。<br /></li>
+              目前，暂时，会把微信公众号文章备份为docx文档。其中的图片和文字都只是单纯地顺序呈现，用户可以自行编辑。<br /></li>
             <li><strong>更多功能？</strong><br />
               本服务代码通过 GPL-3.0 协议完全开源在<a href="https://github.com/MamaShip/Observer" target="_blank">「折光观察者」</a> Github 项目中。<br />
               如果想要反馈 bug 或申请更多功能，请到 issue 区提交新 issue。<br />
