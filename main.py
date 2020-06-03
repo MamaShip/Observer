@@ -194,7 +194,14 @@ class MainLogic(object):
         return EMAIL_RULE.match(string)
 
     def _is_cmd(self, string):
-        if string in self.cmd_list:
+        try:
+            argv = string.split()
+            header = argv[0].lower()
+        except:
+            logger.warning("_is_cmd parse string fail: " + string)
+            return False
+
+        if header in self.cmd_list:
             return True
         else:
             return False
@@ -214,3 +221,8 @@ class MainLogic(object):
         if msg.event == "subscribe":
             return True
         return False
+
+if __name__ == "__main__":
+    print("test handle cmd")
+    main = MainLogic()
+    print(main._is_cmd("stAtus 14"))
