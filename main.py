@@ -17,7 +17,8 @@ logger.addHandler(handler)
 
 EMAIL_RULE = re.compile(r'^[a-zA-Z0-9\._\-\+]{1,64}@([A-Za-z0-9_\-\.]){1,128}\.([A-Za-z]{2,8})$')
 # CMD_LIST = ["help", "status", "list", "admin-status", "admin-list"]
-ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks"]
+ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks",
+              "ouwzNwiEzAQFZfIluN4j2fQ2-2x4"]
 HELP_MSG = """初次使用请直接发送邮箱地址进行关系绑定。
 此后直接发送微信公众号文章地址即可启动观察。
 -------------------
