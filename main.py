@@ -3,6 +3,7 @@ import logging
 from database.db_operator import DbOperator
 from observer import Observer, update_article_status
 from my_timer import RepeatedTimer
+from definitions import *
 
 #先声明一个 Logger 对象
 logger = logging.getLogger("main")
@@ -199,7 +200,7 @@ class MainLogic(object):
             return "试图删除编号为" + str(article_id) + "的文章，但未找到"
         user = msg.source
         if result['open_id'] == user: # 确实是本人的观察目标
-            if update_article_status(article_id, False):
+            if update_article_status(article_id, False, optionals={"reason": REASON_DELETE_BY_USER}):
                 return "成功删除观察目标：" + str(article_id)
             else:
                 logger.error("_delete process fail: " + string)

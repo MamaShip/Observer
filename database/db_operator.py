@@ -209,7 +209,7 @@ class DbOperator:
         """
         insert_new_article = (
             "INSERT INTO articles (URL, open_id, backup_addr, start_date, status) "
-            "VALUES (%s, %s, %s, NOW(), 0);")  # status 0 表示初次添加，状态未知
+            "VALUES (%s, %s, %s, NOW(), %s);")
         return self._commit_cmd(insert_new_article, article)
 
     def find_article(self, article_id):
@@ -340,7 +340,7 @@ class DbOperator:
         article_id = article['article_id']
         self.remove_article(article_id)
         new_record = (article_id, article['URL'], article['open_id'],
-                    article['backup_addr'], article['start_date'])
+                    article['backup_addr'], article['start_date'], article['status'])
         return self._add_archive(new_record)
 
     def _add_archive(self, article):
@@ -356,10 +356,10 @@ class DbOperator:
         """
         insert_new_article = (
             "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, end_date, status) "
-            "VALUES (%s, %s, %s, %s, %s, NOW(), 8);")  # status 8 用来表示存档的文件
+            "VALUES (%s, %s, %s, %s, %s, NOW(), %s);")
         return self._commit_cmd(insert_new_article, article)
 
-    def db_add_helper(self, URL, open_id, backup_addr):
+    def db_add_helper(self, URL, open_id, backup_addr, status):
         """This function if for special purpose when adding info to database.
         It returns article_id if adding successed.
 
@@ -374,7 +374,7 @@ class DbOperator:
             success: bool
             article_id: int
         """
-        article = (URL, open_id, backup_addr)
+        article = (URL, open_id, backup_addr, status)
         if not self.add_article(article):  # 执行add操作
             logger.warning("add_article fail, with paras:"
                         + " ".join(map(str, article)))

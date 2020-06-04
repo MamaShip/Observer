@@ -5,11 +5,8 @@ import shutil
 from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
-'''
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-logging.basicConfig(filename='observer.log',
-                    level=logging.DEBUG, format=LOG_FORMAT)
-'''
+from definitions import *
+
 # 获取 Logger 对象(跟main共用一个logger)
 logger = logging.getLogger("main")
 
@@ -42,7 +39,19 @@ def notify_user(email, URL, backup_addr):
     return send_mail(receiver, contents=msg, attachments=attach)
 
 
-def update_article_status(article_id, valid, backup_path=None):
+def update_article_status(article_id, valid, backup_path=None, optionals={}):
+    """Do jobs when article status changed.
+
+    Args:
+        article_id : int
+        valid : bool
+        backup_path : str
+        optionals : dict 
+            maybe contains: "reason" shows why status changed
+                            "title" shows article title detected
+    Returns:
+        success: bool
+    """
     # 做点准备工作
     db = DbOperator()
     success, item = db.find_article(article_id)
@@ -59,21 +68,26 @@ def update_article_status(article_id, valid, backup_path=None):
                      + " ".join(map(str, [article_id, open_id])))
         return False
     email = result['email']
-
+    # 开始更新数据库
     if not valid:  # 当文章已不可访问
         if item['backup_addr'] == FAKE_PATH_PLACE_HOLDER:
             backup_addr = None
         else:
             backup_addr = item['backup_addr']
-        notify_user(email, URL, backup_addr)
-        db.archive_article(item)
+        try:
+            notify_user(email, URL, backup_addr)
+            item['status'] = reason2status[optionals["reason"]]
+            db.archive_article(item)
+        except:
+            logger.error("update_article_status ERROR")
+            return False
         logger.info("article expired, move to archive: "
                     + " ".join(map(str, [article_id, URL])))
     else:
         prev_status = item['status']
-        if prev_status == 1:  # 正常观察状态,无需额外操作
+        if prev_status == STATUS_NORMAL_OB:  # 正常观察状态,无需额外操作
             return True
-        elif prev_status == 0:  # 初次完成观察，制作备份
+        elif prev_status == STATUS_NEW_UNKNOWN:  # 初次完成观察，制作备份
             if backup_path == None:
                 print("backup addr not valid")
                 return False
@@ -81,7 +95,7 @@ def update_article_status(article_id, valid, backup_path=None):
                 new_path = _backup_article(article_id, backup_path)
                 if new_path == None:
                     return False
-                article_info = (article_id, new_path, 1) # 制作备份完成，状态更新成1
+                article_info = (article_id, new_path, STATUS_NORMAL_OB) # 制作备份完成，状态更新
                 return db.update_article(article_info)
         else:
             print("unknown status!")
@@ -118,7 +132,9 @@ class Observer:
         """
         db = DbOperator()
         # 先添加一次，然后获取 article_id 给 Checker 用
-        success, article_id = db.db_add_helper(URL, open_id, FAKE_PATH_PLACE_HOLDER)
+        success, article_id = db.db_add_helper(URL, open_id,
+                                               FAKE_PATH_PLACE_HOLDER,
+                                               STATUS_NEW_UNKNOWN)
         if not success:
             print("db_add_helper FAIL!!!")
             logger.warning("ob_this_one fail, add db fail: "
@@ -153,15 +169,16 @@ class Observer:
             if _out_of_date(start_date):
                 # 超出30天的观察目标，停止观察
                 backup_addr = item['backup_addr']
-                update_article_status(article_id, False, backup_addr)
+                update_article_status(article_id, False, 
+                                      backup_addr, {"reason": REASON_OUT_OF_DATE})
                 logger.info("move article to archive: "
                             + " ".join(map(str, [article_id, status, start_date])))
                 continue
             else:
-                if status == 0:  # 初次观察，需要制作备份
+                if status == STATUS_NEW_UNKNOWN:  # 初次观察，需要制作备份
                     self.q.put(article_id=article_id, url=URL,
                                download=True, block=True, timeout=1)
-                elif status == 1:  # 正常观察期，不再制作备份
+                elif status == STATUS_NORMAL_OB:  # 正常观察期，不再制作备份
                     self.q.put(article_id=article_id, url=URL,
                                download=False, block=True, timeout=1)
                 else:
