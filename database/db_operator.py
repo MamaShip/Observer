@@ -194,6 +194,31 @@ class DbOperator:
         """
         delete = ("DELETE FROM users WHERE open_id=%s;")
         return self._commit_cmd(delete, (open_id,))
+    
+    def fetch_all_user(self):
+        """Get the whole user list.
+        Fetch all user info from database.
+
+        Returns:
+            success: bool
+            result: a list of dict like {'user_id','open_id','email','reg_date'}
+        """
+        success = True
+        query = ("SELECT user_id, open_id, email, reg_date FROM users;")
+        query_result = self._execute_cmd(query, None)
+        result = []
+        for (user_id, open_id, email, reg_date) in query_result:
+            item = {}
+            item['user_id'] = user_id
+            item['open_id'] = open_id
+            item['email'] = email
+            item['reg_date'] = reg_date
+            result.append(item)
+        if len(result) == 0:
+            success = False
+            # log it
+            logger.info("fetch no item with cmd: " + query)
+        return success, result
 
     def add_article(self, article):
         """Register new article to be observed.
