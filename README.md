@@ -30,7 +30,7 @@ A simple tool for checking accessibility of specific articles
 
 本项目仅为个人用户提供关注文章的备份，不致力于进行被审查文章的全备份。
 
-~~被审查文章的全备份工作已有香港大学的 [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/) 项目在做。~~
+被审查文章的全备份工作已有香港大学的 [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/) 项目在做。（请主动向他们提交值得备份的公众号，帮助完善备份工程）
 
 ## Contributors ✨
 
