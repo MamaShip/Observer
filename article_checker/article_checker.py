@@ -52,6 +52,9 @@ class Checker_Queue:
         else:
             return article_id, url, download
 
+    def get_queue_size(self):
+        return self.q.qsize()
+
     def DoGetError(self):
         # to do
         return

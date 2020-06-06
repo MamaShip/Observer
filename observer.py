@@ -186,6 +186,13 @@ class Observer:
                                  + " ".join(map(str, [article_id, URL, status])))
         return True
 
+    def get_cur_q_size(self):
+        """Current pending items in Checker's queue.
+        Returns:
+            qsize: int
+        """
+        return self.q.get_queue_size()
+
 
 def _backup_article(article_id, article_path):
     path = _get_path()
