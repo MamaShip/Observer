@@ -1,7 +1,7 @@
 import re
 import logging
 from database.db_operator import DbOperator
-from observer import Observer, update_article_status, DEFAULT_PATH
+from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
 from definitions import *
 from utils.tools import total_used_space
@@ -101,14 +101,21 @@ class MainLogic(object):
         open_id = msg.source
         email = msg.content
         user = (open_id, email)
+        send_flag = False
         db = DbOperator()
         success, _ = db.find_user(open_id)
         if success: # 已有记录，更新绑定关系
             result = db.update_user(user)
         else: # 无记录，添加绑定关系
             result = db.add_user(user)
+            send_flag = send_user_check_email(email)
         if result:
             reply = "你的账号成功绑定邮箱：" + email
+            if send_flag:
+                reply += "\n--------\n"
+                reply += """你是初次绑定邮箱，我发送了一封确认邮件给您
+                            请检查邮箱,确认能收到我的通知邮件
+                            （注意垃圾箱！）"""
         else:
             # db 操作失败的日志 db 那边会记录
             reply = "绑定邮箱：" + email + "失败！请联系管理员处理：youdangls@gmail.com"
