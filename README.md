@@ -16,7 +16,9 @@ A simple tool for checking accessibility of specific articles
 
 开发文档见：[plan](dev_docs/plan.md)
 
+更新历史：[change log](CHANGELOG.md)
 ## Usage
+### 作为用户
 直接关注公众号：
 ![时间从来不回答](static/qrcode.jpg)
 
@@ -24,6 +26,20 @@ A simple tool for checking accessibility of specific articles
 
 更多详细介绍参见[用户指南页面](http://wx.twisted-meadows.com/)
 
+### 作为开发者
+如果想要部署自己的微信公众号备份服务，你需要：
+* 一个微信公众号
+* 一台80端口闲置且有固定IP的 Linux 服务器
+* 服务器上已部署 MySQL、sendmail 服务
+* 以上全部服务的账号和设置信息已写入**系统环境变量**，具体名称参考项目代码
+
+git clone 本项目，在根目录下执行：
+
+`pip3 install -r requirements.txt`
+
+安装完所有依赖的库后，用 python3 执行程序入口 `app.py` 即可：
+
+`sudo python3 app.py`
 ## Background
 受启发于[端点星计划](https://github.com/Terminus2049/Terminus2049.github.io)。
 (该项目已被破坏，参见[维基词条](https://zh.wikipedia.org/wiki/%E7%AB%AF%E7%82%B9%E6%98%9F%E4%BA%8B%E4%BB%B6))
