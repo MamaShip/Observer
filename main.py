@@ -122,7 +122,18 @@ class MainLogic(object):
         return reply
 
     def _handle_cmd(self, msg):
-        return self.cmd_list[msg.content](msg)
+        reply = "处理命令出错，无法提取出有效命令"
+        string = msg.content
+        try:
+            argv = string.split()
+            cmd = argv[0].lower()
+        except:
+            logger.warning("_handle_cmd parse string fail: " + string)
+            return reply
+        try:
+            reply = self.cmd_list[cmd](msg)
+        finally:
+            return reply
 
     def _help(self, msg):
         return HELP_MSG
