@@ -11,8 +11,9 @@ from docx.shared import Cm, Pt, Inches
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue
+from update_reason import *
 
-def default_callback(article_id, valid, backup_path):
+def default_callback(article_id, valid, backup_path=None, optionals={}):
     return
 
 def IsValidUrl(url):
@@ -50,6 +51,9 @@ class Checker_Queue:
             return None, None, None
         else:
             return article_id, url, download
+
+    def get_queue_size(self):
+        return self.q.qsize()
 
     def DoGetError(self):
         # to do
@@ -102,13 +106,15 @@ class Article_Checker(Thread):
     def DoArticleDeleted(self, article_id, url, delete_reason):
         print('article id {} deleted for {}'.format(article_id, delete_reason))
         # to do
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=False, 
+                            backup_path=None, optionals={"reason":REASON_INACCESSIBLE})
         return
 
     def DoArticleDeletedWithoutDownload(self, article_id, url, delete_reason):
         # to do
         print('article id {} deleted for {}'.format(article_id, delete_reason))
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=False, 
+                            backup_path=None, optionals={"reason":REASON_INACCESSIBLE})
         return
 
     def DoConnectionError(self, url):
@@ -119,7 +125,8 @@ class Article_Checker(Thread):
     def DoInvalidUrl(self, article_id, url):
         # to do
         print('Invalid Url : {}'.format(url))
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=False, 
+                            backup_path=None, optionals={"reason":REASON_INVALID_URL})
         return
 
     def DoRequestError(self, url):
