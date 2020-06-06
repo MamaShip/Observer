@@ -187,6 +187,25 @@ class Observer:
         return True
 
 
+def send_user_check_email(email):
+    """Send first check email to user.
+
+    Args:
+        email : str
+
+    Returns:
+        success: bool
+    """
+    receiver = [email]
+    body_text = ("您好，我是折光观察者，服务于公众号「时间从来不回答」\n"
+                "收到这封邮件是因为您在公众号内初次绑定了邮箱\n"
+                "我向您发送邮件以确认您此后能正确收到邮件通知\n"
+                "若本邮件被误分类为垃圾邮件，建议点击「这不是垃圾邮件」帮我逃离\n"
+                "另外，建议将本邮箱添加至通讯录/联系人列表，避免此后通知邮件再被误分类\n"
+                "\n\n\n如果您不知道为何收到本邮件，请联系：youdangls@gmail.com 处理")
+    msg = {'Subject': '初次绑定邮箱通知', 'Body': body_text}
+    return send_mail(receiver, contents=msg)
+
 def _backup_article(article_id, article_path):
     path = _get_path()
     if not os.path.exists(path):
