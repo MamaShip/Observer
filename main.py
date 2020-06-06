@@ -1,9 +1,10 @@
 import re
 import logging
 from database.db_operator import DbOperator
-from observer import Observer, update_article_status, send_user_check_email
+from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
 from definitions import *
+from utils.tools import total_used_space
 
 #先声明一个 Logger 对象
 logger = logging.getLogger("main")
@@ -43,7 +44,8 @@ class MainLogic(object):
                         "list"         : self._list, 
                         "delete"       : self._delete,
                         "admin-status" : self._admin_status, 
-                        "admin-list"   : self._admin_list}
+                        "admin-list"   : self._admin_list,
+                        "admin-run"    : self._admin_run}
         self.ob.init_checker()
 
     def __del__(self):
@@ -153,22 +155,17 @@ class MainLogic(object):
         user = msg.source
         if user not in ADMIN_LIST:
             return "非管理员账号，无法执行admin命令"
+
         db = DbOperator()
-        success, result = db.fetch_all_article()
-        if not success:
-            logger.info("_admin_status fetch 0")
-            return "admin-list 查询失败，结果为空"
-        cnt = len(result)
-        reply = "现有" + str(cnt) + "条记录观察中"
-        cnt_dict = {}
-        for item in result:
-            status = item['status']
-            if status not in cnt_dict:
-                cnt_dict[status] = 1
-            else:
-                cnt_dict[status] += 1
-        for i in cnt_dict:
-            reply = reply + "\n状态" + str(i) + "的有" + str(cnt_dict[i]) + "条"  
+        reply = analyze_article_status(db)
+        reply += "\n-------\n"
+        reply += analyze_user_status(db)
+        reply += "\n-------\n"
+        qsize = self.ob.get_cur_q_size()
+        reply += "队列中的条目数量：" + str(qsize)
+        reply += "\n-------\n"
+        space_info = total_used_space(DEFAULT_PATH)
+        reply += space_info
         return reply
 
     def _admin_list(self, msg):
@@ -191,6 +188,15 @@ class MainLogic(object):
             output.append(item['status'])
             output.append('--------')
         return "\n".join(map(str, output))
+
+    def _admin_run(self, msg):
+        user = msg.source
+        if user not in ADMIN_LIST:
+            return "非管理员账号，无法执行admin命令"
+        if self.ob.ob_all():
+            return "已执行一次全局观察"
+        else:
+            return "全局观察执行中出错，请检查日志"
 
     def _delete(self, msg):
         string = msg.content
@@ -256,6 +262,28 @@ class MainLogic(object):
         if msg.event == "subscribe":
             return True
         return False
+
+def analyze_article_status(db):
+    success, result = db.fetch_all_article()
+    if not success:
+        logger.info("analyze_article_status fetch 0 article")
+    cnt = len(result)
+    reply = "现有" + str(cnt) + "条记录观察中"
+    cnt_dict = {}
+    for item in result:
+        status = item['status']
+        if status not in cnt_dict:
+            cnt_dict[status] = 1
+        else:
+            cnt_dict[status] += 1
+    for i in cnt_dict:
+        reply = reply + "\n状态" + str(i) + "的有" + str(cnt_dict[i]) + "条"
+    return reply
+
+def analyze_user_status(db):
+    _, result = db.fetch_all_user()
+    cnt = len(result)
+    return "有" + str(cnt) + "名用户已绑定邮箱"
 
 if __name__ == "__main__":
     print("test handle cmd")
