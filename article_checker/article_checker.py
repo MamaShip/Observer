@@ -11,7 +11,7 @@ from docx.shared import Cm, Pt, Inches
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue
-from update_reason import *
+from .update_reason import *
 
 def default_callback(article_id, valid, backup_path=None, optionals={}):
     return
