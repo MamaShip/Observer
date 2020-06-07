@@ -14,8 +14,15 @@ from queue import Queue
 from .update_reason import *
 import logging
 
-# 获取 Logger 对象
+#先声明一个 Logger 对象
 logger = logging.getLogger("article_checker")
+logger.setLevel(level=logging.DEBUG)
+#然后指定其对应的 Handler 为 FileHandler 对象
+handler = logging.FileHandler('article_checker.log')
+#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 def default_callback(article_id, valid, backup_path=None, optionals={}):
     return

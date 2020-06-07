@@ -41,7 +41,7 @@ TABLES['articles'] = (
     "  `backup_addr` varchar(100) NOT NULL,"
     "  `start_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
-    "  `title` varchar(2048) NULL,"
+    "  `title` varchar(2048),"
     "  PRIMARY KEY (`article_id`)"
     ") ENGINE=InnoDB"
     "  DEFAULT CHARACTER SET = utf8;")
@@ -55,8 +55,10 @@ TABLES['archive'] = (
     "  `start_date` date NOT NULL,"
     "  `end_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
+    "  `title` varchar(2048),"
     "  PRIMARY KEY (`article_id`)"
-    ") ENGINE=InnoDB")
+    ") ENGINE=InnoDB"
+    "  DEFAULT CHARACTER SET = utf8;")
 
 
 class DbOperator:
