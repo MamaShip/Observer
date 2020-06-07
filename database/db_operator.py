@@ -41,8 +41,10 @@ TABLES['articles'] = (
     "  `backup_addr` varchar(100) NOT NULL,"
     "  `start_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
+    "  `title` varchar(2048),"
     "  PRIMARY KEY (`article_id`)"
-    ") ENGINE=InnoDB")
+    ") ENGINE=InnoDB"
+    "  DEFAULT CHARACTER SET = utf8;")
 
 TABLES['archive'] = (
     "CREATE TABLE `archive` ("
@@ -53,8 +55,10 @@ TABLES['archive'] = (
     "  `start_date` date NOT NULL,"
     "  `end_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
+    "  `title` varchar(2048),"
     "  PRIMARY KEY (`article_id`)"
-    ") ENGINE=InnoDB")
+    ") ENGINE=InnoDB"
+    "  DEFAULT CHARACTER SET = utf8;")
 
 
 class DbOperator:
@@ -311,10 +315,10 @@ class DbOperator:
         Returns:
             success: True/False
         """
-        article_id, backup_addr, status = article
+        article_id, backup_addr, status, title = article
         update = (
-            "UPDATE articles SET backup_addr=%s, status=%s WHERE article_id=%s;")
-        parameters = (backup_addr, status, article_id)
+            "UPDATE articles SET backup_addr=%s, status=%s, title=%s WHERE article_id=%s;")
+        parameters = (backup_addr, status, article_id, title)
         return self._commit_cmd(update, parameters)
 
     def remove_article(self, article_id):
