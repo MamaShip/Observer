@@ -90,7 +90,7 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
                 new_path = _backup_article(article_id, backup_path)
                 try:
                     title = optionals["title"]
-                except:
+                except KeyError:
                     title = ''
                 if new_path == None:
                     return False
@@ -255,10 +255,13 @@ def _save_file(new_path, old_path):
     # 只是个mv动作
     try:
         shutil.move(old_path, new_path)
-    except:
+    except shutil.Error:
         print("save file fail!:", new_path, old_path)
-        logger.error("save file fail: "
-                     + " ".join([new_path, old_path]))
+        logger.exception("save file fail: "
+                        + " ".join([new_path, old_path]))
+        return False
+    except IOError:
+        logger.exception("sys IOError: " + " ".join([new_path, old_path]))
         return False
     print("save file done:", new_path)
     return True
