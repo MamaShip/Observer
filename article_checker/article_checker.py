@@ -7,7 +7,7 @@ import os
 from bs4 import BeautifulSoup
 from io import BytesIO
 from docx import Document
-from docx.shared import Cm, Pt, Inches
+from docx.shared import Cm, Inches
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue

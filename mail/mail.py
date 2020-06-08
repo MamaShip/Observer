@@ -1,6 +1,5 @@
 import os
 import smtplib
-import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import logging
@@ -51,9 +50,12 @@ def send_mail(receiver, contents=DEFAULT_MSG, attachments=[]):
     # connet
     try:
         print(smtp.connect(HOST, PORT))
-    except:
+    except smtplib.SMTPConnectError:
         print('CONNECT ERROR ****')
-        logger.error("Fail to connect")
+        logger.exception("SMTP Fail to connect")
+        result = False
+    except smtplib.SMTPException:
+        logger.exception("SMTPException")
         result = False
 
     # gmail uses ssl

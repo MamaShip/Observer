@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import logging
-from flask import Flask, request, abort, render_template
+from flask import Flask, request, abort, render_template, escape
 from wechatpy import parse_message, create_reply
 from wechatpy.utils import check_signature
 from wechatpy.exceptions import (
@@ -40,7 +40,7 @@ def wechat():
         abort(403)
     if request.method == "GET":
         echo_str = request.args.get("echostr", "")
-        return echo_str
+        return escape(echo_str)
 
     # POST request
     if encrypt_type == "raw":
@@ -74,5 +74,5 @@ def wechat():
 
 
 if __name__ == "__main__":
-    app.run("0.0.0.0", 80, debug=True, use_reloader=False)
+    app.run("0.0.0.0", 80, debug=False, use_reloader=False)
     logging.info(">> service start!")

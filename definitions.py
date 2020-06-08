@@ -1,5 +1,9 @@
 from article_checker.update_reason import *
 
+__all__ = ['STATUS_NEW_UNKNOWN', 'STATUS_NORMAL_OB', 'STATUS_NOT_VALID',
+            'STATUS_BAD_REQUEST', 'STATUS_INACCESSIBLE', 'STATUS_OUT_OF_DATE',
+            'STATUS_DELETE_BY_USER', 'reason2status', 'reason2text']
+
 # article status definition：
 #  watching status
 STATUS_NEW_UNKNOWN = 0 # 初次添加，状态未知

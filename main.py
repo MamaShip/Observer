@@ -127,7 +127,7 @@ class MainLogic(object):
         try:
             argv = string.split()
             cmd = argv[0].lower()
-        except:
+        except IndexError:
             logger.warning("_handle_cmd parse string fail: " + string)
             return reply
         try:
@@ -214,8 +214,8 @@ class MainLogic(object):
         try:
             argv = string.split()
             article_id = int(argv[1])
-        except:
-            logger.info("_delete parse string fail: " + string)
+        except IndexError:
+            logger.exception("_delete parse string fail: " + string)
             return "delete 失败，不是合法的输入，请检查格式"
         
         db = DbOperator()
@@ -249,8 +249,7 @@ class MainLogic(object):
         try:
             argv = string.split()
             header = argv[0].lower()
-        except:
-            logger.warning("_is_cmd parse string fail: " + string)
+        except IndexError:
             return False
 
         if header in self.cmd_list:
@@ -262,10 +261,11 @@ class MainLogic(object):
         if "&chksm=" in URL:
             try:
                 short_ver = URL.split("&chksm=")[0]
-            except:
+            except IndexError:
                 logger.warning("_trim_URL fail: " + URL)
                 return URL
-            return short_ver
+            else:
+                return short_ver
         else:
             return URL
     

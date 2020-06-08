@@ -7,7 +7,7 @@ operations.
 import os
 import logging
 import mysql.connector
-from mysql.connector import errorcode
+errorcode = mysql.connector.errorcode
 
 # !!! 已知问题：当数据库内没有目标项目时，对其做 update/delete 都不会报错
 #先声明一个 Logger 对象
@@ -96,13 +96,14 @@ class DbOperator:
             cursor.execute(cmd, parameters)
             # Commit the changes
             self.db.commit()
-        except:
+        except mysql.connector.Error:
             self.db.rollback()
             success = False
             # log it
             logger.warning("commit fail when executing cmd: " + cmd)
             logger.warning("> with parameters: "
                             + " ".join(map(str, parameters)))
+            logger.exception("_commit_cmd Error")
         cursor.close()
         return success
 
@@ -470,10 +471,12 @@ class DbCreator:
                 cursor.execute(delete_cmd)
                 # Commit the changes
                 self.db.commit()
-            except:
+            except mysql.connector.Error as err:
                 self.db.rollback()
                 # log it
                 print("delete table fail:", table_name)
+                logger.warning("delete_table() ERROR.")
+                logger.warning(err.msg)
             else:
                 print("delete table " + table_name + " OK")
                 logger.warning("table " + table_name + " deleted.")
