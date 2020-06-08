@@ -18,3 +18,11 @@ reason2status = {
     REASON_INVALID_URL    : STATUS_NOT_VALID,
     REASON_NULL           : STATUS_NORMAL_OB
 }
+
+reason2text = {
+    REASON_DELETE_BY_USER : "由用户决定停止观察",
+    REASON_INACCESSIBLE   : "已失效，不可访问",
+    REASON_OUT_OF_DATE    : "已超出最长观察期",
+    REASON_INVALID_URL    : "链接无效，无法观察",
+    REASON_NULL           : "停止观察的原因未知"
+}
