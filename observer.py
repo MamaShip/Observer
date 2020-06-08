@@ -14,7 +14,7 @@ DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
 MAX_OB_DAYS = 30
 
-def notify_user(email, URL, backup_addr):
+def notify_user(email, URL, backup_addr, reason=REASON_NULL):
     """Send email to users.
     Send email to users for notifying article expiration.
     With backup file attached.
@@ -22,11 +22,18 @@ def notify_user(email, URL, backup_addr):
     Args:
         URL : str
         backup_addr : str
+        reason : str
+            must be keys in the dict {reason2text}
 
     Returns:
         success: bool
     """
     receiver = [email]
+    try:
+        reason_text = reason2text[reason]
+    except KeyError:
+        logger.exception("notify_user reason key ERROR")
+        reason_text = "停止观察的原因未知"
 
     if backup_addr == None:
         addition = '\n截止观察结束时，没有成功备份的文档存留。\n如有疑问请联系管理员：youdangls@gmail.com'
@@ -34,7 +41,7 @@ def notify_user(email, URL, backup_addr):
     else:
         addition = '\n附件是文章备份，请查收。'
         attach = [backup_addr]
-    body_text = '您观察的文章：' + URL + ' 已失效/超出观察期。' + addition
+    body_text = '您观察的文章：' + URL + reason_text + addition
     msg = {'Subject': '您的观察目标有状态更新', 'Body': body_text}
     return send_mail(receiver, contents=msg, attachments=attach)
 
@@ -60,7 +67,6 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
         print("can't find article by article_id: " + str(article_id))
         logger.error("can't find article by article_id: " + str(article_id))
         return False
-    URL = item['URL']
     open_id = item['open_id']
     success, result = db.find_user(open_id)
     if not success:
@@ -70,19 +76,8 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
     email = result['email']
     # 开始更新数据库
     if not valid:  # 当文章已不可访问
-        if item['backup_addr'] == FAKE_PATH_PLACE_HOLDER:
-            backup_addr = None
-        else:
-            backup_addr = item['backup_addr']
-        try:
-            notify_user(email, URL, backup_addr)
-            item['status'] = reason2status[optionals["reason"]]
-            db.archive_article(item)
-        except:
-            logger.error("update_article_status ERROR")
-            return False
-        logger.info("article expired, move to archive: "
-                    + " ".join(map(str, [article_id, URL])))
+        update_info = (article_id, optionals)
+        _stop_watching(update_info, item, email, db)
     else:
         prev_status = item['status']
         if prev_status == STATUS_NORMAL_OB:  # 正常观察状态,无需额外操作
@@ -107,7 +102,6 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
                          + " ".join(map(str, [article_id, open_id, prev_status])))
 
     return True
-
 
 class Observer:
     def __init__(self):
@@ -216,6 +210,27 @@ def send_user_check_email(email):
                 "\n\n\n如果您不知道为何收到本邮件，请联系：youdangls@gmail.com 处理")
     msg = {'Subject': '初次绑定邮箱通知', 'Body': body_text}
     return send_mail(receiver, contents=msg)
+
+def _stop_watching(update_info, item, email, db):
+    article_id, optionals = update_info
+    URL = item['URL']
+    if item['backup_addr'] == FAKE_PATH_PLACE_HOLDER:
+        backup_addr = None
+    else:
+        backup_addr = item['backup_addr']
+    try:
+        reason = optionals["reason"]
+    except KeyError:
+        reason = REASON_NULL
+    notify_user(email, URL, backup_addr, reason)
+    try:
+        item['status'] = reason2status[reason]
+    except KeyError:
+        logger.exception("_stop_watching reason2status ERROR")
+    db.archive_article(item)
+    logger.info("article expired, move to archive: "
+                + " ".join(map(str, [article_id, URL])))
+    return
 
 def _backup_article(article_id, article_path):
     path = _get_path()
