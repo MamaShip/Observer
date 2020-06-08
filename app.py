@@ -74,5 +74,5 @@ def wechat():
 
 
 if __name__ == "__main__":
-    app.run("0.0.0.0", 80, debug=True, use_reloader=False)
+    app.run("0.0.0.0", 80, debug=False, use_reloader=False)
     logging.info(">> service start!")
