@@ -3,7 +3,7 @@ import logging
 from database.db_operator import DbOperator
 from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
-from definitions import *
+from definitions import REASON_DELETE_BY_USER
 from utils.tools import total_used_space
 
 #先声明一个 Logger 对象

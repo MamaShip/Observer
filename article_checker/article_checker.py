@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import requests
 from threading import Lock, Thread
 from time import sleep
@@ -11,8 +10,10 @@ from docx.shared import Cm, Inches
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue
-from .update_reason import *
+from .update_reason import REASON_INACCESSIBLE, REASON_INVALID_URL
 import logging
+
+__all__ = ["Checker_Queue", "Article_Checker"]
 
 #先声明一个 Logger 对象
 logger = logging.getLogger("article_checker")

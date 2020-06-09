@@ -1,6 +1,9 @@
 from article_checker.update_reason import *
 
-__all__ = ['STATUS_NEW_UNKNOWN', 'STATUS_NORMAL_OB', 'STATUS_NOT_VALID',
+__all__ = [ 'REASON_DELETE_BY_USER', 'REASON_INACCESSIBLE',
+            'REASON_OUT_OF_DATE', 'REASON_INVALID_URL',
+            'REASON_NULL',
+            'STATUS_NEW_UNKNOWN', 'STATUS_NORMAL_OB', 'STATUS_NOT_VALID',
             'STATUS_BAD_REQUEST', 'STATUS_INACCESSIBLE', 'STATUS_OUT_OF_DATE',
             'STATUS_DELETE_BY_USER', 'reason2status', 'reason2text']
 
