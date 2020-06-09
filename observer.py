@@ -35,7 +35,7 @@ def notify_user(email, URL, backup_addr, reason=REASON_NULL):
         logger.exception("notify_user reason key ERROR")
         reason_text = "停止观察的原因未知"
 
-    if backup_addr == None:
+    if backup_addr is None:
         addition = '\n截止观察结束时，没有成功备份的文档存留。\n如有疑问请联系管理员：youdangls@gmail.com'
         attach = []
     else:
@@ -83,7 +83,7 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
         if prev_status == STATUS_NORMAL_OB:  # 正常观察状态,无需额外操作
             return True
         elif prev_status == STATUS_NEW_UNKNOWN:  # 初次完成观察，制作备份
-            if backup_path == None:
+            if backup_path is None:
                 print("backup addr not valid")
                 return False
             else:
@@ -92,7 +92,7 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
                     title = optionals["title"]
                 except KeyError:
                     title = ''
-                if new_path == None:
+                if new_path is None:
                     return False
                 article_info = (article_id, new_path, STATUS_NORMAL_OB, title) # 制作备份完成，状态更新
                 return db.update_article(article_info)
@@ -108,13 +108,10 @@ class Observer:
         self.q = Checker_Queue(max_size=500)
 
     def init_checker(self):
-        try:
-            self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='',
-                                        call_back_func=update_article_status)
-            self.ac.start()
-            logger.info("Article_Checker init done")
-        except:
-            logger.error("Article_Checker init FAIL!")
+        self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='',
+                                    call_back_func=update_article_status)
+        self.ac.start()
+        logger.info("Article_Checker init done")
 
     def ob_this_one(self, URL, open_id):
         """Add a new article to watch list.

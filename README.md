@@ -6,6 +6,7 @@
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-3-orange.svg)](#contributors)
 ![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/MamaShip/Observer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/MamaShip/Observer/context:python)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 A simple tool for checking accessibility of specific articles
