@@ -108,7 +108,7 @@ class Observer:
         self.q = Checker_Queue(max_size=500)
 
     def init_checker(self):
-        self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='',
+        self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='tmp/',
                                     call_back_func=update_article_status)
         self.ac.start()
         logger.info("Article_Checker init done")

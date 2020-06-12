@@ -183,13 +183,14 @@ class Article_Checker(Thread):
                     self.DoArticleExist(article_id)
                 else: # need download
                     file_name = str(article_id) + '.docx'
+                    file_path = os.path.join(self.saving_path, file_name)
                     try:
-                        title = Save2Doc(page_soup, self.saving_path + file_name)
+                        title = Save2Doc(page_soup, file_path)
                     except:
                         self.DoSavingFailed(article_id)
                         title = ''
                     else:
-                        self.DoSavingSucceed(article_id, title, os.path.join(os.getcwd(), self.saving_path+file_name)) # 这里用的绝对地址
+                        self.DoSavingSucceed(article_id, title, os.path.join(os.getcwd(), file_path)) # 这里用的绝对地址
                     # Save2Doc(page_soup, self.saving_path + file_name)
                     # self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path + file_name))
                 continue
