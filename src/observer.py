@@ -5,7 +5,7 @@ import shutil
 from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
-from definitions import *
+from definitions import * # lgtm [py/polluting-import]
 
 # 获取 Logger 对象(跟main共用一个logger)
 logger = logging.getLogger("main")
@@ -108,7 +108,7 @@ class Observer:
         self.q = Checker_Queue(max_size=500)
 
     def init_checker(self):
-        self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='',
+        self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='tmp/',
                                     call_back_func=update_article_status)
         self.ac.start()
         logger.info("Article_Checker init done")
