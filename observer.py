@@ -5,7 +5,7 @@ import shutil
 from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
 from mail.mail import send_mail
-from definitions import *
+from definitions import * # lgtm [py/polluting-import]
 
 # 获取 Logger 对象(跟main共用一个logger)
 logger = logging.getLogger("main")
