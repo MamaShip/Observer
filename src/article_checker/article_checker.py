@@ -259,10 +259,10 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
     try:
         title = page_soup.find(name='h2').text.strip()
     except:
-        title = doc.add_heading('获取文章标题时出错')
+        doc_title = doc.add_heading('获取文章标题时出错')
     else:
-        title = doc.add_heading(title)
-    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        doc_title = doc.add_heading(title)
+    doc_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     # get author information
     cur_para = doc.add_paragraph()
     cur_para.add_run('作者介绍：')
