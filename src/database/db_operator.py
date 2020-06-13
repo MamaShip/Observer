@@ -319,7 +319,7 @@ class DbOperator:
         article_id, backup_addr, status, title = article
         update = (
             "UPDATE articles SET backup_addr=%s, status=%s, title=%s WHERE article_id=%s;")
-        parameters = (backup_addr, status, article_id, title)
+        parameters = (backup_addr, status, title, article_id)
         return self._commit_cmd(update, parameters)
 
     def remove_article(self, article_id):

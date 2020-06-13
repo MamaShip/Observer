@@ -195,7 +195,7 @@ class MainLogic(object):
             output.append(item['URL'])
             output.append(item['open_id'])
             output.append(item['backup_addr'])
-            output.append(item['start_date'])
+            # output.append(item['start_date']) # 这个有bug，先注释掉
             output.append(item['status'])
             output.append('--------')
         return "\n".join(map(str, output))
