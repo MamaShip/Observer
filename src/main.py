@@ -158,7 +158,8 @@ class MainLogic(object):
         reply = "现有" + str(len(article_list)) + "条记录观察中\n-------\n"
         URL_list = []
         for item in article_list:
-            URL_list.append(str(item['article_id']) + " " + item['URL'])
+            URL_list.append(str(item['article_id']) + " " + item['URL']
+                            + " " + item['title'])
         reply = reply + "\n\n".join(URL_list)
         return reply
 

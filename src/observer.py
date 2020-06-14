@@ -14,7 +14,7 @@ DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
 MAX_OB_DAYS = 30
 
-def notify_user(email, URL, backup_addr, reason=REASON_NULL):
+def notify_user(email, URL, backup_addr, reason=REASON_NULL, title=None):
     """Send email to users.
     Send email to users for notifying article expiration.
     With backup file attached.
@@ -34,6 +34,10 @@ def notify_user(email, URL, backup_addr, reason=REASON_NULL):
     except KeyError:
         logger.exception("notify_user reason key ERROR")
         reason_text = "停止观察的原因未知"
+    if title is None:
+        title_text = ""
+    else:
+        title_text = "《" + str(title) + "》 " # 总之还是转一下str，确保健壮性
 
     if backup_addr is None:
         addition = '\n截止观察结束时，没有成功备份的文档存留。\n如有疑问请联系管理员：youdangls@gmail.com'
@@ -41,7 +45,7 @@ def notify_user(email, URL, backup_addr, reason=REASON_NULL):
     else:
         addition = '\n附件是文章备份，请查收。'
         attach = [backup_addr]
-    body_text = '您观察的文章：' + URL + reason_text + addition
+    body_text = '您观察的文章：' + title_text + URL + ' ' + reason_text + addition
     msg = {'Subject': '您的观察目标有状态更新', 'Body': body_text}
     return send_mail(receiver, contents=msg, attachments=attach)
 
@@ -219,7 +223,7 @@ def _stop_watching(update_info, item, email, db):
         reason = optionals["reason"]
     except KeyError:
         reason = REASON_NULL
-    notify_user(email, URL, backup_addr, reason)
+    notify_user(email, URL, backup_addr, reason, item['title'])
     try:
         item['status'] = reason2status[reason]
     except KeyError:
