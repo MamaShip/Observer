@@ -250,12 +250,15 @@ class DbOperator:
 
         Returns:
             success: bool
+            item: dict
+                {article_id, URL, open_id, backup_addr, start_date, status, title}
         """
         success = False
-        query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles "
+        query = ("SELECT article_id, URL, open_id, backup_addr, "
+                "start_date, status, title FROM articles "
                 "WHERE article_id=%s;")
         query_result = self._execute_cmd(query, (article_id,))
-        for (_, URL, open_id, backup_addr, start_date, status) in query_result:
+        for (_, URL, open_id, backup_addr, start_date, status, title) in query_result:
             item = {}
             item['article_id'] = article_id
             item['URL'] = URL
@@ -263,6 +266,7 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            item['title'] = title
             success = True
 
         if success:
@@ -286,11 +290,12 @@ class DbOperator:
                     'backup_addr','start_date','status'}
         """
         success = True
-        query = ("SELECT article_id, URL, backup_addr, start_date, status FROM articles "
-                 "WHERE open_id=%s;")
+        query = ("SELECT article_id, URL, backup_addr, start_date, "
+                "status, title FROM articles "
+                "WHERE open_id=%s;")
         query_result = self._execute_cmd(query, (open_id,))
         result = []
-        for (article_id, URL, backup_addr, start_date, status) in query_result:
+        for (article_id, URL, backup_addr, start_date, status, title) in query_result:
             item = {}
             item['article_id'] = article_id
             item['URL'] = URL
@@ -298,6 +303,7 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            item['title'] = title
             result.append(item)
         if len(result) == 0:
             success = False
@@ -311,14 +317,15 @@ class DbOperator:
         Change(Set) article info to database.
 
         Args:
-            article: A tuple of article info like: (article_id, backup_addr, status)
+            article: A tuple of article info
+                (article_id, backup_addr, status, title)
 
         Returns:
             success: True/False
         """
         article_id, backup_addr, status, title = article
-        update = (
-            "UPDATE articles SET backup_addr=%s, status=%s, title=%s WHERE article_id=%s;")
+        update = ("UPDATE articles SET backup_addr=%s, "
+                "status=%s, title=%s WHERE article_id=%s;")
         parameters = (backup_addr, status, title, article_id)
         return self._commit_cmd(update, parameters)
 
@@ -345,13 +352,15 @@ class DbOperator:
         Returns:
             success: True/False
             result: a list of dict like {'article_id', 'URL',
-                    'open_id','backup_addr','start_date','status'}
+                    'open_id','backup_addr','start_date','status','title'}
         """
         success = True
-        query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles;")
+        query = ("SELECT article_id, URL, open_id, backup_addr, "
+                "start_date, status, title FROM articles;")
         query_result = self._execute_cmd(query, None)
         result = []
-        for (article_id, URL, open_id, backup_addr, start_date, status) in query_result:
+        for (article_id, URL, open_id, backup_addr, start_date,
+                status, title) in query_result:
             item = {}
             item['article_id'] = article_id
             item['URL'] = URL
@@ -359,6 +368,7 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            item['title'] = title
             result.append(item)
         if len(result) == 0:
             success = False
@@ -370,7 +380,8 @@ class DbOperator:
         article_id = article['article_id']
         self.remove_article(article_id)
         new_record = (article_id, article['URL'], article['open_id'],
-                    article['backup_addr'], article['start_date'], article['status'])
+                    article['backup_addr'], article['start_date'],
+                    article['status'], article['title'])
         return self._add_archive(new_record)
 
     def _add_archive(self, article):
@@ -384,9 +395,9 @@ class DbOperator:
         Returns:
             success or not: True/False
         """
-        insert_new_article = (
-            "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, end_date, status) "
-            "VALUES (%s, %s, %s, %s, %s, NOW(), %s);")
+        insert_new_article = ("INSERT INTO archive (article_id, URL, open_id, "
+                            "backup_addr, start_date, end_date, status, title) "
+                            "VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s);")
         return self._commit_cmd(insert_new_article, article)
 
     def db_add_helper(self, URL, open_id, backup_addr, status):
