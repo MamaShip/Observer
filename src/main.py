@@ -4,7 +4,7 @@ from database.db_operator import DbOperator
 from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
 from definitions import REASON_DELETE_BY_USER
-from utils.tools import total_used_space
+from utils.tools import total_used_space, str_occupied_space
 
 #先声明一个 Logger 对象
 logger = logging.getLogger("main")
@@ -16,6 +16,7 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+MAX_TEXT_LENGTH = 2048
 EMAIL_RULE = re.compile(r'^[a-zA-Z0-9\._\-\+]{1,64}@([A-Za-z0-9_\-\.]){1,128}\.([A-Za-z]{2,8})$')
 # CMD_LIST = ["help", "status", "list", "admin-status", "admin-list"]
 ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks",
@@ -65,6 +66,8 @@ class MainLogic(object):
         else: # invalid msg
             reply = "听不懂你在说啥！\n--------------\n观察目标暂时只接受微信公众号文章。\n不要有无意义的空格、分号、换行符等。\n请回复「help」查看规则"
         
+        if reply_too_long(reply):
+            reply = reply[:1000] # 暂时截断到前1000字符
         return reply
     
     def handle_event(self, evt):
@@ -130,10 +133,9 @@ class MainLogic(object):
         except IndexError:
             logger.warning("_handle_cmd parse string fail: " + string)
             return reply
-        try:
-            reply = self.cmd_list[cmd](msg)
-        finally:
-            return reply
+
+        reply = self.cmd_list[cmd](msg)
+        return reply
 
     def _help(self, msg):
         return HELP_MSG
@@ -158,8 +160,8 @@ class MainLogic(object):
         reply = "现有" + str(len(article_list)) + "条记录观察中\n-------\n"
         URL_list = []
         for item in article_list:
-            URL_list.append(str(item['article_id']) + " " + item['URL']
-                            + " " + item['title'])
+            URL_list.append(str(item['article_id']) + " " + str(item['title'])
+                            + " " + item['URL'])
         reply = reply + "\n\n".join(URL_list)
         return reply
 
@@ -296,6 +298,10 @@ def analyze_user_status(db):
     _, result = db.fetch_all_user()
     cnt = len(result)
     return "有" + str(cnt) + "名用户已绑定邮箱"
+
+def reply_too_long(string):
+    real_byte_len = str_occupied_space(string)
+    return MAX_TEXT_LENGTH < real_byte_len
 
 if __name__ == "__main__":
     print("test handle cmd")
