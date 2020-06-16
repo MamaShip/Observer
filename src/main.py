@@ -133,10 +133,9 @@ class MainLogic(object):
         except IndexError:
             logger.warning("_handle_cmd parse string fail: " + string)
             return reply
-        try:
-            reply = self.cmd_list[cmd](msg)
-        finally:
-            return reply
+
+        reply = self.cmd_list[cmd](msg)
+        return reply
 
     def _help(self, msg):
         return HELP_MSG
