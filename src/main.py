@@ -1,20 +1,11 @@
 import re
-import logging
 from database.db_operator import DbOperator
 from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
 from definitions import REASON_DELETE_BY_USER
-from utils.tools import total_used_space, str_occupied_space
+from utils import tools
 
-#先声明一个 Logger 对象
-logger = logging.getLogger("main")
-logger.setLevel(level=logging.DEBUG)
-#然后指定其对应的 Handler 为 FileHandler 对象
-handler = logging.FileHandler('sys.log')
-#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+logger = tools.get_logger("sys")
 
 MAX_TEXT_LENGTH = 2048
 EMAIL_RULE = re.compile(r'^[a-zA-Z0-9\._\-\+]{1,64}@([A-Za-z0-9_\-\.]){1,128}\.([A-Za-z]{2,8})$')
@@ -47,7 +38,7 @@ class MainLogic(object):
                         "admin-status" : self._admin_status, 
                         "admin-list"   : self._admin_list,
                         "admin-run"    : self._admin_run}
-        self.ob.init_checker()
+        self.ob.init_multi_thread()
 
     def __del__(self):
         self.timer.stop()
@@ -178,7 +169,7 @@ class MainLogic(object):
         qsize = self.ob.get_cur_q_size()
         reply += "队列中的条目数量：" + str(qsize)
         reply += "\n-------\n"
-        space_info = total_used_space(DEFAULT_PATH)
+        space_info = tools.total_used_space(DEFAULT_PATH)
         reply += space_info
         return reply
 
@@ -300,7 +291,7 @@ def analyze_user_status(db):
     return "有" + str(cnt) + "名用户已绑定邮箱"
 
 def reply_too_long(string):
-    real_byte_len = str_occupied_space(string)
+    real_byte_len = tools.str_occupied_space(string)
     return MAX_TEXT_LENGTH < real_byte_len
 
 if __name__ == "__main__":
