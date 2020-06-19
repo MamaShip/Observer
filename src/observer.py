@@ -4,17 +4,18 @@ import datetime
 import shutil
 from article_checker.article_checker import Checker_Queue, Article_Checker
 from database.db_operator import DbOperator
-from mail.mail import send_mail
+from mail.postman import Mail_Queue, Postman
 from definitions import * # lgtm [py/polluting-import]
 
 # 获取 Logger 对象(跟main共用一个logger)
-logger = logging.getLogger("main")
+logger = logging.getLogger("sys")
 
 DEFAULT_PATH = "/var/wx/article"
 FAKE_PATH_PLACE_HOLDER = "placeholder"
 MAX_OB_DAYS = 30
+MAIL_QUEUE = Mail_Queue()
 
-def notify_user(email, URL, backup_addr, reason=REASON_NULL):
+def notify_user(email, URL, backup_addr, reason=REASON_NULL, title=None):
     """Send email to users.
     Send email to users for notifying article expiration.
     With backup file attached.
@@ -34,6 +35,10 @@ def notify_user(email, URL, backup_addr, reason=REASON_NULL):
     except KeyError:
         logger.exception("notify_user reason key ERROR")
         reason_text = "停止观察的原因未知"
+    if title is None:
+        title_text = ""
+    else:
+        title_text = "《" + str(title) + "》 " # 总之还是转一下str，确保健壮性
 
     if backup_addr is None:
         addition = '\n截止观察结束时，没有成功备份的文档存留。\n如有疑问请联系管理员：youdangls@gmail.com'
@@ -41,9 +46,9 @@ def notify_user(email, URL, backup_addr, reason=REASON_NULL):
     else:
         addition = '\n附件是文章备份，请查收。'
         attach = [backup_addr]
-    body_text = '您观察的文章：' + URL + reason_text + addition
+    body_text = '您观察的文章：' + title_text + URL + ' ' + reason_text + addition
     msg = {'Subject': '您的观察目标有状态更新', 'Body': body_text}
-    return send_mail(receiver, contents=msg, attachments=attach)
+    return _send_mail(receiver, contents=msg, attachments=attach)
 
 
 def update_article_status(article_id, valid, backup_path=None, optionals={}):
@@ -107,11 +112,13 @@ class Observer:
     def __init__(self):
         self.q = Checker_Queue(max_size=500)
 
-    def init_checker(self):
+    def init_multi_thread(self):
         self.ac = Article_Checker(self.q, sleeping_time=6, saving_path='tmp/',
                                     call_back_func=update_article_status)
         self.ac.start()
-        logger.info("Article_Checker init done")
+        self.postman = Postman(MAIL_QUEUE)
+        self.postman.start()
+        logger.info("multi-thread init done")
 
     def ob_this_one(self, URL, open_id):
         """Add a new article to watch list.
@@ -206,7 +213,11 @@ def send_user_check_email(email):
                 "另外，建议将本邮箱添加至通讯录/联系人列表，避免此后通知邮件再被误分类\n"
                 "\n\n\n如果您不知道为何收到本邮件，请联系：youdangls@gmail.com 处理")
     msg = {'Subject': '初次绑定邮箱通知', 'Body': body_text}
-    return send_mail(receiver, contents=msg)
+    return _send_mail(receiver, contents=msg)
+
+
+def _send_mail(receiver, contents, attachments=[]):
+    return MAIL_QUEUE.put(receiver, contents, attachments)
 
 def _stop_watching(update_info, item, email, db):
     article_id, optionals = update_info
@@ -219,7 +230,9 @@ def _stop_watching(update_info, item, email, db):
         reason = optionals["reason"]
     except KeyError:
         reason = REASON_NULL
-    notify_user(email, URL, backup_addr, reason)
+    result = notify_user(email, URL, backup_addr, reason, item['title'])
+    if not result:
+        logger.error("notify_user fail!")
     try:
         item['status'] = reason2status[reason]
     except KeyError:
