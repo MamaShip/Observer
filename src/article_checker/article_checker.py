@@ -9,8 +9,8 @@ from docx import Document
 from docx.shared import Cm, Inches
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from queue import Queue
-from .update_reason import REASON_INACCESSIBLE, REASON_INVALID_URL
+from queue import Queue, Empty, Full
+from article_checker.update_reason import REASON_INACCESSIBLE, REASON_INVALID_URL
 import logging
 
 __all__ = ["Checker_Queue", "Article_Checker"]
@@ -25,7 +25,7 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-def default_callback(article_id, valid, backup_path=None, optionals={}):
+def default_callback(article_id, valid, backup_path=None, optionals=dict()):
     return
 
 def IsValidUrl(url):
@@ -52,13 +52,13 @@ class Checker_Queue:
         if IsValidUrl(url):
             try:
                 self.q.put((article_id, url, download), block=block, timeout=timeout)
-            except:
+            except Full:
                 self.DoPutError()
 
-    def get(self, block=True, timeout=1):
+    def get(self, block=True, timeout=None):
         try:
             (article_id, url, download) = self.q.get(block=block, timeout=timeout)
-        except:
+        except Empty:
             self.DoGetError()
             return None, None, None
         else:
@@ -69,12 +69,12 @@ class Checker_Queue:
 
     def DoGetError(self):
         # to do
-        logger.error("checker queue get error")
+        logger.error("checker queue get error: empty")
         return
 
     def DoPutError(self):
         # to do
-        logger.error("checker queue put error")
+        logger.error("checker queue put error: full")
         return
 
 # 从消息队列取元素进行判断
@@ -152,7 +152,7 @@ class Article_Checker(Thread):
 
     def run(self):
         while True:
-            (article_id, url, download) = self.queue.get(block=True, timeout=1)
+            (article_id, url, download) = self.queue.get(block=True, timeout=None)
             #print('article {} get'.format(article_id))
             if not url:
                 sleep(self.sleeping_time)
@@ -260,6 +260,7 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
         title = page_soup.find(name='h2').text.strip()
     except:
         doc_title = doc.add_heading('获取文章标题时出错')
+        title = '获取文章标题时出错'
     else:
         doc_title = doc.add_heading(title)
     doc_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
