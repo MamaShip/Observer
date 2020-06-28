@@ -29,21 +29,27 @@ A simple tool for checking accessibility of specific articles
 
 ### 作为开发者
 如果想要部署自己的微信公众号备份服务，你需要：
-* 一个微信公众号
+* 一个微信公众号，且完成开发者权限配置
 * 一台80端口闲置且有固定IP的 Linux 服务器
-* 服务器上已部署 MySQL、sendmail 服务
+* 服务器上已部署 sendmail、MySQL 服务（已创建数据库并赋予相应权限）
 * 以上全部服务的账号和设置信息已写入**系统环境变量**，具体名称参考项目代码
 
-git clone 本项目，在根目录下执行：
+git clone 本项目，在 `src` 目录下执行：
 
 `pip3 install -r requirements.txt`
 
-安装完所有依赖的库后，用 python3 执行程序入口 `app.py` 即可：
+安装完所有依赖的库后，在 `src/database/` 路径下执行 `db_operator.py`，选 1 执行数据库表的初始化创建。
+
+然后回到 `src` 目录，用 python3 执行程序入口 `app.py` 即可：
 
 `sudo python3 app.py`
+
+（我们之后会提供详细一些的文档指引，也许在 Beta 测试完成后）
+
 ## Background
+
 受启发于[端点星计划](https://github.com/Terminus2049/Terminus2049.github.io)。
-(该项目已被破坏，参见[维基词条](https://zh.wikipedia.org/wiki/%E7%AB%AF%E7%82%B9%E6%98%9F%E4%BA%8B%E4%BB%B6))
+(该项目已被破坏，参见维基词条:[端点星事件](https://zh.wikipedia.org/wiki/%E7%AB%AF%E7%82%B9%E6%98%9F%E4%BA%8B%E4%BB%B6))
 
 本项目仅为个人用户提供关注文章的备份，不致力于进行被审查文章的全备份。
 
