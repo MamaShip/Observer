@@ -58,7 +58,7 @@ class MainLogic(object):
             reply = "听不懂你在说啥！\n--------------\n观察目标暂时只接受微信公众号文章。\n不要有无意义的空格、分号、换行符等。\n请回复「help」查看规则"
         
         if reply_too_long(reply):
-            reply = reply[:1000] # 暂时截断到前1000字符
+            reply = _trim_reply(reply)
         return reply
     
     def handle_event(self, evt):
@@ -293,6 +293,12 @@ def analyze_user_status(db):
 def reply_too_long(string):
     real_byte_len = tools.str_occupied_space(string)
     return MAX_TEXT_LENGTH < real_byte_len
+
+def _trim_reply(string):
+    prev = string[:1000] # 暂时截断到前1000字符
+    reply = prev + "\n……\n结果未显示完全，超出长度限制"
+    return reply
+
 
 if __name__ == "__main__":
     print("test handle cmd")
