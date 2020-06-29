@@ -1,10 +1,10 @@
 import queue
 from threading import Lock, Thread
 from time import sleep
-from utils.tools import new_logger
 from mail.mail import send_mail
+import logging
 
-logger = new_logger("mail")
+logger = logging.getLogger("mail")
 
 # 一个消息队列用在Observer和postman之间
 # 消息队列的元素是 (receiver, contents, attachments)
