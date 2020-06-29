@@ -1,19 +1,10 @@
 import os
 import smtplib
-import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import logging
+from utils.tools import get_logger
 
-#先声明一个 Logger 对象
-logger = logging.getLogger("mail")
-logger.setLevel(level=logging.DEBUG)
-#然后指定其对应的 Handler 为 FileHandler 对象
-handler = logging.FileHandler('mail.log')
-#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+logger = get_logger("mail")
 
 MAIL_USERNAME = os.getenv("MAIL_USERNAME", "ObserverZG@gmail.com")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
@@ -51,9 +42,12 @@ def send_mail(receiver, contents=DEFAULT_MSG, attachments=[]):
     # connet
     try:
         print(smtp.connect(HOST, PORT))
-    except:
+    except smtplib.SMTPConnectError:
         print('CONNECT ERROR ****')
-        logger.error("Fail to connect")
+        logger.exception("SMTP Fail to connect")
+        result = False
+    except smtplib.SMTPException:
+        logger.exception("SMTPException")
         result = False
 
     # gmail uses ssl

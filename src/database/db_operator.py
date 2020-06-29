@@ -7,7 +7,7 @@ operations.
 import os
 import logging
 import mysql.connector
-from mysql.connector import errorcode
+errorcode = mysql.connector.errorcode
 
 # !!! 已知问题：当数据库内没有目标项目时，对其做 update/delete 都不会报错
 #先声明一个 Logger 对象
@@ -41,8 +41,10 @@ TABLES['articles'] = (
     "  `backup_addr` varchar(100) NOT NULL,"
     "  `start_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
+    "  `title` varchar(2048),"
     "  PRIMARY KEY (`article_id`)"
-    ") ENGINE=InnoDB")
+    ") ENGINE=InnoDB"
+    "  DEFAULT CHARACTER SET = utf8;")
 
 TABLES['archive'] = (
     "CREATE TABLE `archive` ("
@@ -53,8 +55,10 @@ TABLES['archive'] = (
     "  `start_date` date NOT NULL,"
     "  `end_date` date NOT NULL,"
     "  `status` INT UNSIGNED NOT NULL,"
+    "  `title` varchar(2048),"
     "  PRIMARY KEY (`article_id`)"
-    ") ENGINE=InnoDB")
+    ") ENGINE=InnoDB"
+    "  DEFAULT CHARACTER SET = utf8;")
 
 
 class DbOperator:
@@ -92,13 +96,14 @@ class DbOperator:
             cursor.execute(cmd, parameters)
             # Commit the changes
             self.db.commit()
-        except:
+        except mysql.connector.Error:
             self.db.rollback()
             success = False
             # log it
             logger.warning("commit fail when executing cmd: " + cmd)
             logger.warning("> with parameters: "
                             + " ".join(map(str, parameters)))
+            logger.exception("_commit_cmd Error")
         cursor.close()
         return success
 
@@ -194,6 +199,31 @@ class DbOperator:
         """
         delete = ("DELETE FROM users WHERE open_id=%s;")
         return self._commit_cmd(delete, (open_id,))
+    
+    def fetch_all_user(self):
+        """Get the whole user list.
+        Fetch all user info from database.
+
+        Returns:
+            success: bool
+            result: a list of dict like {'user_id','open_id','email','reg_date'}
+        """
+        success = True
+        query = ("SELECT user_id, open_id, email, reg_date FROM users;")
+        query_result = self._execute_cmd(query, None)
+        result = []
+        for (user_id, open_id, email, reg_date) in query_result:
+            item = {}
+            item['user_id'] = user_id
+            item['open_id'] = open_id
+            item['email'] = email
+            item['reg_date'] = reg_date
+            result.append(item)
+        if len(result) == 0:
+            success = False
+            # log it
+            logger.info("fetch no item with cmd: " + query)
+        return success, result
 
     def add_article(self, article):
         """Register new article to be observed.
@@ -209,7 +239,7 @@ class DbOperator:
         """
         insert_new_article = (
             "INSERT INTO articles (URL, open_id, backup_addr, start_date, status) "
-            "VALUES (%s, %s, %s, NOW(), 0);")  # status 0 表示初次添加，状态未知
+            "VALUES (%s, %s, %s, NOW(), %s);")
         return self._commit_cmd(insert_new_article, article)
 
     def find_article(self, article_id):
@@ -220,12 +250,15 @@ class DbOperator:
 
         Returns:
             success: bool
+            item: dict
+                {article_id, URL, open_id, backup_addr, start_date, status, title}
         """
         success = False
-        query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles "
+        query = ("SELECT article_id, URL, open_id, backup_addr, "
+                "start_date, status, title FROM articles "
                 "WHERE article_id=%s;")
         query_result = self._execute_cmd(query, (article_id,))
-        for (_, URL, open_id, backup_addr, start_date, status) in query_result:
+        for (_, URL, open_id, backup_addr, start_date, status, title) in query_result:
             item = {}
             item['article_id'] = article_id
             item['URL'] = URL
@@ -233,6 +266,7 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            item['title'] = title
             success = True
 
         if success:
@@ -256,11 +290,12 @@ class DbOperator:
                     'backup_addr','start_date','status'}
         """
         success = True
-        query = ("SELECT article_id, URL, backup_addr, start_date, status FROM articles "
-                 "WHERE open_id=%s;")
+        query = ("SELECT article_id, URL, backup_addr, start_date, "
+                "status, title FROM articles "
+                "WHERE open_id=%s;")
         query_result = self._execute_cmd(query, (open_id,))
         result = []
-        for (article_id, URL, backup_addr, start_date, status) in query_result:
+        for (article_id, URL, backup_addr, start_date, status, title) in query_result:
             item = {}
             item['article_id'] = article_id
             item['URL'] = URL
@@ -268,6 +303,7 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            item['title'] = title
             result.append(item)
         if len(result) == 0:
             success = False
@@ -281,15 +317,16 @@ class DbOperator:
         Change(Set) article info to database.
 
         Args:
-            article: A tuple of article info like: (article_id, backup_addr, status)
+            article: A tuple of article info
+                (article_id, backup_addr, status, title)
 
         Returns:
             success: True/False
         """
-        article_id, backup_addr, status = article
-        update = (
-            "UPDATE articles SET backup_addr=%s, status=%s WHERE article_id=%s;")
-        parameters = (backup_addr, status, article_id)
+        article_id, backup_addr, status, title = article
+        update = ("UPDATE articles SET backup_addr=%s, "
+                "status=%s, title=%s WHERE article_id=%s;")
+        parameters = (backup_addr, status, title, article_id)
         return self._commit_cmd(update, parameters)
 
     def remove_article(self, article_id):
@@ -315,13 +352,15 @@ class DbOperator:
         Returns:
             success: True/False
             result: a list of dict like {'article_id', 'URL',
-                    'open_id','backup_addr','start_date','status'}
+                    'open_id','backup_addr','start_date','status','title'}
         """
         success = True
-        query = ("SELECT article_id, URL, open_id, backup_addr, start_date, status FROM articles;")
+        query = ("SELECT article_id, URL, open_id, backup_addr, "
+                "start_date, status, title FROM articles;")
         query_result = self._execute_cmd(query, None)
         result = []
-        for (article_id, URL, open_id, backup_addr, start_date, status) in query_result:
+        for (article_id, URL, open_id, backup_addr, start_date,
+                status, title) in query_result:
             item = {}
             item['article_id'] = article_id
             item['URL'] = URL
@@ -329,6 +368,7 @@ class DbOperator:
             item['backup_addr'] = backup_addr
             item['start_date'] = start_date
             item['status'] = status
+            item['title'] = title
             result.append(item)
         if len(result) == 0:
             success = False
@@ -340,7 +380,8 @@ class DbOperator:
         article_id = article['article_id']
         self.remove_article(article_id)
         new_record = (article_id, article['URL'], article['open_id'],
-                    article['backup_addr'], article['start_date'])
+                    article['backup_addr'], article['start_date'],
+                    article['status'], article['title'])
         return self._add_archive(new_record)
 
     def _add_archive(self, article):
@@ -354,12 +395,12 @@ class DbOperator:
         Returns:
             success or not: True/False
         """
-        insert_new_article = (
-            "INSERT INTO archive (article_id, URL, open_id, backup_addr, start_date, end_date, status) "
-            "VALUES (%s, %s, %s, %s, %s, NOW(), 8);")  # status 8 用来表示存档的文件
+        insert_new_article = ("INSERT INTO archive (article_id, URL, open_id, "
+                            "backup_addr, start_date, end_date, status, title) "
+                            "VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s);")
         return self._commit_cmd(insert_new_article, article)
 
-    def db_add_helper(self, URL, open_id, backup_addr):
+    def db_add_helper(self, URL, open_id, backup_addr, status):
         """This function if for special purpose when adding info to database.
         It returns article_id if adding successed.
 
@@ -374,7 +415,7 @@ class DbOperator:
             success: bool
             article_id: int
         """
-        article = (URL, open_id, backup_addr)
+        article = (URL, open_id, backup_addr, status)
         if not self.add_article(article):  # 执行add操作
             logger.warning("add_article fail, with paras:"
                         + " ".join(map(str, article)))
@@ -441,10 +482,12 @@ class DbCreator:
                 cursor.execute(delete_cmd)
                 # Commit the changes
                 self.db.commit()
-            except:
+            except mysql.connector.Error as err:
                 self.db.rollback()
                 # log it
                 print("delete table fail:", table_name)
+                logger.warning("delete_table() ERROR.")
+                logger.warning(err.msg)
             else:
                 print("delete table " + table_name + " OK")
                 logger.warning("table " + table_name + " deleted.")

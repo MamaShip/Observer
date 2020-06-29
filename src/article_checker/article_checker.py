@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import requests
 from threading import Lock, Thread
 from time import sleep
@@ -7,12 +6,26 @@ import os
 from bs4 import BeautifulSoup
 from io import BytesIO
 from docx import Document
-from docx.shared import Cm, Pt, Inches
+from docx.shared import Cm, Inches
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from queue import Queue
+from queue import Queue, Empty, Full
+from article_checker.update_reason import REASON_INACCESSIBLE, REASON_INVALID_URL
+import logging
 
-def default_callback(article_id, valid, backup_path):
+__all__ = ["Checker_Queue", "Article_Checker"]
+
+#先声明一个 Logger 对象
+logger = logging.getLogger("article_checker")
+logger.setLevel(level=logging.DEBUG)
+#然后指定其对应的 Handler 为 FileHandler 对象
+handler = logging.FileHandler('article_checker.log')
+#然后 Handler 对象单独指定了 Formatter 对象单独配置输出格式
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+def default_callback(article_id, valid, backup_path=None, optionals=dict()):
     return
 
 def IsValidUrl(url):
@@ -39,24 +52,29 @@ class Checker_Queue:
         if IsValidUrl(url):
             try:
                 self.q.put((article_id, url, download), block=block, timeout=timeout)
-            except:
+            except Full:
                 self.DoPutError()
 
-    def get(self, block=True, timeout=1):
+    def get(self, block=True, timeout=None):
         try:
             (article_id, url, download) = self.q.get(block=block, timeout=timeout)
-        except:
+        except Empty:
             self.DoGetError()
             return None, None, None
         else:
             return article_id, url, download
 
+    def get_queue_size(self):
+        return self.q.qsize()
+
     def DoGetError(self):
         # to do
+        logger.error("checker queue get error: empty")
         return
 
     def DoPutError(self):
         # to do
+        logger.error("checker queue put error: full")
         return
 
 # 从消息队列取元素进行判断
@@ -87,10 +105,10 @@ class Article_Checker(Thread):
         self.call_back_func(article_id=article_id, valid=True, backup_path=None)
         return
 
-    def DoSavingSucceed(self, article_id, saving_path): # saving_path 是 绝对地址
+    def DoSavingSucceed(self, article_id, title, saving_path): # saving_path 是 绝对地址
         # to do
         print('article {} saved'.format(article_id))
-        self.call_back_func(article_id=article_id, valid=True, backup_path=saving_path)
+        self.call_back_func(article_id=article_id, valid=True, backup_path=saving_path, optionals={"title":title})
         return
 
     def DoArticleExist(self, article_id):
@@ -102,34 +120,39 @@ class Article_Checker(Thread):
     def DoArticleDeleted(self, article_id, url, delete_reason):
         print('article id {} deleted for {}'.format(article_id, delete_reason))
         # to do
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=False, 
+                            backup_path=None, optionals={"reason":REASON_INACCESSIBLE})
         return
 
     def DoArticleDeletedWithoutDownload(self, article_id, url, delete_reason):
         # to do
         print('article id {} deleted for {}'.format(article_id, delete_reason))
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=False, 
+                            backup_path=None, optionals={"reason":REASON_INACCESSIBLE})
         return
 
     def DoConnectionError(self, url):
         # to do
         print('Connection Error : {}'.format(url))
+        logger.error('Connection Error : {}'.format(url))
         return
 
     def DoInvalidUrl(self, article_id, url):
         # to do
         print('Invalid Url : {}'.format(url))
-        self.call_back_func(article_id=article_id, valid=False, backup_path=None)
+        self.call_back_func(article_id=article_id, valid=False, 
+                            backup_path=None, optionals={"reason":REASON_INVALID_URL})
         return
 
     def DoRequestError(self, url):
         # to do
         print('request failed for {}'.format(url))
+        logger.error('Connection Error : {}'.format(url))
         return
 
     def run(self):
         while True:
-            (article_id, url, download) = self.queue.get(block=True, timeout=1)
+            (article_id, url, download) = self.queue.get(block=True, timeout=None)
             #print('article {} get'.format(article_id))
             if not url:
                 sleep(self.sleeping_time)
@@ -160,12 +183,14 @@ class Article_Checker(Thread):
                     self.DoArticleExist(article_id)
                 else: # need download
                     file_name = str(article_id) + '.docx'
+                    file_path = os.path.join(self.saving_path, file_name)
                     try:
-                        Save2Doc(page_soup, self.saving_path + file_name)
+                        title = Save2Doc(page_soup, file_path)
                     except:
                         self.DoSavingFailed(article_id)
+                        title = ''
                     else:
-                        self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path+file_name)) # 这里用的绝对地址
+                        self.DoSavingSucceed(article_id, title, os.path.join(os.getcwd(), file_path)) # 这里用的绝对地址
                     # Save2Doc(page_soup, self.saving_path + file_name)
                     # self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path + file_name))
                 continue
@@ -225,7 +250,7 @@ def InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=
     paragraph_format = style.paragraph_format
     paragraph_format.first_line_indent = Cm(indent_cm)
 
-# 保存图片和文字到docx文件中
+# 保存图片和文字到docx文件中, 并且将文章的标题返回
 def Save2Doc(page_soup, save_path, image_size=4.0):
     doc = Document()
     # init style for whole document
@@ -234,10 +259,11 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
     try:
         title = page_soup.find(name='h2').text.strip()
     except:
-        title = doc.add_heading('获取文章标题时出错')
+        doc_title = doc.add_heading('获取文章标题时出错')
+        title = '获取文章标题时出错'
     else:
-        title = doc.add_heading(title)
-    title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        doc_title = doc.add_heading(title)
+    doc_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     # get author information
     cur_para = doc.add_paragraph()
     cur_para.add_run('作者介绍：')
@@ -247,9 +273,12 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
     cur_para = doc.add_paragraph()
     cur_para.add_run('正文:')
     article_content_soup = page_soup.find(name='div', attrs={"id": "js_content"})
-    for tag in article_content_soup.findAll(name=['p', 'img']):
+    for tag in article_content_soup.findAll(name=['p', 'section', 'img']):
         # 文字会在<p></p>之间出现
+        # 还有可能在<section></section>之间出现
         if tag.name == 'p' and tag.text:
+            SaveTextTag2Paragraph(doc, tag)
+        if tag.name == 'section' and tag.text:
             SaveTextTag2Paragraph(doc, tag)
         # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
@@ -261,7 +290,7 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
                 cur_run = cur_para.add_run()
                 cur_run.add_picture(image_io, width=Inches(image_size))
     doc.save(save_path)
-    return
+    return title
 
 # 以字节流的形式存入内存，然后再存入doc
 def DownloadImage(url):
@@ -285,7 +314,8 @@ class Test_Class(Thread):
                      r'https://mp.weixin.qq.com/s/Hr2XfjimJH2PJtYldTD_QA',
                      r'https://mp.weixin.qq.com/s?__biz=MzUyNDQyNTI1OQ==&mid=2247485113&idx=1&sn=fe519905e349eddd69e773769dcd5437&chksm=fa2cc7fdcd5b4eebc2ba2d9b0fe32a465b7603d93e05c1cb24edc44f1cdcf3290c03833de278&mpshare=1&srcid=0513MT9x68x6doNnABCcYwk2&sharer_sharetime=1589305468758&sharer_shareid=afd15624e89a727c2d7ee3f76ef31e5c&from=singlemessage&&sub&clicktime=1589326214&enterid=1589326214&forceh5=1&a&devicetype=android-29&version=27000e37&nettype=WIFI&abtest_cookie=AAACAA%3D%3D&lang=zh_CN&exportkey=A1AWfVCDKp%2FcNDipvHFRRlk%3D&pass_ticket=KJhWTmIcJaAEto1dcH6rJvecoQ7f6uO4KKUCYiKTukH3SEjgH%2B%2BN5CDveDdcGT8V&wx_header=1&scene=1&subscene=10000&clicktime=1589525209&enterid=1589525209',
                      r'https://mp.weixin.qq.com/s?__biz=MzU3Mjk1OTQ0Ng==&mid=2247484924&idx=1&sn=7d611b8c0a51e179cab51fd308e0a56c&chksm=fcc9ba45cbbe33535d0308c48d8d18d3ba6b18b8e0a2fbe636b3e9f0efaba6038942c98f6e70&mpshare=1&scene=2&srcid=&sharer_sharetime=1582717197787&sharer_shareid=246cb2c7250512fd9647a394d25bd429&from=timeline&key=4e4f4f0e2204deb082c29c40f853d0ea72f1deb6f474bd9c3830cb3efd14b0668fb557c9b25eabae3f65c091b1d76c4537fbddea4f24ebfa0aa067e8daadb1edd10d8b4ee5de2f5e5c278789d6ce108b&ascene=1&uin=ODg5OTA0Nzgw&devicetype=Windows+10+x64&version=62090070&lang=zh_CN&exportkey=A4bF5u75U5NZSImF8sEK6jw%3D&pass_ticket=YoLxbUZxJS4%2Fbmw6eOsgUHyiu9TwY%2BI0uEvVW6TCGknknWACHcEdBVsPGs%2FMy68Z',
-                     r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A']
+                     r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A',
+                     r'https://mp.weixin.qq.com/s/aIWmD5E2y-Yg7oMltd2i8w']
         # self.urls = [r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A']
         self.q = q
 

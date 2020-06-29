@@ -6,6 +6,7 @@
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-3-orange.svg)](#contributors)
 ![Python package](https://github.com/MamaShip/Observer/workflows/Python%20package/badge.svg)
+[![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/MamaShip/Observer.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/MamaShip/Observer/context:python)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 A simple tool for checking accessibility of specific articles
@@ -16,21 +17,43 @@ A simple tool for checking accessibility of specific articles
 
 开发文档见：[plan](dev_docs/plan.md)
 
+更新历史：[change log](CHANGELOG.md)
 ## Usage
+### 作为用户
 直接关注公众号：
-![时间从来不回答](static/qrcode.jpg)
+![时间从来不回答](src/static/qrcode.jpg)
 
 向其发送文章链接，即可开始观察。（暂时只支持观察微信公众号文章，其他平台待开发）
 
 更多详细介绍参见[用户指南页面](http://wx.twisted-meadows.com/)
 
+### 作为开发者
+如果想要部署自己的微信公众号备份服务，你需要：
+* 一个微信公众号，且完成开发者权限配置
+* 一台80端口闲置且有固定IP的 Linux 服务器
+* 服务器上已部署 sendmail、MySQL 服务（已创建数据库并赋予相应权限）
+* 以上全部服务的账号和设置信息已写入**系统环境变量**，具体名称参考项目代码
+
+git clone 本项目，在 `src` 目录下执行：
+
+`pip3 install -r requirements.txt`
+
+安装完所有依赖的库后，在 `src/database/` 路径下执行 `db_operator.py`，选 1 执行数据库表的初始化创建。
+
+然后回到 `src` 目录，用 python3 执行程序入口 `app.py` 即可：
+
+`sudo python3 app.py`
+
+（我们之后会提供详细一些的文档指引，也许在 Beta 测试完成后）
+
 ## Background
+
 受启发于[端点星计划](https://github.com/Terminus2049/Terminus2049.github.io)。
-(该项目已被破坏，参见[维基词条](https://zh.wikipedia.org/wiki/%E7%AB%AF%E7%82%B9%E6%98%9F%E4%BA%8B%E4%BB%B6))
+(该项目已被破坏，参见维基词条:[端点星事件](https://zh.wikipedia.org/wiki/%E7%AB%AF%E7%82%B9%E6%98%9F%E4%BA%8B%E4%BB%B6))
 
 本项目仅为个人用户提供关注文章的备份，不致力于进行被审查文章的全备份。
 
-~~被审查文章的全备份工作已有香港大学的 [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/) 项目在做。~~
+被审查文章的全备份工作已有香港大学的 [WeChatSCOPE](https://wechatscope.jmsc.hku.hk/) 项目在做。（请主动向他们提交值得备份的公众号，帮助完善备份工程）
 
 ## Contributors ✨
 
