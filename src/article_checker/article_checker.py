@@ -220,16 +220,20 @@ def GetPageSoup(url, features='lxml'):
 # 以及红色感叹号 <i class="weui-icon-warn weui-icon_msg"></i>
 # 正常文章只有<h2>标签
 def IsDeleted(page_soup):
+    h2_title = page_soup.find(name='h2', attrs={"class": "weui-msg__title tips__gray"})
     h3_title = page_soup.find(name='h3', attrs={"class": "weui-msg__title"})
     red_icon = page_soup.find(name='i', attrs={"class": "weui-icon-warn weui-icon_msg"})
     grey_icon = page_soup.find(name='i', attrs={"class": "weui-icon-warn-gray weui-icon_msg"})
     warn_title = page_soup.find(name='div', attrs={"class": "weui-msg__title warn"})
-    if red_icon and h3_title:
-        return True, h3_title.text
-    elif red_icon and warn_title:
-        return True, warn_title.text
-    elif grey_icon and warn_title:
-        return True, warn_title.text
+    if red_icon or grey_icon: # 感叹号才是最强保证
+        if h2_title:
+            return True, h2_title.text
+        elif h3_title:
+            return True, h3_title.text
+        elif warn_title:
+            return True, warn_title.text
+        else:
+            return True, '未获取到删除原因'
     else:
         return False, None
 
@@ -315,7 +319,9 @@ class Test_Class(Thread):
                      r'https://mp.weixin.qq.com/s?__biz=MzUyNDQyNTI1OQ==&mid=2247485113&idx=1&sn=fe519905e349eddd69e773769dcd5437&chksm=fa2cc7fdcd5b4eebc2ba2d9b0fe32a465b7603d93e05c1cb24edc44f1cdcf3290c03833de278&mpshare=1&srcid=0513MT9x68x6doNnABCcYwk2&sharer_sharetime=1589305468758&sharer_shareid=afd15624e89a727c2d7ee3f76ef31e5c&from=singlemessage&&sub&clicktime=1589326214&enterid=1589326214&forceh5=1&a&devicetype=android-29&version=27000e37&nettype=WIFI&abtest_cookie=AAACAA%3D%3D&lang=zh_CN&exportkey=A1AWfVCDKp%2FcNDipvHFRRlk%3D&pass_ticket=KJhWTmIcJaAEto1dcH6rJvecoQ7f6uO4KKUCYiKTukH3SEjgH%2B%2BN5CDveDdcGT8V&wx_header=1&scene=1&subscene=10000&clicktime=1589525209&enterid=1589525209',
                      r'https://mp.weixin.qq.com/s?__biz=MzU3Mjk1OTQ0Ng==&mid=2247484924&idx=1&sn=7d611b8c0a51e179cab51fd308e0a56c&chksm=fcc9ba45cbbe33535d0308c48d8d18d3ba6b18b8e0a2fbe636b3e9f0efaba6038942c98f6e70&mpshare=1&scene=2&srcid=&sharer_sharetime=1582717197787&sharer_shareid=246cb2c7250512fd9647a394d25bd429&from=timeline&key=4e4f4f0e2204deb082c29c40f853d0ea72f1deb6f474bd9c3830cb3efd14b0668fb557c9b25eabae3f65c091b1d76c4537fbddea4f24ebfa0aa067e8daadb1edd10d8b4ee5de2f5e5c278789d6ce108b&ascene=1&uin=ODg5OTA0Nzgw&devicetype=Windows+10+x64&version=62090070&lang=zh_CN&exportkey=A4bF5u75U5NZSImF8sEK6jw%3D&pass_ticket=YoLxbUZxJS4%2Fbmw6eOsgUHyiu9TwY%2BI0uEvVW6TCGknknWACHcEdBVsPGs%2FMy68Z',
                      r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A',
-                     r'https://mp.weixin.qq.com/s/aIWmD5E2y-Yg7oMltd2i8w']
+                     r'https://mp.weixin.qq.com/s/aIWmD5E2y-Yg7oMltd2i8w',
+                     r'https://mp.weixin.qq.com/s/n5B7M6epJjs0QR-AnwNleg',
+                     r'https://mp.weixin.qq.com/s/y1nfVcMdhe6kGGxSk4wTkg']
         # self.urls = [r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A']
         self.q = q
 
