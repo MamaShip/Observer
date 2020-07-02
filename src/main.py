@@ -23,10 +23,11 @@ ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks",
 HELP_MSG = """初次使用请直接发送邮箱地址进行关系绑定。
 此后直接发送微信公众号文章地址即可启动观察。
 -------------------
-也可直接发送查询命令：
+还可以发送查询命令：
 [status]  - 查看邮箱绑定状态
 [list]    - 查看正在观察的文章列表
-更多信息参见： http://wx.twisted-meadows.com
+[delete 编号] - 停止对指定文章的观察
+更多命令和信息参见： http://wx.twisted-meadows.com
 """
 class MainLogic(object):
     _instance = None
@@ -114,10 +115,10 @@ class MainLogic(object):
         if result:
             reply = "你的账号成功绑定邮箱：" + email
             if send_flag:
-                reply += "\n--------\n"
-                reply += """你是初次绑定邮箱，我发送了一封确认邮件给您
-                            请检查邮箱,确认能收到我的通知邮件
-                            （注意垃圾箱！）"""
+                reply += """\n--------
+你是初次绑定邮箱，我发了一封确认邮件给您
+请检查邮箱,确认能收到我的通知邮件
+（注意垃圾箱！）"""
         else:
             # db 操作失败的日志 db 那边会记录
             reply = "绑定邮箱：" + email + "失败！请联系管理员处理：youdangls@gmail.com"
