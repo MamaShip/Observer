@@ -74,15 +74,22 @@ def update_article_status(article_id, valid, backup_path=None, optionals={}):
         return False
     open_id = item['open_id']
     success, result = db.find_user(open_id)
-    if not success:
-        logger.error("article & user no match: "
+    if success:
+        email = result['email']
+        user_registered_flag = True
+    else:
+        logger.info("article & user no match: "
                      + " ".join(map(str, [article_id, open_id])))
-        return False
-    email = result['email']
-    # 开始更新数据库
+        user_registered_flag = False
+
+    # 根据状态变化执行处理
     if not valid:  # 当文章已不可访问
-        update_info = (article_id, optionals)
-        _stop_watching(update_info, item, email, db)
+        if user_registered_flag: # 用户有绑定邮箱，则执行通知
+            update_info = (article_id, optionals)
+            _stop_watching(update_info, item, email, db)
+        else: # 没有绑定邮箱，记错误日志
+            logger.error("article invalid, can't notify user. "
+                        + " ".join(map(str, [article_id, open_id])))
     else:
         prev_status = item['status']
         if prev_status == STATUS_NORMAL_OB:  # 正常观察状态,无需额外操作
