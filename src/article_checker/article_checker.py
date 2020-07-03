@@ -300,7 +300,7 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
 def DownloadImage(url):
     # TO DO: 改成存字节流
     try:
-        image_data = requests.get(url).content
+        image_data = requests.get(url, timeout=5).content
     except:
         return None
     else:
