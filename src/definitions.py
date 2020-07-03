@@ -5,7 +5,8 @@ __all__ = [ 'REASON_DELETE_BY_USER', 'REASON_INACCESSIBLE',
             'REASON_NULL',
             'STATUS_NEW_UNKNOWN', 'STATUS_NORMAL_OB', 'STATUS_NOT_VALID',
             'STATUS_BAD_REQUEST', 'STATUS_INACCESSIBLE', 'STATUS_OUT_OF_DATE',
-            'STATUS_DELETE_BY_USER', 'reason2status', 'reason2text']
+            'STATUS_DELETE_BY_USER', 'reason2status', 'reason2text',
+            'APP_VER']
 
 # article status definition：
 #  watching status
@@ -33,3 +34,7 @@ reason2text = {
     REASON_INVALID_URL    : "链接无效，无法观察",
     REASON_NULL           : "停止观察的原因未知"
 }
+
+MAIN_VER = "Beta"
+MINOR_VER = 2
+APP_VER = ".".join(map(str, [MAIN_VER, MINOR_VER]))

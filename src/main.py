@@ -3,7 +3,7 @@ import logging
 from database.db_operator import DbOperator
 from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
-from definitions import REASON_DELETE_BY_USER
+from definitions import REASON_DELETE_BY_USER, APP_VER
 from utils import tools
 
 logger = logging.getLogger("sys")
@@ -183,6 +183,8 @@ class MainLogic(object):
         reply += "\n-------\n"
         space_info = tools.total_used_space(DEFAULT_PATH)
         reply += space_info
+        reply += "\n-------\n"
+        reply += "version:" + APP_VER
         return reply
 
     def _admin_list(self, msg):
