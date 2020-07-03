@@ -195,12 +195,19 @@ class Observer:
                                  + " ".join(map(str, [article_id, URL, status])))
         return True
 
-    def get_cur_q_size(self):
+    def get_cur_checker_q_size(self):
         """Current pending items in Checker's queue.
         Returns:
             qsize: int
         """
         return self.q.get_queue_size()
+        
+    def get_cur_mail_q_size(self):
+        """Current pending items in Postman's queue.
+        Returns:
+            qsize: int
+        """
+        return MAIL_QUEUE.get_queue_size()
 
 
 def send_user_check_email(email):

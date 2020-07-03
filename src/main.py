@@ -175,8 +175,11 @@ class MainLogic(object):
         reply += "\n-------\n"
         reply += analyze_user_status(db)
         reply += "\n-------\n"
-        qsize = self.ob.get_cur_q_size()
-        reply += "队列中的条目数量：" + str(qsize)
+        qsize = self.ob.get_cur_checker_q_size()
+        reply += "checker队列中的条目数量：" + str(qsize)
+        reply += "\n-------\n"
+        qsize = self.ob.get_cur_mail_q_size()
+        reply += "mail队列中的条目数量：" + str(qsize)
         reply += "\n-------\n"
         space_info = tools.total_used_space(DEFAULT_PATH)
         reply += space_info
