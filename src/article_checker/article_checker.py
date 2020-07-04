@@ -2,6 +2,7 @@
 import requests
 from threading import Lock, Thread
 from time import sleep
+import random
 import os
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -290,6 +291,7 @@ def Save2Doc(page_soup, save_path, url, image_size=4.0):
             SaveTextTag2Paragraph(doc, tag)
         # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
+            sleep(random.randint(0,5))
             image_io = DownloadImage(tag['data-src'], prev_url=url)
             cur_para = doc.add_paragraph()
             if image_io is None:
