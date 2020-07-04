@@ -208,7 +208,8 @@ class Article_Checker(Thread):
 
 # 读取页面内容
 def GetPageContent(url, encoding='utf-8'):
-    response = requests.get(url, timeout=5)
+    headers = {'User-Agent' : _ua.random}
+    response = requests.get(url, headers=headers, timeout=5)
     content = response.content.decode(encoding=encoding, errors='ignore')
     return content
 
