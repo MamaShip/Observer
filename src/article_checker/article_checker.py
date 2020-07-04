@@ -12,6 +12,7 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue, Empty, Full
 from article_checker.update_reason import REASON_INACCESSIBLE, REASON_INVALID_URL
 import logging
+from fake_useragent import UserAgent
 
 __all__ = ["Checker_Queue", "Article_Checker"]
 
@@ -24,6 +25,8 @@ handler = logging.FileHandler('article_checker.log')
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+_ua = UserAgent()
 
 def default_callback(article_id, valid, backup_path=None, optionals=dict()):
     return
@@ -185,7 +188,7 @@ class Article_Checker(Thread):
                     file_name = str(article_id) + '.docx'
                     file_path = os.path.join(self.saving_path, file_name)
                     try:
-                        title = Save2Doc(page_soup, file_path)
+                        title = Save2Doc(page_soup, file_path, url)
                     except:
                         self.DoSavingFailed(article_id)
                         title = ''
@@ -255,7 +258,7 @@ def InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=
     paragraph_format.first_line_indent = Cm(indent_cm)
 
 # 保存图片和文字到docx文件中, 并且将文章的标题返回
-def Save2Doc(page_soup, save_path, image_size=4.0):
+def Save2Doc(page_soup, save_path, url, image_size=4.0):
     doc = Document()
     # init style for whole document
     InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=0.74)
@@ -286,7 +289,7 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
             SaveTextTag2Paragraph(doc, tag)
         # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
-            image_io = DownloadImage(tag['data-src'])
+            image_io = DownloadImage(tag['data-src'], prev_url=url)
             cur_para = doc.add_paragraph()
             if image_io is None:
                 cur_para.add_run('获取图片时出错')
@@ -297,10 +300,12 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
     return title
 
 # 以字节流的形式存入内存，然后再存入doc
-def DownloadImage(url):
+def DownloadImage(url, prev_url=''):
+    headers = { 'User-Agent' : _ua.random,
+                'Referer' : prev_url}
     # TO DO: 改成存字节流
     try:
-        image_data = requests.get(url, timeout=5).content
+        image_data = requests.get(url, headers=headers, timeout=5).content
     except:
         return None
     else:
