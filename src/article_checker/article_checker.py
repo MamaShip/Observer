@@ -160,7 +160,7 @@ class Article_Checker(Thread):
             print('article {} get'.format(article_id))
             try:
                 page_soup = GetPageSoup(url, features='lxml')
-            except requests.exceptions.ConnectionError:
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
                 self.DoConnectionError(url)
                 page_soup = None
             except requests.exceptions.InvalidURL:
@@ -205,7 +205,7 @@ class Article_Checker(Thread):
 
 # 读取页面内容
 def GetPageContent(url, encoding='utf-8'):
-    response = requests.get(url)
+    response = requests.get(url, timeout=5)
     content = response.content.decode(encoding=encoding, errors='ignore')
     return content
 
