@@ -283,6 +283,9 @@ def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
     cur_para = doc.add_paragraph()
     cur_para.add_run('正文:')
     article_content_soup = page_soup.find(name='div', attrs={"id": "js_content"})
+    # fake headers
+    headers = { 'User-Agent' : _ua.random,
+                'Referer' : url}
     for tag in article_content_soup.findAll(name=['p', 'section', 'img']):
         # 文字会在<p></p>之间出现
         # 还有可能在<section></section>之间出现
@@ -293,7 +296,7 @@ def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
         # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
             sleep(random.randint(0,5))
-            image_io = DownloadImage(tag['data-src'], session=session, prev_url=url)
+            image_io = DownloadImage(tag['data-src'], session, headers)
             cur_para = doc.add_paragraph()
             if image_io is None:
                 cur_para.add_run('获取图片时出错')
@@ -304,11 +307,8 @@ def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
     return title
 
 # 以字节流的形式存入内存，然后再存入doc
-def DownloadImage(url, session, prev_url=''):
-    headers = { 'User-Agent' : _ua.random,
-                'Referer' : prev_url}
-
-    print("downloading:", url)
+def DownloadImage(url, session, headers):
+    print("downloading:", url) # 这段时间先留着，以后稳定了可以删
     # TO DO: 改成存字节流
     try:
         image_data = session.get(url, headers=headers, timeout=5).content
