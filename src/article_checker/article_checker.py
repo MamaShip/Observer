@@ -311,7 +311,7 @@ def DownloadImage(url, session, headers):
     print("downloading:", url) # 这段时间先留着，以后稳定了可以删
     # TO DO: 改成存字节流
     try:
-        image_data = session.get(url, headers=headers, timeout=5).content
+        image_data = session.get(url, headers=headers, timeout=10).content
     except requests.exceptions.RequestException as err:
         print(err)
         return None
