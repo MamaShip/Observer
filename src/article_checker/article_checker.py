@@ -314,10 +314,8 @@ def DownloadImage(url, session, headers):
         image_data = session.get(url, headers=headers, timeout=10).content
     except requests.exceptions.RequestException as err:
         print(err)
-        return None
-    except Exception as e:
-        print("ERROR not catching proper exception")
-        print(e)
+        logger.exception('DownloadImage Error')
+        logger.info(str(headers))
         return None
     else:
         image_io = BytesIO()
