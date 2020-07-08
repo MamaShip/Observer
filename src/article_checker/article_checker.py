@@ -2,6 +2,7 @@
 import requests
 from threading import Lock, Thread
 from time import sleep
+import random
 import os
 from bs4 import BeautifulSoup
 from io import BytesIO
@@ -12,6 +13,7 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from queue import Queue, Empty, Full
 from article_checker.update_reason import REASON_INACCESSIBLE, REASON_INVALID_URL
 import logging
+from fake_useragent import UserAgent
 
 __all__ = ["Checker_Queue", "Article_Checker"]
 
@@ -24,6 +26,8 @@ handler = logging.FileHandler('article_checker.log')
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+_ua = UserAgent()
 
 def default_callback(article_id, valid, backup_path=None, optionals=dict()):
     return
@@ -152,66 +156,64 @@ class Article_Checker(Thread):
 
     def run(self):
         while True:
+            sleep(self.sleeping_time)
             (article_id, url, download) = self.queue.get(block=True, timeout=None)
             #print('article {} get'.format(article_id))
             if not url:
-                sleep(self.sleeping_time)
                 continue
             print('article {} get'.format(article_id))
-            try:
-                page_soup = GetPageSoup(url, features='lxml')
-            except requests.exceptions.ConnectionError:
-                self.DoConnectionError(url)
-                page_soup = None
-            except requests.exceptions.InvalidURL:
-                self.DoInvalidUrl(url, article_id)
-                page_soup = None
+            with requests.Session() as s:
+                try:
+                    page_soup = GetPageSoup(url, session=s, features='lxml')
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                    self.DoConnectionError(url)
+                    page_soup = None
+                except requests.exceptions.InvalidURL:
+                    self.DoInvalidUrl(url, article_id)
+                    page_soup = None
 
-            if not page_soup:
-                sleep(self.sleeping_time)
-                continue
+                if not page_soup:
+                    continue
 
-            try:
-                delete_flag, delete_reason = IsDeleted(page_soup)
-            except:
-                self.DoRequestError(url)
-                sleep(self.sleeping_time)
-                continue
+                try:
+                    delete_flag, delete_reason = IsDeleted(page_soup)
+                except:
+                    self.DoRequestError(url)
+                    continue
 
-            if not delete_flag:
-                if not download:
-                    self.DoArticleExist(article_id)
-                else: # need download
-                    file_name = str(article_id) + '.docx'
-                    file_path = os.path.join(self.saving_path, file_name)
-                    try:
-                        title = Save2Doc(page_soup, file_path)
-                    except:
-                        self.DoSavingFailed(article_id)
-                        title = ''
-                    else:
-                        self.DoSavingSucceed(article_id, title, os.path.join(os.getcwd(), file_path)) # 这里用的绝对地址
-                    # Save2Doc(page_soup, self.saving_path + file_name)
-                    # self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path + file_name))
-                continue
+                if not delete_flag:
+                    if not download:
+                        self.DoArticleExist(article_id)
+                    else: # need download
+                        file_name = str(article_id) + '.docx'
+                        file_path = os.path.join(self.saving_path, file_name)
+                        try:
+                            title = Save2Doc(page_soup, file_path, url, session=s)
+                        except:
+                            self.DoSavingFailed(article_id)
+                            title = ''
+                        else:
+                            self.DoSavingSucceed(article_id, title, os.path.join(os.getcwd(), file_path)) # 这里用的绝对地址
+                        # Save2Doc(page_soup, self.saving_path + file_name)
+                        # self.DoSavingSucceed(article_id, os.path.join(os.getcwd(), self.saving_path + file_name))
+                    continue
 
-            else:
-                if download:
-                    self.DoArticleDeletedWithoutDownload(article_id, url, delete_reason)
                 else:
-                    self.DoArticleDeleted(article_id, url, delete_reason)
-
-            sleep(self.sleeping_time)
+                    if download:
+                        self.DoArticleDeletedWithoutDownload(article_id, url, delete_reason)
+                    else:
+                        self.DoArticleDeleted(article_id, url, delete_reason)
 
 # 读取页面内容
-def GetPageContent(url, encoding='utf-8'):
-    response = requests.get(url)
+def GetPageContent(url, session, encoding='utf-8'):
+    headers = {'User-Agent' : _ua.random}
+    response = session.get(url, headers=headers, timeout=5)
     content = response.content.decode(encoding=encoding, errors='ignore')
     return content
 
 # 通过bs4 分析 xml
-def GetPageSoup(url, features='lxml'):
-    content = GetPageContent(url)
+def GetPageSoup(url, session, features='lxml'):
+    content = GetPageContent(url, session=session)
     if content is None:
         return None
     return BeautifulSoup(markup=content, features=features)
@@ -255,7 +257,7 @@ def InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=
     paragraph_format.first_line_indent = Cm(indent_cm)
 
 # 保存图片和文字到docx文件中, 并且将文章的标题返回
-def Save2Doc(page_soup, save_path, image_size=4.0):
+def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
     doc = Document()
     # init style for whole document
     InitDocStyle(doc, abc_font='Times New Roman', chn_font=u'宋体', indent_cm=0.74)
@@ -277,6 +279,9 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
     cur_para = doc.add_paragraph()
     cur_para.add_run('正文:')
     article_content_soup = page_soup.find(name='div', attrs={"id": "js_content"})
+    # fake headers
+    headers = { 'User-Agent' : _ua.random,
+                'Referer' : url}
     for tag in article_content_soup.findAll(name=['p', 'section', 'img']):
         # 文字会在<p></p>之间出现
         # 还有可能在<section></section>之间出现
@@ -289,7 +294,8 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
             SaveTextTag2Paragraph(doc, tag)
         # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
-            image_io = DownloadImage(tag['data-src'])
+            sleep(random.randint(0,5))
+            image_io = DownloadImage(tag['data-src'], session, headers)
             cur_para = doc.add_paragraph()
             if image_io is None:
                 cur_para.add_run('获取图片时出错')
@@ -300,11 +306,15 @@ def Save2Doc(page_soup, save_path, image_size=4.0):
     return title
 
 # 以字节流的形式存入内存，然后再存入doc
-def DownloadImage(url):
+def DownloadImage(url, session, headers):
+    print("downloading:", url) # 这段时间先留着，以后稳定了可以删
     # TO DO: 改成存字节流
     try:
-        image_data = requests.get(url, timeout=5).content
-    except:
+        image_data = session.get(url, headers=headers, timeout=10).content
+    except requests.exceptions.RequestException as err:
+        print(err)
+        logger.exception('DownloadImage Error')
+        logger.info(str(headers))
         return None
     else:
         image_io = BytesIO()

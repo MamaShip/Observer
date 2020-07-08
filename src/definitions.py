@@ -35,6 +35,7 @@ reason2text = {
     REASON_NULL           : "停止观察的原因未知"
 }
 
-MAIN_VER = "Beta"
-MINOR_VER = 2
-APP_VER = ".".join(map(str, [MAIN_VER, MINOR_VER]))
+MAIN_VER = "Beta" # 当不兼容的更新发生时，刷新版本号
+MINOR_VER = 3 # 当功能性更新发生时，刷新版本号
+HOT_FIX_VER = 0 # 每进行一次 hot fix，可选择更新版本号
+APP_VER = ".".join(map(str, [MAIN_VER, MINOR_VER, HOT_FIX_VER]))
