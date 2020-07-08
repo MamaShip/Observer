@@ -270,12 +270,12 @@ def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
     else:
         doc_title = doc.add_heading(title)
     doc_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    # get author information
+    # 获取作者信息
     cur_para = doc.add_paragraph()
     cur_para.add_run('作者介绍：')
     author = page_soup.find(name='div', attrs={"class": "profile_inner"})
     SaveTextTag2Paragraph(doc, author)
-    # get texts and pictures
+    # 获取文本和图片
     cur_para = doc.add_paragraph()
     cur_para.add_run('正文:')
     article_content_soup = page_soup.find(name='div', attrs={"id": "js_content"})
@@ -285,9 +285,12 @@ def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
     for tag in article_content_soup.findAll(name=['p', 'section', 'img']):
         # 文字会在<p></p>之间出现
         # 还有可能在<section></section>之间出现
-        if tag.name == 'p' and tag.text:
-            SaveTextTag2Paragraph(doc, tag)
-        if tag.name == 'section' and tag.text:
+        if (tag.name == 'p' or tag.name == 'section') and tag.text:
+            # 修复BUG #85 BEGIN
+            # 在这个tag下还能找到p和section，说明是嵌套的外层，跳过
+            if tag.find(name=['p', 'section']):
+                continue
+            # 修复BUG #85 END
             SaveTextTag2Paragraph(doc, tag)
         # 图片会在<img></img>中出现
         if tag.name == 'img' and tag.has_attr('data-src'):
@@ -331,7 +334,8 @@ class Test_Class(Thread):
                      r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A',
                      r'https://mp.weixin.qq.com/s/aIWmD5E2y-Yg7oMltd2i8w',
                      r'https://mp.weixin.qq.com/s/n5B7M6epJjs0QR-AnwNleg',
-                     r'https://mp.weixin.qq.com/s/y1nfVcMdhe6kGGxSk4wTkg']
+                     r'https://mp.weixin.qq.com/s/y1nfVcMdhe6kGGxSk4wTkg',
+                     r'https://mp.weixin.qq.com/s/_fJdHBmkdyultBIYuMbcvg']
         # self.urls = [r'https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A']
         self.q = q
 
