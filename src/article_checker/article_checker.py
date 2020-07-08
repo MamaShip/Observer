@@ -156,10 +156,10 @@ class Article_Checker(Thread):
 
     def run(self):
         while True:
+            sleep(self.sleeping_time)
             (article_id, url, download) = self.queue.get(block=True, timeout=None)
             #print('article {} get'.format(article_id))
             if not url:
-                sleep(self.sleeping_time)
                 continue
             print('article {} get'.format(article_id))
             with requests.Session() as s:
@@ -173,14 +173,12 @@ class Article_Checker(Thread):
                     page_soup = None
 
                 if not page_soup:
-                    sleep(self.sleeping_time)
                     continue
 
                 try:
                     delete_flag, delete_reason = IsDeleted(page_soup)
                 except:
                     self.DoRequestError(url)
-                    sleep(self.sleeping_time)
                     continue
 
                 if not delete_flag:
@@ -205,8 +203,6 @@ class Article_Checker(Thread):
                         self.DoArticleDeletedWithoutDownload(article_id, url, delete_reason)
                     else:
                         self.DoArticleDeleted(article_id, url, delete_reason)
-
-            sleep(self.sleeping_time)
 
 # 读取页面内容
 def GetPageContent(url, session, encoding='utf-8'):
