@@ -28,6 +28,7 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 _ua = UserAgent()
+UA = _ua.random
 
 def default_callback(article_id, valid, backup_path=None, optionals=dict()):
     return
@@ -163,6 +164,8 @@ class Article_Checker(Thread):
                 continue
             print('article {} get'.format(article_id))
             with requests.Session() as s:
+                global UA
+                UA = _ua.random # 每个 Session 内统一使用同一个随机 User Agent
                 try:
                     page_soup = GetPageSoup(url, session=s, features='lxml')
                 except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
@@ -206,7 +209,7 @@ class Article_Checker(Thread):
 
 # 读取页面内容
 def GetPageContent(url, session, encoding='utf-8'):
-    headers = {'User-Agent' : _ua.random}
+    headers = {'User-Agent' : UA}
     response = session.get(url, headers=headers, timeout=5)
     content = response.content.decode(encoding=encoding, errors='ignore')
     return content
@@ -280,7 +283,7 @@ def Save2Doc(page_soup, save_path, url, session, image_size=4.0):
     cur_para.add_run('正文:')
     article_content_soup = page_soup.find(name='div', attrs={"id": "js_content"})
     # fake headers
-    headers = { 'User-Agent' : _ua.random,
+    headers = { 'User-Agent' : UA,
                 'Referer' : url}
     for tag in article_content_soup.findAll(name=['p', 'section', 'img']):
         # 文字会在<p></p>之间出现
