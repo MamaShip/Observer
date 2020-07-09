@@ -39,7 +39,7 @@ class MainLogic(object):
 
     def __init__(self):
         self.ob    = Observer()
-        self.timer = RepeatedTimer(14400, self.ob.ob_all)
+        self.timer = RepeatedTimer(28800, self.ob.ob_all)
         self.cmd_list = {"help"        : self._help, 
                         "status"       : self._status, 
                         "list"         : self._list, 
