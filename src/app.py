@@ -27,6 +27,11 @@ def index():
     host = request.url_root
     return render_template("index.html", host=host)
 
+@app.route("/wanted")
+def wanted():
+    host = request.url_root
+    return render_template("wanted.html", host=host)
+
 @app.route("/wx", methods=["GET", "POST"])
 def wechat():
     signature = request.args.get("signature", "")

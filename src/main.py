@@ -3,7 +3,7 @@ import logging
 from database.db_operator import DbOperator
 from observer import Observer, update_article_status, DEFAULT_PATH, send_user_check_email
 from my_timer import RepeatedTimer
-from definitions import REASON_DELETE_BY_USER
+from definitions import REASON_DELETE_BY_USER, APP_VER
 from utils import tools
 
 logger = logging.getLogger("sys")
@@ -23,10 +23,11 @@ ADMIN_LIST = ["ouwzNwvhpmyUVA8yGWtc0KF4yHks",
 HELP_MSG = """初次使用请直接发送邮箱地址进行关系绑定。
 此后直接发送微信公众号文章地址即可启动观察。
 -------------------
-也可直接发送查询命令：
+还可以发送查询命令：
 [status]  - 查看邮箱绑定状态
 [list]    - 查看正在观察的文章列表
-更多信息参见： http://wx.twisted-meadows.com
+[delete 编号] - 停止对指定文章的观察
+更多命令和信息参见： http://wx.twisted-meadows.com
 """
 class MainLogic(object):
     _instance = None
@@ -38,7 +39,7 @@ class MainLogic(object):
 
     def __init__(self):
         self.ob    = Observer()
-        self.timer = RepeatedTimer(14400, self.ob.ob_all)
+        self.timer = RepeatedTimer(28800, self.ob.ob_all)
         self.cmd_list = {"help"        : self._help, 
                         "status"       : self._status, 
                         "list"         : self._list, 
@@ -114,10 +115,10 @@ class MainLogic(object):
         if result:
             reply = "你的账号成功绑定邮箱：" + email
             if send_flag:
-                reply += "\n--------\n"
-                reply += """你是初次绑定邮箱，我发送了一封确认邮件给您
-                            请检查邮箱,确认能收到我的通知邮件
-                            （注意垃圾箱！）"""
+                reply += """\n--------
+你是初次绑定邮箱，我发了一封确认邮件给您
+请检查邮箱,确认能收到我的通知邮件
+（注意垃圾箱！）"""
         else:
             # db 操作失败的日志 db 那边会记录
             reply = "绑定邮箱：" + email + "失败！请联系管理员处理：youdangls@gmail.com"
@@ -174,11 +175,16 @@ class MainLogic(object):
         reply += "\n-------\n"
         reply += analyze_user_status(db)
         reply += "\n-------\n"
-        qsize = self.ob.get_cur_q_size()
-        reply += "队列中的条目数量：" + str(qsize)
+        qsize = self.ob.get_cur_checker_q_size()
+        reply += "checker队列中的条目数量：" + str(qsize)
+        reply += "\n-------\n"
+        qsize = self.ob.get_cur_mail_q_size()
+        reply += "mail队列中的条目数量：" + str(qsize)
         reply += "\n-------\n"
         space_info = tools.total_used_space(DEFAULT_PATH)
         reply += space_info
+        reply += "\n-------\n"
+        reply += "version:" + APP_VER
         return reply
 
     def _admin_list(self, msg):
