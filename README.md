@@ -21,7 +21,7 @@ A simple tool for checking accessibility of specific articles
 ## Usage
 ### ~~作为用户~~
 ~~直接关注公众号：
-![时间从来不回答](src/static/qrcode.jpg) (已停止服务)~~
+![时间从来不回答](src/static/qrcode.jpg)~~ (已停止服务)
 
 ~~向其发送文章链接，即可开始观察。（暂时只支持观察微信公众号文章，其他平台待开发）~~
 
