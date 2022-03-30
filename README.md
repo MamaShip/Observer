@@ -19,13 +19,13 @@ A simple tool for checking accessibility of specific articles
 
 更新历史：[change log](CHANGELOG.md)
 ## Usage
-### 作为用户
-直接关注公众号：
-![时间从来不回答](src/static/qrcode.jpg)
+### ~~作为用户~~
+~~直接关注公众号：
+![时间从来不回答](src/static/qrcode.jpg) (已停止服务)~~
 
-向其发送文章链接，即可开始观察。（暂时只支持观察微信公众号文章，其他平台待开发）
+~~向其发送文章链接，即可开始观察。（暂时只支持观察微信公众号文章，其他平台待开发）~~
 
-更多详细介绍参见[用户指南页面](http://wx.twisted-meadows.com/)
+~~更多详细介绍参见[用户指南页面](http://wx.twisted-meadows.com/)~~
 
 ### 作为开发者
 如果想要部署自己的微信公众号备份服务，你需要：
