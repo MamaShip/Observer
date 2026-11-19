@@ -2,3 +2,10 @@
 *.conf
 .idea
 __pycache__
+# Go build output
+/bin/
+/dist/
+# probe output
+fixtures/
+# M0 field-test results (scripts/m0/run.sh)
+/m0-*
