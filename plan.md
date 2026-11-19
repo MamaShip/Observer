@@ -431,7 +431,9 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 - Bucket 私有，只由 app 访问，用户永远不直连 Wasabi（大陆访问速度不可控，并且可以把 Wasabi 出站量控制在存储量以内）。
 - **90 天最短存储期**：除数据库备份外，所有对象都是长期保留，不受影响；数据库备份默认保留 120 天。**不要把 Wasabi 当临时存储用**，临时文件只放本地磁盘。
 - 本地磁盘 LRU 缓存上限 5 GB（配置项），存放热点图片与快照 HTML。
-- Region 选 **新加坡 `ap-southeast-1`**（`s3.ap-southeast-1.wasabisys.com`）：M0 从香港 VPS 实测连接耗时 34 ms，是所有区域中最低的（东京 55 ms，Wasabi 没有香港区域）。Bucket 的区域在创建时确定，Wasabi 套餐按账号计费，新建 bucket 不增加费用。吞吐量在 M2 接入时用 `observer netcheck -s3` 复测。
+- Region 选 **新加坡 `ap-southeast-1`**（`s3.ap-southeast-1.wasabisys.com`）：M0 从香港 VPS 实测连接耗时 34 ms，是所有区域中最低的（东京 55 ms，Wasabi 没有香港区域）。Bucket 的区域在创建时确定，Wasabi 套餐按账号计费，新建 bucket 不增加费用。
+- 已创建 bucket `observer-backup-001`（2026-11-19）：私有、未开启版本控制与 Object Lock；程序使用专用子用户 `observer-app` 的密钥，策略只允许访问该 bucket（`netcheck -s3` 已验证列出全部 bucket 会被拒绝）。
+- 从 VPS 实测：8 MB 对象上传 13–15 MB/s、下载 4–5 MB/s；64 KB 对象（接近文章图片大小）上传中位数 48–69 ms、下载 76–101 ms。一篇 55 张图的文章串行上传约 3–4 秒。
 
 ---
 
@@ -823,7 +825,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 3. **页面特征**：已覆盖正常、作者删除、违规、验证页、短链、长链。**仍缺投诉删除、账号封禁 / 迁移样本**，规则中已按关键词预留分类，并有合成样本测试；拿到真实样本后补测试。
 4. **元数据提取**：`biz/mid/idx/sn`、标题、公众号名与 ID、作者、发布时间、`msg_link` 都能从完整页面或 `check` 读取的部分中提取。`head` 方式只能拿到标题和 `og:url`，所以首次抓取必须用 `full`。
 5. **图片**：香港 IP 下不带 Referer 也能下载；实现上仍带 Referer 并保持会话内 UA 一致。图片格式按响应的 `Content-Type` 保存（样本中为 jpeg / png），`wx_fmt` 和 webp 的处理留到 M2 实现快照时确认。
-6. **Wasabi**：选新加坡 `ap-southeast-1`。吞吐量没测（未提供凭据），M2 接入时复测。
+6. **Wasabi**：选新加坡 `ap-southeast-1`，bucket 与密钥已就绪，吞吐量与延迟见 §8。
 
 其他决定：
 - 定期检查**先全部用 `check`**（约 58 MB/篇，月流量够每月约 5000 篇新文章）。M2 补齐删除样本后，再决定是否把日常检查切换到 `head`（约 29 MB/篇）。

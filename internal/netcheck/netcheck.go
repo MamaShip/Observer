@@ -219,8 +219,10 @@ func S3FromEnv() (S3Config, bool) {
 	return c, c.Endpoint != "" && c.Bucket != "" && c.AccessKey != "" && c.SecretKey != ""
 }
 
-// RunS3 uploads, downloads and deletes one test object, printing throughput.
-// Wasabi bills deleted objects for 90 days; an 8 MB object costs nothing noticeable.
+// RunS3 checks the bucket's region and the key's scope, then measures
+// throughput (one large object) and per-request latency (small objects, the
+// size of typical article images). Every test object is deleted afterwards;
+// Wasabi still bills them for 90 days, which for ~9 MB costs nothing noticeable.
 func RunS3(ctx context.Context, w io.Writer, c S3Config) error {
 	endpoint := strings.TrimPrefix(strings.TrimPrefix(c.Endpoint, "https://"), "http://")
 	cl, err := minio.New(endpoint, &minio.Options{
@@ -231,34 +233,92 @@ func RunS3(ctx context.Context, w io.Writer, c S3Config) error {
 	if err != nil {
 		return err
 	}
+
+	loc, err := cl.GetBucketLocation(ctx, c.Bucket)
+	if err != nil {
+		return fmt.Errorf("bucket location: %w", err)
+	}
+	fmt.Fprintf(w, "s3 bucket %s: region %s (configured %s)\n", c.Bucket, loc, c.Region)
+	if c.Region != "" && loc != c.Region {
+		fmt.Fprintf(w, "WARNING: bucket region differs from S3_REGION\n")
+	}
+	if _, err := cl.ListBuckets(ctx); err == nil {
+		fmt.Fprintf(w, "WARNING: this key can list every bucket in the account; scope it to %s only\n", c.Bucket)
+	} else if code := minio.ToErrorResponse(err).Code; code == "AccessDenied" {
+		fmt.Fprintf(w, "s3 key scope: ok (listing all buckets is denied)\n")
+	} else {
+		fmt.Fprintf(w, "s3 key scope: unknown, ListBuckets failed with %s: %v\n", code, err)
+	}
+
+	prefix := fmt.Sprintf("observer-netcheck/%d/", time.Now().UnixNano())
+	var keys []string
+	defer func() {
+		for _, k := range keys {
+			if err := cl.RemoveObject(context.WithoutCancel(ctx), c.Bucket, k, minio.RemoveObjectOptions{}); err != nil {
+				fmt.Fprintf(w, "warning: could not delete %s: %v\n", k, err)
+			}
+		}
+	}()
+	put := func(key string, data []byte) (time.Duration, error) {
+		t0 := time.Now()
+		_, err := cl.PutObject(ctx, c.Bucket, key, bytes.NewReader(data), int64(len(data)),
+			minio.PutObjectOptions{ContentType: "application/octet-stream"})
+		if err == nil {
+			keys = append(keys, key)
+		}
+		return time.Since(t0), err
+	}
+	get := func(key string, want []byte) (time.Duration, error) {
+		t0 := time.Now()
+		obj, err := cl.GetObject(ctx, c.Bucket, key, minio.GetObjectOptions{})
+		if err != nil {
+			return 0, err
+		}
+		defer obj.Close()
+		got, err := io.ReadAll(obj)
+		if err != nil {
+			return 0, err
+		}
+		if !bytes.Equal(got, want) {
+			return 0, fmt.Errorf("%s: downloaded content differs from upload", key)
+		}
+		return time.Since(t0), nil
+	}
+
 	data := make([]byte, c.SizeMB<<20)
 	rand.Read(data)
-	key := fmt.Sprintf("observer-netcheck/%d.bin", time.Now().UnixNano())
-
-	t0 := time.Now()
-	if _, err := cl.PutObject(ctx, c.Bucket, key, bytes.NewReader(data), int64(len(data)),
-		minio.PutObjectOptions{ContentType: "application/octet-stream"}); err != nil {
+	up, err := put(prefix+"large.bin", data)
+	if err != nil {
 		return fmt.Errorf("put: %w", err)
 	}
-	up := time.Since(t0)
-
-	t0 = time.Now()
-	obj, err := cl.GetObject(ctx, c.Bucket, key, minio.GetObjectOptions{})
+	down, err := get(prefix+"large.bin", data)
 	if err != nil {
 		return fmt.Errorf("get: %w", err)
 	}
-	n, err := io.Copy(io.Discard, obj)
-	obj.Close()
-	down := time.Since(t0)
-	if err != nil {
-		return fmt.Errorf("get read: %w", err)
+	mbps := func(n int, d time.Duration) float64 { return float64(n) / (1 << 20) / d.Seconds() }
+	fmt.Fprintf(w, "s3 %d MB object: upload %s (%.1f MB/s), download %s (%.1f MB/s)\n",
+		c.SizeMB, up.Round(time.Millisecond), mbps(len(data), up), down.Round(time.Millisecond), mbps(len(data), down))
+
+	const smallN, smallSize = 10, 64 << 10
+	var puts, gets []time.Duration
+	for i := 0; i < smallN; i++ {
+		b := make([]byte, smallSize)
+		rand.Read(b)
+		k := fmt.Sprintf("%ssmall-%02d.bin", prefix, i)
+		d, err := put(k, b)
+		if err != nil {
+			return fmt.Errorf("put small: %w", err)
+		}
+		puts = append(puts, d)
+		if d, err = get(k, b); err != nil {
+			return fmt.Errorf("get small: %w", err)
+		}
+		gets = append(gets, d)
 	}
-	if err := cl.RemoveObject(ctx, c.Bucket, key, minio.RemoveObjectOptions{}); err != nil {
-		fmt.Fprintf(w, "warning: could not delete %s: %v\n", key, err)
+	median := func(ds []time.Duration) time.Duration {
+		slices.Sort(ds)
+		return ds[len(ds)/2].Round(time.Millisecond)
 	}
-	mbps := func(bytes int64, d time.Duration) float64 { return float64(bytes) / (1 << 20) / d.Seconds() }
-	fmt.Fprintf(w, "s3 %s/%s: upload %d MB in %s (%.1f MB/s), download in %s (%.1f MB/s)\n",
-		endpoint, c.Bucket, c.SizeMB, up.Round(time.Millisecond), mbps(int64(len(data)), up),
-		down.Round(time.Millisecond), mbps(n, down))
+	fmt.Fprintf(w, "s3 %d x %d KB objects: median put %s, median get %s\n", smallN, smallSize>>10, median(puts), median(gets))
 	return nil
 }
