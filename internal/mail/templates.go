@@ -18,7 +18,7 @@ var (
 
 // LoginData fills the login email.
 type LoginData struct {
-	Link         string
+	Code         string
 	ValidMinutes int
 	ServiceName  string
 	ServiceURL   string

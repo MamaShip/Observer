@@ -17,25 +17,31 @@ type Querier interface {
 	// article); DeleteResolvingWatches then removes the leftovers.
 	ActivateResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
 	ArticleHasSnapshot(ctx context.Context, articleID uuid.UUID) (bool, error)
+	// AttemptLoginCode counts one guess against the address's latest code and
+	// returns it, unless that code expired, was used or has no guesses left.
+	AttemptLoginCode(ctx context.Context, arg AttemptLoginCodeParams) (AttemptLoginCodeRow, error)
+	// ClaimLoginRequest counts one code for (email, day). It returns no row,
+	// counting nothing, when the day's limit is reached or the last code was
+	// requested after resend_before.
+	ClaimLoginRequest(ctx context.Context, arg ClaimLoginRequestParams) (int32, error)
 	ConfirmArticleDeleted(ctx context.Context, arg ConfirmArticleDeletedParams) error
-	// ConsumeLoginToken marks a token used, at most once, if it has not expired.
-	ConsumeLoginToken(ctx context.Context, arg ConsumeLoginTokenParams) (string, error)
+	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
 	CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error)
-	CountRecentLoginTokens(ctx context.Context, arg CountRecentLoginTokensParams) (int64, error)
 	CountWatchesSince(ctx context.Context, arg CountWatchesSinceParams) (int64, error)
 	// CreateAlias reports 0 rows when the URL already belongs to an article
 	// (possibly one a concurrent submission created a moment ago).
 	CreateAlias(ctx context.Context, arg CreateAliasParams) (int64, error)
 	CreateArticle(ctx context.Context) (Article, error)
-	CreateLoginToken(ctx context.Context, arg CreateLoginTokenParams) error
+	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateUser(ctx context.Context, email string) (User, error)
 	CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch, error)
 	DeleteArticle(ctx context.Context, id uuid.UUID) error
-	DeleteExpiredLoginTokens(ctx context.Context, before time.Time) (int64, error)
+	DeleteExpiredLoginCodes(ctx context.Context, before time.Time) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 	DeleteOldCheckRuns(ctx context.Context, before time.Time) (int64, error)
+	DeleteOldLoginRequests(ctx context.Context, before time.Time) (int64, error)
 	DeleteResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
@@ -50,6 +56,7 @@ type Querier interface {
 	GetArticleByKeyForUpdate(ctx context.Context, canonicalKey *string) (Article, error)
 	GetArticleForUpdate(ctx context.Context, id uuid.UUID) (Article, error)
 	GetAsset(ctx context.Context, sha256 []byte) (Asset, error)
+	GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error)
 	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
 	GetSession(ctx context.Context, arg GetSessionParams) (GetSessionRow, error)
 	GetSnapshot(ctx context.Context, id uuid.UUID) (Snapshot, error)
@@ -81,6 +88,8 @@ type Querier interface {
 	ReactivateArticle(ctx context.Context, arg ReactivateArticleParams) error
 	RecordArticleAlive(ctx context.Context, arg RecordArticleAliveParams) error
 	RecordArticleFailure(ctx context.Context, arg RecordArticleFailureParams) (int32, error)
+	// ReleaseLoginRequest gives back a claim whose email could not be sent.
+	ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error)
 	SkipExpiryNotifications(ctx context.Context, now time.Time) (int64, error)

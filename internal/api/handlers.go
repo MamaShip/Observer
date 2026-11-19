@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -22,23 +24,26 @@ type handlers struct{ d Deps }
 
 // ---- auth ----
 
-type magicLinkInput struct {
+type codeInput struct {
 	Body struct {
-		Email string `json:"email" maxLength:"254" doc:"Where to send the login link"`
+		Email string `json:"email" maxLength:"254" doc:"Where to send the login code"`
 	}
 }
 
-type messageOutput struct {
+type codeOutput struct {
 	Status int
 	Body   struct {
-		Message string `json:"message"`
+		Message     string `json:"message"`
+		Remaining   int    `json:"remaining" doc:"Codes this email can still request today (Beijing time)"`
+		ResendAfter int    `json:"resend_after" doc:"Seconds before another code can be requested; 0 when none are left today"`
 	}
 }
 
 type verifyInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      struct {
-		Token  string `json:"token" maxLength:"100" doc:"The token from the login link (after #token=)"`
+		Email  string `json:"email" maxLength:"254"`
+		Code   string `json:"code" maxLength:"10" doc:"The 6-digit code from the email"`
 		Bearer bool   `json:"bearer,omitempty" doc:"Return the session token in the body instead of setting a cookie (for non-browser clients)"`
 	}
 }
@@ -69,35 +74,43 @@ func sessionCookie(value string, maxAge time.Duration) *http.Cookie {
 
 func (h *handlers) registerAuth(g huma.API) {
 	huma.Register(g, huma.Operation{
-		OperationID: "request-login-link", Method: http.MethodPost, Path: "/auth/magic-link",
-		Summary: "Email a login link", Tags: []string{"auth"}, DefaultStatus: http.StatusAccepted,
-		Description: "Always answers the same way whether or not the address has an account.",
-	}, func(ctx context.Context, in *magicLinkInput) (*messageOutput, error) {
-		err := h.d.Auth.RequestLink(ctx, in.Body.Email, clientIP(ctx))
+		OperationID: "request-login-code", Method: http.MethodPost, Path: "/auth/code",
+		Summary: "Email a login code", Tags: []string{"auth"}, DefaultStatus: http.StatusAccepted,
+		Description: fmt.Sprintf("Each email can request %d codes a day (Beijing time), %d seconds apart. "+
+			"Answers the same way whether or not the address has an account.", auth.CodesPerDay, int(auth.ResendAfter.Seconds())),
+	}, func(ctx context.Context, in *codeInput) (*codeOutput, error) {
+		q, err := h.d.Auth.RequestCode(ctx, in.Body.Email, clientIP(ctx))
+		wait := int(math.Ceil(q.ResendIn.Seconds()))
 		switch {
 		case errors.Is(err, auth.ErrInvalidEmail):
 			return nil, huma.Error422UnprocessableEntity("邮箱地址格式不正确。")
 		case errors.Is(err, auth.ErrRateLimited):
 			return nil, huma.Error429TooManyRequests("请求过于频繁，请稍后再试。")
+		case errors.Is(err, auth.ErrTooSoon):
+			return nil, huma.ErrorWithHeaders(huma.Error429TooManyRequests(fmt.Sprintf("验证码已发送，请 %d 秒后再重新获取。", wait)),
+				http.Header{"Retry-After": {strconv.Itoa(wait)}})
+		case errors.Is(err, auth.ErrTryTomorrow):
+			return nil, huma.Error429TooManyRequests(fmt.Sprintf("这个邮箱今天已获取过 %d 次验证码，请明天再试。", auth.CodesPerDay))
 		case errors.Is(err, notify.ErrDailyLimit):
 			return nil, huma.Error503ServiceUnavailable("今天的邮件发送额度已用完，请明天再试。")
 		case err != nil:
 			return nil, err
 		}
-		out := &messageOutput{Status: http.StatusAccepted}
-		out.Body.Message = "如果该邮箱可以登录，几分钟内会收到登录链接。"
+		out := &codeOutput{Status: http.StatusAccepted}
+		out.Body.Message = fmt.Sprintf("如果该邮箱可以登录，几分钟内会收到验证码，%d 分钟内有效。", int(auth.CodeTTL.Minutes()))
+		out.Body.Remaining, out.Body.ResendAfter = q.Remaining, wait
 		return out, nil
 	})
 
 	huma.Register(g, huma.Operation{
 		OperationID: "verify-login", Method: http.MethodPost, Path: "/auth/verify",
-		Summary: "Log in with a link's token", Tags: []string{"auth"},
-		Description: "Called by the login page's script, never by opening a link directly, so mail scanners that prefetch links cannot use up the token.",
+		Summary: "Log in with an emailed code", Tags: []string{"auth"},
+		Description: "Each code allows a few attempts and works once.",
 	}, func(ctx context.Context, in *verifyInput) (*verifyOutput, error) {
-		sess, err := h.d.Auth.Verify(ctx, in.Body.Token, in.UserAgent)
+		sess, err := h.d.Auth.Verify(ctx, in.Body.Email, in.Body.Code, in.UserAgent)
 		switch {
-		case errors.Is(err, auth.ErrInvalidToken):
-			return nil, huma.Error400BadRequest("登录链接无效、已过期或已使用，请重新获取。")
+		case errors.Is(err, auth.ErrInvalidCode):
+			return nil, huma.Error400BadRequest("验证码不正确或已失效。")
 		case errors.Is(err, auth.ErrDisabled):
 			return nil, huma.Error403Forbidden("该账号已停用。")
 		case err != nil:

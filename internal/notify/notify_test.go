@@ -143,7 +143,7 @@ func TestDailyLimit(t *testing.T) {
 	e := newEnv(t, 3) // notifications may use 2 of 3, logins all 3
 	u, _ := e.q.CreateUser(e.ctx, "carol@example.com")
 	for i := range 2 {
-		if err := e.n.SendLogin(e.ctx, "carol@example.com", "https://x/l", &u.ID, 15*time.Minute); err != nil {
+		if err := e.n.SendLogin(e.ctx, "carol@example.com", "123456", &u.ID, 15*time.Minute); err != nil {
 			t.Fatalf("login %d: %v", i, err)
 		}
 	}
@@ -155,10 +155,10 @@ func TestDailyLimit(t *testing.T) {
 	if !retry.Time.After(time.Now()) || time.Until(retry.Time) > 25*time.Hour {
 		t.Errorf("retry at %s", retry.Time)
 	}
-	if err := e.n.SendLogin(e.ctx, "carol@example.com", "https://x/l", &u.ID, 15*time.Minute); err != nil {
+	if err := e.n.SendLogin(e.ctx, "carol@example.com", "123456", &u.ID, 15*time.Minute); err != nil {
 		t.Fatalf("third login (reserved share): %v", err)
 	}
-	if err := e.n.SendLogin(e.ctx, "carol@example.com", "https://x/l", &u.ID, 15*time.Minute); !errors.Is(err, ErrDailyLimit) {
+	if err := e.n.SendLogin(e.ctx, "carol@example.com", "123456", &u.ID, 15*time.Minute); !errors.Is(err, ErrDailyLimit) {
 		t.Fatalf("fourth login: %v, want ErrDailyLimit", err)
 	}
 }
@@ -198,7 +198,7 @@ func TestAlerts(t *testing.T) {
 func TestEightyPercentAlert(t *testing.T) {
 	e := newEnv(t, 10)
 	for range 8 {
-		if err := e.n.SendLogin(e.ctx, "x@example.com", "https://x/l", nil, time.Minute); err != nil {
+		if err := e.n.SendLogin(e.ctx, "x@example.com", "123456", nil, time.Minute); err != nil {
 			t.Fatal(err)
 		}
 	}

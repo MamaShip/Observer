@@ -79,22 +79,38 @@ func (c *client) api(method, path string, body any, want int, out any) {
 	}
 }
 
-var tokenRe = regexp.MustCompile(`#token=([A-Za-z0-9_-]{43})`)
+var codeRe = regexp.MustCompile(`验证码：(\d{6})`)
 
-// login requests a link for email and follows it, as the login page does.
+// login requests a code for email and enters it, as the login page does.
 func (c *client) login(mailer *mail.Memory, email string) {
 	c.t.Helper()
 	before := len(mailer.Sent())
-	c.api(http.MethodPost, "/auth/magic-link", map[string]string{"email": email}, http.StatusAccepted, nil)
+	var quota struct {
+		Remaining   int `json:"remaining"`
+		ResendAfter int `json:"resend_after"`
+	}
+	c.api(http.MethodPost, "/auth/code", map[string]string{"email": email}, http.StatusAccepted, &quota)
+	if quota.Remaining != auth.CodesPerDay-1 || quota.ResendAfter != int(auth.ResendAfter.Seconds()) {
+		c.t.Errorf("quota = %+v", quota)
+	}
 	sent := mailer.Sent()
 	if len(sent) != before+1 || sent[len(sent)-1].To != email {
 		c.t.Fatalf("login email not sent to %s: %+v", email, sent)
 	}
-	m := tokenRe.FindStringSubmatch(sent[len(sent)-1].Text)
-	if m == nil || !strings.Contains(sent[len(sent)-1].Text, "http://"+site+"/login/verify#token=") {
-		c.t.Fatalf("no login link in %q", sent[len(sent)-1].Text)
+	m := codeRe.FindStringSubmatch(sent[len(sent)-1].Text)
+	if m == nil || !strings.HasPrefix(sent[len(sent)-1].Subject, m[1]) {
+		c.t.Fatalf("no login code in %q", sent[len(sent)-1].Text)
 	}
-	resp, b := c.do(http.MethodPost, site, api.Prefix+"/auth/verify", map[string]string{"token": m[1]})
+	// Asking again right away is refused with a wait time.
+	resp, b := c.do(http.MethodPost, site, api.Prefix+"/auth/code", map[string]string{"email": email})
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
+		c.t.Errorf("immediate resend: %d %s (Retry-After %q)", resp.StatusCode, b, resp.Header.Get("Retry-After"))
+	}
+	resp, b = c.do(http.MethodPost, site, api.Prefix+"/auth/verify", map[string]string{"email": email, "code": "abc"})
+	if resp.StatusCode != http.StatusBadRequest {
+		c.t.Errorf("bad code: %d %s", resp.StatusCode, b)
+	}
+	resp, b = c.do(http.MethodPost, site, api.Prefix+"/auth/verify", map[string]string{"email": email, "code": m[1]})
 	if resp.StatusCode != http.StatusOK {
 		c.t.Fatalf("verify: %d %s", resp.StatusCode, b)
 	}

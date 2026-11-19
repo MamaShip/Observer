@@ -95,7 +95,7 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 | `internal/store` | Postgres 访问（sqlc 生成）、迁移文件 |
 | `internal/jobs` | River 任务定义：抓取、检查、快照、PDF、邮件、周期任务 |
 | `internal/watch` | 业务核心：提交、观察、状态机、调度策略、通知决策（不依赖 HTTP 与具体存储） |
-| `internal/auth` | 魔法链接、会话、鉴权中间件、限流 |
+| `internal/auth` | 邮件验证码、会话、鉴权中间件、限流 |
 | `internal/mail` | Mailer 接口、SMTP 实现、邮件模板 |
 | `internal/api` | HTTP handler（Huma），生成 OpenAPI 文档 |
 | `internal/snapserver` | `snap.<domain>` 快照与资源服务 |
@@ -223,22 +223,32 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 - **观察期满**：默认不发邮件（用户可在设置中打开）。
 - 邮件只包含标题、状态、删除原因和**查看链接**，不带附件。
 - **每日发送上限保护**：Resend 免费档每日 100 封。通知类邮件只用到额度的 90%，剩下 10% 留给登录邮件。发送遇到限额（本地计数或服务商返回）时，摘要任务顺延到次日 UTC 零点之后。当日发送量达到 80% 时给管理员发告警。
-- **登录邮件同步发送，不进任务队列**：任务参数以明文存在 `river_job` 表里，登录链接中的 token 不能落库。额度用完时，登录接口直接返回 503"今天的邮件发送额度已用完"。
+- **登录邮件同步发送，不进任务队列**：任务参数以明文存在 `river_job` 表里，验证码不能明文落库。额度用完时，登录接口直接返回 503"今天的邮件发送额度已用完"。
 - **管理员告警**（`ADMIN_EMAILS`）：金丝雀失败、熔断打开、单篇文章连续 6 次检查无结论、邮件用量达到 80%。同类告警 6 小时内只发一次，并且都会写入错误日志。
 
 ---
 
 ## 6. 关键流程
 
-### 6.1 登录（邮箱魔法链接）
+### 6.1 登录（邮箱验证码）
 
-1. 用户在登录页输入邮箱 → `POST /api/v1/auth/magic-link`。
-2. 服务端生成 32 字节随机 token，只存 sha256 哈希，15 分钟有效、一次性使用；发送邮件，链接指向前端页面 `/login/verify#token=...`。
-3. 前端页面加载后由 JS 读取 token 并 `POST /api/v1/auth/verify`。**不使用 GET 直接消费 token**，避免邮箱安全扫描器预取链接导致 token 失效。
-4. 验证成功：首次登录则创建用户；签发会话 token（哈希存库，30 天滑动过期），写入 `__Host-session` Cookie（`Secure; HttpOnly; SameSite=Lax`）。
-5. 限流：同一邮箱每 10 分钟最多 3 次，同一 IP 每小时最多 10 次。接口无论邮箱是否存在都返回相同响应。
+1. 用户在登录页输入邮箱 → `POST /api/v1/auth/code`，服务端发送 6 位数字验证码（标题里也带验证码，手机通知栏可直接看到）。
+2. 验证码只存哈希，10 分钟有效，一次性使用；每个验证码最多尝试 5 次，只有最近一次发送的验证码有效。
+3. 用户在**同一页面**输入验证码 → `POST /api/v1/auth/verify {email, code}`。
+4. 验证成功：首次登录则创建用户（开放模式）；签发会话 token（256 位随机数，哈希存库，30 天滑动过期），写入 `__Host-session` Cookie（`Secure; HttpOnly; SameSite=Lax`）。
+5. 发送限制：
+   - **每个邮箱每天最多 2 封**（按北京时间自然日），两次之间至少隔 60 秒。用完后接口返回 429"这个邮箱今天已获取过 2 次验证码，请明天再试"。
+   - 同一 IP 每小时最多 10 次。
+   - 计数对所有邮箱一视同仁（无论是否有账号、是否被邀请、是否停用），响应也相同，不泄露邮箱是否注册。发信失败时退还这次计数。
+   - 接口返回当天剩余次数和可重发的等待秒数，供前端显示倒计时。
 
-邮箱的所有权由魔法链接本身验证，解决了旧系统"可绑定他人邮箱"的问题。
+邮箱的所有权由验证码本身验证，解决了旧系统"可绑定他人邮箱"的问题。
+
+**为什么用验证码而不是魔法链接**（2026-11-20 决定）：
+- 用户多在手机浏览器或微信内置浏览器里使用本站，而邮件常在 QQ 邮箱等 App 里看；点链接会在邮件 App 的内置浏览器里登录，回到原页面仍是未登录。验证码在原页面输入，登录就发生在原浏览器里。
+- 每天只有 2 次机会，魔法链接"登录到了错误的浏览器"会白白浪费一次。
+- 不受邮件安全扫描器预取链接的影响；国内用户也更熟悉验证码。
+- 代价：6 位验证码靠尝试次数保证安全（每天最多猜 10 次，命中概率约十万分之一），可以接受。
 
 ### 6.2 提交文章
 
@@ -292,14 +302,23 @@ CREATE TABLE users (
   last_login_at    timestamptz
 );
 
-CREATE TABLE login_tokens (
+CREATE TABLE login_codes (            -- 邮件验证码
   id          uuid PRIMARY KEY DEFAULT uuidv7(),
   email       citext NOT NULL,
-  token_hash  bytea NOT NULL UNIQUE,
+  code_hash   bytea NOT NULL,
+  attempts    int NOT NULL DEFAULT 0,   -- 最多 5 次
   expires_at  timestamptz NOT NULL,
   used_at     timestamptz,
   request_ip  inet,
   created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE login_requests (         -- 每个邮箱每天（北京时间）的发送计数
+  email    citext NOT NULL,
+  day      date NOT NULL,
+  sent     int NOT NULL,
+  last_at  timestamptz NOT NULL,
+  PRIMARY KEY (email, day)
 );
 
 CREATE TABLE sessions (
@@ -417,7 +436,7 @@ CREATE TABLE email_log (
 - 实际迁移文件：`internal/store/migrations/00001_init.sql`（以它为准；上线前可以直接修改，上线后只能追加新迁移）。
 - River 的任务表由 River 自带的迁移创建，包装为 goose 的 Go 迁移（版本 2），固定在 River 迁移版本 8。升级 River 后如果它带了新迁移，测试 `TestRiverSchemaPinned` 会失败，提醒追加一个 goose 迁移。River 的部分迁移不能放进同一个事务，所以这一步不在 goose 事务中执行。
 - `check_runs` 保留 180 天（周期任务清理），引起状态变化的记录永久保留。
-- `login_tokens` 与过期 `sessions` 每天清理。
+- 过期的 `login_codes`、两天前的 `login_requests` 与过期 `sessions` 每天清理。
 - 删除账号时级联删除会话与观察；文章与快照属于公共备份，不随用户删除。
 
 ---
@@ -445,8 +464,8 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/auth/magic-link` | `{email}` → 202 |
-| POST | `/auth/verify` | `{token}` → 设置会话 Cookie |
+| POST | `/auth/code` | `{email}` → 202 `{remaining, resend_after}`；超限 429 |
+| POST | `/auth/verify` | `{email, code}` → 设置会话 Cookie |
 | POST | `/auth/logout` | 注销当前会话 |
 | GET | `/me` | 当前用户信息与设置 |
 | PATCH | `/me` | 修改设置（`notify_on_expire`） |
@@ -475,14 +494,13 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | 页面 | 内容 |
 |---|---|
 | 首页 / 介绍 | 服务说明、使用方法、隐私说明入口 |
-| 登录 | 输入邮箱 → 提示查收邮件 |
-| 登录验证 | 读取 token 并完成登录 |
+| 登录 | 输入邮箱 → 获取验证码（60 秒重发倒计时、当天剩余次数）→ 在同一页面输入验证码完成登录 |
 | 我的观察 | 列表（状态徽章：解析中 / 观察中 / 已删除 / 已到期 / 已停止），顶部为提交链接输入框 |
 | 观察详情 | 文章信息、删除原因、检查历史、快照在线查看（iframe）、下载单文件 HTML、打印 / 保存为 PDF（附操作提示）、停止观察 |
 | 设置 | 到期通知开关、退出登录、删除账号 |
 | 关于 / 隐私 / 服务条款 | 静态页 |
 
-- 移动端优先：大部分用户会在微信内置浏览器或手机浏览器打开邮件链接。
+- 移动端优先：大部分用户会在微信内置浏览器或手机浏览器中使用。
 - 构建产物通过 `go:embed` 嵌入二进制，由 app 直接提供；SPA 路由回退到 `index.html`。
 
 ---
@@ -658,7 +676,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 | 层次 | 内容 | 工具 |
 |---|---|---|
 | 单元 | URL 规范化、删除检测（基于样本）、HTML 清洗、调度间隔计算、状态机转换、签名链接 | `go test`，表驱动 |
-| 集成 | store 查询、任务流程（提交 → 抓取 → 快照 → 删除 → 通知）、魔法链接登录 | 真实 Postgres；blob 与 mailer 用内存实现；抓取用 `httptest` 回放样本 |
+| 集成 | store 查询、任务流程（提交 → 抓取 → 快照 → 删除 → 通知）、验证码登录与每日限制 | 真实 Postgres；blob 与 mailer 用内存实现；抓取用 `httptest` 回放样本 |
 | 对象存储 | 用一个集成测试验证 S3 读写 | 本地 MinIO 容器（只在开发/CI 中使用） |
 | 前端 | 类型检查；关键组件少量测试 | `vue-tsc`、Vitest |
 | 线上 | 金丝雀检测 | §6.6 |
@@ -704,17 +722,17 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 ### M3：账号、API 与通知
 > **进行中（2026-11-19）**：不依赖外部账号的部分已完成。
-> - 邮箱登录链接（token 只存哈希，同步发信）、会话（Cookie 与 Bearer 两种，30 天滑动过期）、邀请制、按 IP 与按邮箱限流、配额。
+> - 邮箱验证码登录（每个邮箱每天 2 封、只存哈希、同步发信；2026-11-20 由魔法链接改为验证码，理由见 §6.1）、会话（Cookie 与 Bearer 两种，30 天滑动过期）、邀请制、按 IP 与按邮箱限流、配额。
 > - 全部 `/api/v1` 接口（§9）；跨站写请求按 `Origin` / `Sec-Fetch-Site` 拒绝。
 > - 快照域服务：签名链接、沙箱 CSP、单文件下载、图片接口、本地磁盘 LRU 缓存。
 > - SMTP 发信（go-mail）与模板、摘要合并、每日额度保护、`email_log`、管理员告警、Healthchecks 心跳。
 > - `admin invite / disable / enable / logout-all` 命令。
-> - 验收集成测试 `internal/app/flow_test.go` 在真实 HTTP、River 和 Postgres 上走完：登录 → 提交 → 生成快照 → 查看 → 下载 → 删除确认 → 收到删除邮件 → 权限隔离 → 退出与删除账号。
+> - 验收集成测试 `internal/app/flow_test.go` 在真实 HTTP、River 和 Postgres 上走完：验证码登录 → 提交 → 生成快照 → 查看 → 下载 → 删除确认 → 收到删除邮件 → 权限隔离 → 退出与删除账号。
 > - 编译出的程序用 curl 冒烟测试通过。
 >
 > **待办（需要用户提供）**：Resend 账号与 SMTP 凭据、发件域名的 SPF/DKIM/DMARC 记录，拿到后用真实邮箱验证送达率（QQ、163、Gmail）。
 
-- 魔法链接登录、会话、限流、配额、注册模式。
+- 验证码登录、会话、限流、配额、注册模式。
 - 观察相关 API、快照签名链接、快照域服务、单文件 HTML 下载。
 - 邮件：SMTP Mailer、模板、摘要合并、日限额 Snooze、`email_log`。
 - **验收**：通过 API 完成 登录 → 提交 → 查看快照 → 模拟删除 → 收到邮件 的完整流程；集成测试覆盖该流程。

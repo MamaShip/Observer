@@ -66,14 +66,22 @@ type EmailLog struct {
 	SentAt     *time.Time
 }
 
-type LoginToken struct {
+type LoginCode struct {
 	ID        uuid.UUID
 	Email     string
-	TokenHash []byte
+	CodeHash  []byte
+	Attempts  int32
 	ExpiresAt time.Time
 	UsedAt    *time.Time
 	RequestIp *netip.Addr
 	CreatedAt time.Time
+}
+
+type LoginRequest struct {
+	Email  string
+	Day    time.Time
+	Sent   int32
+	LastAt time.Time
 }
 
 type Session struct {

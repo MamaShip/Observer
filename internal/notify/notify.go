@@ -147,11 +147,11 @@ func (n *Notifier) send(ctx context.Context, kind string, userID *uuid.UUID, m m
 	return sendErr
 }
 
-// SendLogin emails a login link right away. It is not queued: the link would
+// SendLogin emails a login code right away. It is not queued: the code would
 // otherwise sit in the job table in plain text.
-func (n *Notifier) SendLogin(ctx context.Context, to, link string, userID *uuid.UUID, valid time.Duration) error {
+func (n *Notifier) SendLogin(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error {
 	m, err := mail.Render("login", to, mail.LoginData{
-		Link: link, ValidMinutes: int(valid.Minutes()), ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL,
+		Code: code, ValidMinutes: int(valid.Minutes()), ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL,
 	})
 	if err != nil {
 		return err

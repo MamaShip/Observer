@@ -100,7 +100,7 @@ func TestSMTPSend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := Render("login", "user@example.com", LoginData{Link: "https://example.com/login/verify#token=abc", ValidMinutes: 15, ServiceName: "折光观察者", ServiceURL: "https://example.com"})
+	m, err := Render("login", "user@example.com", LoginData{Code: "042917", ValidMinutes: 10, ServiceName: "折光观察者", ServiceURL: "https://example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +138,12 @@ func TestNewSMTPValidates(t *testing.T) {
 }
 
 func TestRender(t *testing.T) {
-	m, err := Render("login", "u@example.com", LoginData{Link: "https://x.example/login/verify#token=t<>", ValidMinutes: 15, ServiceName: "折光观察者", ServiceURL: "https://x.example"})
+	m, err := Render("login", "u@example.com", LoginData{Code: "042917", ValidMinutes: 10, ServiceName: "折光<观察者>", ServiceURL: "https://x.example"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Subject != "折光观察者 登录链接" || !strings.Contains(m.Text, "https://x.example/login/verify#token=t<>") ||
-		!strings.Contains(m.HTML, "#token=t%3c%3e") {
+	if m.Subject != "042917 是你的折光<观察者>验证码" || !strings.Contains(m.Text, "验证码：042917") ||
+		!strings.Contains(m.Text, "10 分钟") || !strings.Contains(m.HTML, ">042917</p>") || !strings.Contains(m.HTML, "折光&lt;观察者&gt;") {
 		t.Errorf("login message = %+v", m)
 	}
 

@@ -1,15 +1,18 @@
-// Package auth implements email magic-link login and sessions (plan.md §6.1).
-// Tokens are 256-bit random values; only their sha256 is stored.
+// Package auth implements email login codes and sessions (plan.md §6.1).
+// Logging in with an emailed code is also what verifies the address.
+// Session tokens are 256-bit random values; only their sha256 is stored.
 package auth
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/mail"
 	"net/netip"
 	"strings"
@@ -32,13 +35,18 @@ const (
 
 // Lifetimes and limits.
 const (
-	LoginTokenTTL     = 15 * time.Minute
+	CodeTTL           = 10 * time.Minute
+	CodesPerDay       = 2 // per address and Beijing calendar day
+	ResendAfter       = 60 * time.Second
+	codeAttempts      = 5 // guesses per code
 	SessionTTL        = 30 * 24 * time.Hour
 	sessionTouchEvery = time.Hour
-	linksPerEmail     = 3 // per linksWindow
-	linksWindow       = 10 * time.Minute
-	linksPerIPPerHour = 10
+	codesPerIPPerHour = 10
 )
+
+// Beijing is where "today" is counted for the daily code limit; users are
+// told to try again tomorrow, which should mean after their midnight.
+var Beijing = time.FixedZone("UTC+8", 8*60*60)
 
 // CookieName is the session cookie. The __Host- prefix makes browsers
 // require Secure, Path=/ and no Domain, so subdomains cannot set or read it.
@@ -47,28 +55,29 @@ const CookieName = "__Host-session"
 // Errors.
 var (
 	ErrInvalidEmail = errors.New("invalid email address")
-	ErrRateLimited  = errors.New("too many login requests")
-	ErrInvalidToken = errors.New("login link is invalid, expired or already used")
+	ErrRateLimited  = errors.New("too many login requests from this address")
+	ErrTooSoon      = errors.New("a code was requested less than a minute ago")
+	ErrTryTomorrow  = errors.New("no more codes for this email today")
+	ErrInvalidCode  = errors.New("login code is wrong, expired or already used")
 	ErrDisabled     = errors.New("account disabled")
 	ErrNoSession    = errors.New("not logged in")
 )
 
-// LinkSender emails login links.
-type LinkSender interface {
-	SendLogin(ctx context.Context, to, link string, userID *uuid.UUID, valid time.Duration) error
+// CodeSender emails login codes.
+type CodeSender interface {
+	SendLogin(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error
 }
 
 // Config configures the service.
 type Config struct {
-	BaseURL string // login links point to BaseURL + "/login/verify#token=..."
-	Mode    string
+	Mode string
 }
 
 // Service implements login and sessions.
 type Service struct {
 	pool   *pgxpool.Pool
 	q      *db.Queries
-	sender LinkSender
+	sender CodeSender
 	cfg    Config
 	log    *slog.Logger
 	now    func() time.Time
@@ -76,10 +85,10 @@ type Service struct {
 }
 
 // New builds the service.
-func New(pool *pgxpool.Pool, sender LinkSender, cfg Config, log *slog.Logger) *Service {
+func New(pool *pgxpool.Pool, sender CodeSender, cfg Config, log *slog.Logger) *Service {
 	return &Service{
 		pool: pool, q: db.New(pool), sender: sender, cfg: cfg, log: log.With("component", "auth"), now: time.Now,
-		ips: newIPLimiter(rate.Every(time.Hour/linksPerIPPerHour), linksPerIPPerHour),
+		ips: newIPLimiter(rate.Every(time.Hour/codesPerIPPerHour), codesPerIPPerHour),
 	}
 }
 
@@ -93,59 +102,94 @@ func NormalizeEmail(s string) (string, error) {
 	return strings.ToLower(s), nil
 }
 
-// RequestLink emails a login link. To avoid revealing which addresses have
-// accounts, it succeeds silently when no email is sent (unknown address in
-// invite mode, disabled account, or too many links for this address).
-func (s *Service) RequestLink(ctx context.Context, email string, ip netip.Addr) error {
+// CodeQuota is what the login page shows after a request.
+type CodeQuota struct {
+	Remaining int           // codes this address can still request today
+	ResendIn  time.Duration // wait before requesting another; 0 if none left
+}
+
+// today is the Beijing calendar day of t, as a date value.
+func today(t time.Time) time.Time {
+	y, m, d := t.In(Beijing).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// RequestCode emails a login code. Every address gets CodesPerDay a day,
+// at least ResendAfter apart; past that it returns ErrTryTomorrow or
+// ErrTooSoon (with the quota filled in). The limit is counted the same way
+// for every address, and the request succeeds silently when no email is sent
+// (unknown address in invite mode, disabled account), so the answers do not
+// reveal which addresses have accounts.
+func (s *Service) RequestCode(ctx context.Context, email string, ip netip.Addr) (CodeQuota, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
-		return err
+		return CodeQuota{}, err
 	}
-	if ip.IsValid() && !s.ips.allow(ip, s.now()) {
-		return ErrRateLimited
+	now := s.now()
+	if ip.IsValid() && !s.ips.allow(ip, now) {
+		return CodeQuota{}, ErrRateLimited
 	}
 	log := s.log.With("email_domain", email[strings.LastIndex(email, "@")+1:])
+	day := today(now)
+
+	sent, err := s.q.ClaimLoginRequest(ctx, db.ClaimLoginRequestParams{
+		Email: email, Day: day, Now: now, PerDay: CodesPerDay, ResendBefore: now.Add(-ResendAfter),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		r, err := s.q.GetLoginRequest(ctx, db.GetLoginRequestParams{Email: email, Day: day})
+		if err != nil {
+			return CodeQuota{}, err
+		}
+		if r.Sent >= CodesPerDay {
+			return CodeQuota{}, ErrTryTomorrow
+		}
+		return CodeQuota{Remaining: CodesPerDay - int(r.Sent), ResendIn: r.LastAt.Add(ResendAfter).Sub(now)}, ErrTooSoon
+	}
+	if err != nil {
+		return CodeQuota{}, err
+	}
+	quota := CodeQuota{Remaining: CodesPerDay - int(sent)}
+	if quota.Remaining > 0 {
+		quota.ResendIn = ResendAfter
+	}
 
 	var userID *uuid.UUID
 	user, err := s.q.GetUserByEmail(ctx, email)
 	switch {
 	case err == nil:
 		if user.Status != "active" {
-			log.Info("login link not sent: account disabled")
-			return nil
+			log.Info("login code not sent: account disabled")
+			return quota, nil
 		}
 		userID = &user.ID
 	case errors.Is(err, pgx.ErrNoRows):
 		if s.cfg.Mode != ModeOpen {
-			log.Info("login link not sent: not invited")
-			return nil
+			log.Info("login code not sent: not invited")
+			return quota, nil
 		}
 	default:
-		return err
+		return CodeQuota{}, err
 	}
 
-	recent, err := s.q.CountRecentLoginTokens(ctx, db.CountRecentLoginTokensParams{Email: email, Since: s.now().Add(-linksWindow)})
+	code, err := newCode()
 	if err != nil {
-		return err
+		return CodeQuota{}, err
 	}
-	if recent >= linksPerEmail {
-		log.Info("login link not sent: too many recent links for this address")
-		return nil
-	}
-
-	token, hash, err := newToken()
-	if err != nil {
-		return err
-	}
-	p := db.CreateLoginTokenParams{Email: email, TokenHash: hash, ExpiresAt: s.now().Add(LoginTokenTTL)}
+	p := db.CreateLoginCodeParams{Email: email, CodeHash: hashCode(email, code), ExpiresAt: now.Add(CodeTTL)}
 	if ip.IsValid() {
 		p.RequestIp = &ip
 	}
-	if err := s.q.CreateLoginToken(ctx, p); err != nil {
-		return err
+	if err := s.q.CreateLoginCode(ctx, p); err != nil {
+		return CodeQuota{}, err
 	}
-	link := s.cfg.BaseURL + "/login/verify#token=" + token
-	return s.sender.SendLogin(ctx, email, link, userID, LoginTokenTTL)
+	if err := s.sender.SendLogin(ctx, email, code, userID, CodeTTL); err != nil {
+		// Not the user's fault: give the attempt back.
+		if rerr := s.q.ReleaseLoginRequest(context.WithoutCancel(ctx), db.ReleaseLoginRequestParams{Email: email, Day: day}); rerr != nil {
+			log.Error("could not release login request", "err", rerr)
+		}
+		return CodeQuota{}, err
+	}
+	return quota, nil
 }
 
 // Session is a newly created session.
@@ -155,30 +199,46 @@ type Session struct {
 	TTL   time.Duration
 }
 
-// Verify consumes a login token and starts a session. In open mode the
-// first login creates the account.
-func (s *Service) Verify(ctx context.Context, token, userAgent string) (Session, error) {
-	hash, ok := hashToken(token)
-	if !ok {
-		return Session{}, ErrInvalidToken
+// Verify checks the latest code sent to email and starts a session. Each
+// call uses up one of the code's guesses. In open mode the first login
+// creates the account.
+func (s *Service) Verify(ctx context.Context, email, code, userAgent string) (Session, error) {
+	email, err := NormalizeEmail(email)
+	if err != nil {
+		return Session{}, ErrInvalidCode
 	}
+	code = strings.TrimSpace(code)
+	if !validCode(code) {
+		return Session{}, ErrInvalidCode
+	}
+	now := s.now()
+	c, err := s.q.AttemptLoginCode(ctx, db.AttemptLoginCodeParams{Email: email, Now: now, MaxAttempts: codeAttempts})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Session{}, ErrInvalidCode
+	}
+	if err != nil {
+		return Session{}, err
+	}
+	if subtle.ConstantTimeCompare(c.CodeHash, hashCode(email, code)) != 1 {
+		return Session{}, ErrInvalidCode
+	}
+
 	var out Session
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		now := s.now()
-		email, err := q.ConsumeLoginToken(ctx, db.ConsumeLoginTokenParams{TokenHash: hash, Now: now})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInvalidToken
-		}
+		n, err := q.ConsumeLoginCode(ctx, db.ConsumeLoginCodeParams{ID: c.ID, Now: now})
 		if err != nil {
 			return err
+		}
+		if n == 0 {
+			return ErrInvalidCode // used concurrently
 		}
 		user, err := q.GetUserByEmail(ctx, email)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows) && s.cfg.Mode == ModeOpen:
 			user, err = q.CreateUser(ctx, email)
 		case errors.Is(err, pgx.ErrNoRows):
-			return ErrInvalidToken // account removed after the link was sent
+			return ErrInvalidCode // account removed after the code was sent
 		}
 		if err != nil {
 			return err
@@ -244,21 +304,54 @@ func (s *Service) LogoutAll(ctx context.Context, userID uuid.UUID) (int64, error
 	return s.q.DeleteUserSessions(ctx, userID)
 }
 
-// Cleanup deletes expired login tokens and sessions.
+// Cleanup deletes expired login codes, old request counts and sessions.
 func (s *Service) Cleanup(ctx context.Context) error {
 	now := s.now()
-	t, err := s.q.DeleteExpiredLoginTokens(ctx, now.Add(-24*time.Hour))
+	codes, err := s.q.DeleteExpiredLoginCodes(ctx, now.Add(-24*time.Hour))
+	if err != nil {
+		return err
+	}
+	reqs, err := s.q.DeleteOldLoginRequests(ctx, today(now).AddDate(0, 0, -2))
 	if err != nil {
 		return err
 	}
 	sess, err := s.q.DeleteExpiredSessions(ctx, now)
-	if err == nil && t+sess > 0 {
-		s.log.Info("expired logins cleaned up", "login_tokens", t, "sessions", sess)
+	if err == nil && codes+reqs+sess > 0 {
+		s.log.Info("expired logins cleaned up", "login_codes", codes, "login_requests", reqs, "sessions", sess)
 	}
 	return err
 }
 
-// newToken returns a random token and its stored hash.
+// newCode returns a uniformly random 6-digit code.
+func newCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", fmt.Errorf("random code: %w", err)
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
+}
+
+func validCode(c string) bool {
+	if len(c) != 6 {
+		return false
+	}
+	for _, r := range c {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// hashCode is the stored form of a code. Six digits are no secret from
+// anyone holding the table; the hash only keeps them out of plain sight
+// for the ten minutes a code lives.
+func hashCode(email, code string) []byte {
+	h := sha256.Sum256([]byte(email + "\x00" + code))
+	return h[:]
+}
+
+// newToken returns a random session token and its stored hash.
 func newToken() (string, []byte, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

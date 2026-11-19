@@ -14,16 +14,30 @@ CREATE TABLE users (
   last_login_at    timestamptz
 );
 
-CREATE TABLE login_tokens (
+-- Emailed login codes (6 digits). Only a hash is stored; a code allows a
+-- few guesses and is used once.
+CREATE TABLE login_codes (
   id         uuid PRIMARY KEY DEFAULT uuidv7(),
   email      citext NOT NULL,
-  token_hash bytea NOT NULL UNIQUE,
+  code_hash  bytea NOT NULL,
+  attempts   int NOT NULL DEFAULT 0,
   expires_at timestamptz NOT NULL,
   used_at    timestamptz,
   request_ip inet,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX login_tokens_expires ON login_tokens (expires_at);
+CREATE INDEX login_codes_email ON login_codes (email, created_at DESC);
+CREATE INDEX login_codes_expires ON login_codes (expires_at);
+
+-- Codes requested per address per day (Beijing time). Counted for every
+-- address, with or without an account, so the limit reveals nothing.
+CREATE TABLE login_requests (
+  email   citext NOT NULL,
+  day     date NOT NULL,
+  sent    int NOT NULL,
+  last_at timestamptz NOT NULL,
+  PRIMARY KEY (email, day)
+);
 
 CREATE TABLE sessions (
   id           uuid PRIMARY KEY DEFAULT uuidv7(),
@@ -159,5 +173,6 @@ DROP TABLE watches;
 DROP TABLE url_aliases;
 DROP TABLE articles;
 DROP TABLE sessions;
-DROP TABLE login_tokens;
+DROP TABLE login_requests;
+DROP TABLE login_codes;
 DROP TABLE users;

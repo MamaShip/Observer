@@ -1,16 +1,38 @@
--- name: CountRecentLoginTokens :one
-SELECT count(*)::bigint FROM login_tokens
-WHERE email = sqlc.arg(email) AND created_at > sqlc.arg(since)::timestamptz;
+-- ClaimLoginRequest counts one code for (email, day). It returns no row,
+-- counting nothing, when the day's limit is reached or the last code was
+-- requested after resend_before.
+-- name: ClaimLoginRequest :one
+INSERT INTO login_requests AS r (email, day, sent, last_at)
+VALUES (sqlc.arg(email), sqlc.arg(day)::date, 1, sqlc.arg(now)::timestamptz)
+ON CONFLICT (email, day) DO UPDATE SET sent = r.sent + 1, last_at = excluded.last_at
+WHERE r.sent < sqlc.arg(per_day)::int AND r.last_at <= sqlc.arg(resend_before)::timestamptz
+RETURNING sent;
 
--- name: CreateLoginToken :exec
-INSERT INTO login_tokens (email, token_hash, expires_at, request_ip)
-VALUES (sqlc.arg(email), sqlc.arg(token_hash), sqlc.arg(expires_at), sqlc.narg(request_ip));
+-- name: GetLoginRequest :one
+SELECT * FROM login_requests WHERE email = sqlc.arg(email) AND day = sqlc.arg(day)::date;
 
--- ConsumeLoginToken marks a token used, at most once, if it has not expired.
--- name: ConsumeLoginToken :one
-UPDATE login_tokens SET used_at = sqlc.arg(now)::timestamptz
-WHERE token_hash = sqlc.arg(token_hash) AND used_at IS NULL AND expires_at > sqlc.arg(now)::timestamptz
-RETURNING email;
+-- ReleaseLoginRequest gives back a claim whose email could not be sent.
+-- name: ReleaseLoginRequest :exec
+UPDATE login_requests SET sent = greatest(sent - 1, 0)
+WHERE email = sqlc.arg(email) AND day = sqlc.arg(day)::date;
+
+-- name: CreateLoginCode :exec
+INSERT INTO login_codes (email, code_hash, expires_at, request_ip)
+VALUES (sqlc.arg(email), sqlc.arg(code_hash), sqlc.arg(expires_at), sqlc.narg(request_ip));
+
+-- AttemptLoginCode counts one guess against the address's latest code and
+-- returns it, unless that code expired, was used or has no guesses left.
+-- name: AttemptLoginCode :one
+UPDATE login_codes SET attempts = attempts + 1
+WHERE id = (
+  SELECT c.id FROM login_codes c
+  WHERE c.email = sqlc.arg(email) AND c.used_at IS NULL AND c.expires_at > sqlc.arg(now)::timestamptz
+  ORDER BY c.created_at DESC LIMIT 1
+) AND attempts < sqlc.arg(max_attempts)::int
+RETURNING id, code_hash;
+
+-- name: ConsumeLoginCode :execrows
+UPDATE login_codes SET used_at = sqlc.arg(now)::timestamptz WHERE id = sqlc.arg(id) AND used_at IS NULL;
 
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
@@ -55,8 +77,11 @@ DELETE FROM sessions WHERE token_hash = $1;
 -- name: DeleteUserSessions :execrows
 DELETE FROM sessions WHERE user_id = $1;
 
--- name: DeleteExpiredLoginTokens :execrows
-DELETE FROM login_tokens WHERE expires_at < sqlc.arg(before)::timestamptz;
+-- name: DeleteExpiredLoginCodes :execrows
+DELETE FROM login_codes WHERE expires_at < sqlc.arg(before)::timestamptz;
+
+-- name: DeleteOldLoginRequests :execrows
+DELETE FROM login_requests WHERE day < sqlc.arg(before)::date;
 
 -- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions WHERE expires_at < sqlc.arg(now)::timestamptz;

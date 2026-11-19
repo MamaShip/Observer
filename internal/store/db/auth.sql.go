@@ -13,58 +13,101 @@ import (
 	"github.com/google/uuid"
 )
 
-const consumeLoginToken = `-- name: ConsumeLoginToken :one
-UPDATE login_tokens SET used_at = $1::timestamptz
-WHERE token_hash = $2 AND used_at IS NULL AND expires_at > $1::timestamptz
-RETURNING email
+const attemptLoginCode = `-- name: AttemptLoginCode :one
+UPDATE login_codes SET attempts = attempts + 1
+WHERE id = (
+  SELECT c.id FROM login_codes c
+  WHERE c.email = $1 AND c.used_at IS NULL AND c.expires_at > $2::timestamptz
+  ORDER BY c.created_at DESC LIMIT 1
+) AND attempts < $3::int
+RETURNING id, code_hash
 `
 
-type ConsumeLoginTokenParams struct {
-	Now       time.Time
-	TokenHash []byte
+type AttemptLoginCodeParams struct {
+	Email       string
+	Now         time.Time
+	MaxAttempts int32
 }
 
-// ConsumeLoginToken marks a token used, at most once, if it has not expired.
-func (q *Queries) ConsumeLoginToken(ctx context.Context, arg ConsumeLoginTokenParams) (string, error) {
-	row := q.db.QueryRow(ctx, consumeLoginToken, arg.Now, arg.TokenHash)
-	var email string
-	err := row.Scan(&email)
-	return email, err
+type AttemptLoginCodeRow struct {
+	ID       uuid.UUID
+	CodeHash []byte
 }
 
-const countRecentLoginTokens = `-- name: CountRecentLoginTokens :one
-SELECT count(*)::bigint FROM login_tokens
-WHERE email = $1 AND created_at > $2::timestamptz
+// AttemptLoginCode counts one guess against the address's latest code and
+// returns it, unless that code expired, was used or has no guesses left.
+func (q *Queries) AttemptLoginCode(ctx context.Context, arg AttemptLoginCodeParams) (AttemptLoginCodeRow, error) {
+	row := q.db.QueryRow(ctx, attemptLoginCode, arg.Email, arg.Now, arg.MaxAttempts)
+	var i AttemptLoginCodeRow
+	err := row.Scan(&i.ID, &i.CodeHash)
+	return i, err
+}
+
+const claimLoginRequest = `-- name: ClaimLoginRequest :one
+INSERT INTO login_requests AS r (email, day, sent, last_at)
+VALUES ($1, $2::date, 1, $3::timestamptz)
+ON CONFLICT (email, day) DO UPDATE SET sent = r.sent + 1, last_at = excluded.last_at
+WHERE r.sent < $4::int AND r.last_at <= $5::timestamptz
+RETURNING sent
 `
 
-type CountRecentLoginTokensParams struct {
-	Email string
-	Since time.Time
+type ClaimLoginRequestParams struct {
+	Email        string
+	Day          time.Time
+	Now          time.Time
+	PerDay       int32
+	ResendBefore time.Time
 }
 
-func (q *Queries) CountRecentLoginTokens(ctx context.Context, arg CountRecentLoginTokensParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countRecentLoginTokens, arg.Email, arg.Since)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
+// ClaimLoginRequest counts one code for (email, day). It returns no row,
+// counting nothing, when the day's limit is reached or the last code was
+// requested after resend_before.
+func (q *Queries) ClaimLoginRequest(ctx context.Context, arg ClaimLoginRequestParams) (int32, error) {
+	row := q.db.QueryRow(ctx, claimLoginRequest,
+		arg.Email,
+		arg.Day,
+		arg.Now,
+		arg.PerDay,
+		arg.ResendBefore,
+	)
+	var sent int32
+	err := row.Scan(&sent)
+	return sent, err
 }
 
-const createLoginToken = `-- name: CreateLoginToken :exec
-INSERT INTO login_tokens (email, token_hash, expires_at, request_ip)
+const consumeLoginCode = `-- name: ConsumeLoginCode :execrows
+UPDATE login_codes SET used_at = $1::timestamptz WHERE id = $2 AND used_at IS NULL
+`
+
+type ConsumeLoginCodeParams struct {
+	Now time.Time
+	ID  uuid.UUID
+}
+
+func (q *Queries) ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeLoginCode, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const createLoginCode = `-- name: CreateLoginCode :exec
+INSERT INTO login_codes (email, code_hash, expires_at, request_ip)
 VALUES ($1, $2, $3, $4)
 `
 
-type CreateLoginTokenParams struct {
+type CreateLoginCodeParams struct {
 	Email     string
-	TokenHash []byte
+	CodeHash  []byte
 	ExpiresAt time.Time
 	RequestIp *netip.Addr
 }
 
-func (q *Queries) CreateLoginToken(ctx context.Context, arg CreateLoginTokenParams) error {
-	_, err := q.db.Exec(ctx, createLoginToken,
+func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error {
+	_, err := q.db.Exec(ctx, createLoginCode,
 		arg.Email,
-		arg.TokenHash,
+		arg.CodeHash,
 		arg.ExpiresAt,
 		arg.RequestIp,
 	)
@@ -114,12 +157,12 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 	return i, err
 }
 
-const deleteExpiredLoginTokens = `-- name: DeleteExpiredLoginTokens :execrows
-DELETE FROM login_tokens WHERE expires_at < $1::timestamptz
+const deleteExpiredLoginCodes = `-- name: DeleteExpiredLoginCodes :execrows
+DELETE FROM login_codes WHERE expires_at < $1::timestamptz
 `
 
-func (q *Queries) DeleteExpiredLoginTokens(ctx context.Context, before time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpiredLoginTokens, before)
+func (q *Queries) DeleteExpiredLoginCodes(ctx context.Context, before time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredLoginCodes, before)
 	if err != nil {
 		return 0, err
 	}
@@ -132,6 +175,18 @@ DELETE FROM sessions WHERE expires_at < $1::timestamptz
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredSessions, now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOldLoginRequests = `-- name: DeleteOldLoginRequests :execrows
+DELETE FROM login_requests WHERE day < $1::date
+`
+
+func (q *Queries) DeleteOldLoginRequests(ctx context.Context, before time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldLoginRequests, before)
 	if err != nil {
 		return 0, err
 	}
@@ -166,6 +221,27 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID uuid.UUID) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getLoginRequest = `-- name: GetLoginRequest :one
+SELECT email, day, sent, last_at FROM login_requests WHERE email = $1 AND day = $2::date
+`
+
+type GetLoginRequestParams struct {
+	Email string
+	Day   time.Time
+}
+
+func (q *Queries) GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error) {
+	row := q.db.QueryRow(ctx, getLoginRequest, arg.Email, arg.Day)
+	var i LoginRequest
+	err := row.Scan(
+		&i.Email,
+		&i.Day,
+		&i.Sent,
+		&i.LastAt,
+	)
+	return i, err
 }
 
 const getSession = `-- name: GetSession :one
@@ -242,6 +318,22 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const releaseLoginRequest = `-- name: ReleaseLoginRequest :exec
+UPDATE login_requests SET sent = greatest(sent - 1, 0)
+WHERE email = $1 AND day = $2::date
+`
+
+type ReleaseLoginRequestParams struct {
+	Email string
+	Day   time.Time
+}
+
+// ReleaseLoginRequest gives back a claim whose email could not be sent.
+func (q *Queries) ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error {
+	_, err := q.db.Exec(ctx, releaseLoginRequest, arg.Email, arg.Day)
+	return err
 }
 
 const setUserStatus = `-- name: SetUserStatus :execrows

@@ -93,7 +93,7 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 	if err != nil {
 		return nil, err
 	}
-	authSvc := auth.New(pool, notifier, auth.Config{BaseURL: cfg.Origin(), Mode: cfg.RegistrationMode}, log)
+	authSvc := auth.New(pool, notifier, auth.Config{Mode: cfg.RegistrationMode}, log)
 
 	hb := &jobs.Heartbeat{}
 	rc, err := jobs.NewClient(pool, log, hb, jobs.Services{Watch: svc, Notify: notifier, Auth: authSvc, HealthcheckURL: cfg.HealthcheckURL})
