@@ -3,6 +3,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -69,7 +70,7 @@ func (s *Service) Check(ctx context.Context, args CheckArgs) error {
 			if err != nil {
 				return err
 			}
-			// M3 queues the deletion emails here, in this transaction.
+			// The notification sweep emails these users (notify.Sweep).
 			log.Info("article deleted", "reason", r.Reason, "watches_ended", len(ended))
 
 		default: // invalid, blocked, error: no conclusion
@@ -79,8 +80,10 @@ func (s *Service) Check(ctx context.Context, args CheckArgs) error {
 			}); err != nil {
 				return err
 			}
-			if n >= alertAfterFailures {
-				log.Warn("article checks keep failing", "consecutive_failures", n)
+			if n == alertAfterFailures {
+				s.alert.Alert(ctx, "failing:"+art.ID.String(), "文章连续检查失败",
+					fmt.Sprintf("文章 %s（%s）已连续 %d 次检查没有结论，最近一次：%s / %s %s",
+						art.ID, deref(art.Title), n, r.Verdict, r.Rule, strings.Join(nonBlank(r.Message, r.Detail), " | ")))
 			}
 		}
 		return s.recordCheck(ctx, q, art.ID, f, stateChange)

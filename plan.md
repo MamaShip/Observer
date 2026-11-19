@@ -219,10 +219,12 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 
 ### 5.6 通知策略
 
-- **文章被删除**：对每个 `active` 观察的用户入队通知；同一用户 10 分钟窗口内的多条通知合并为一封摘要邮件。
+- **文章被删除**：周期任务每 5 分钟扫描一次"已结束但未通知"的观察，按用户合并成一封摘要邮件（同一用户这段时间内的多篇删除只发一封）。用扫描而不是每次删除单独入队，任务失败或并发时都不会漏发。
 - **观察期满**：默认不发邮件（用户可在设置中打开）。
 - 邮件只包含标题、状态、删除原因和**查看链接**，不带附件。
-- **每日发送上限保护**：Resend 免费档每日 100 封。发送任务遇到限额错误时 Snooze 到次日；优先级为 登录邮件 > 删除通知 > 到期通知。日用量超过 80% 时告警，提示考虑切换服务商。
+- **每日发送上限保护**：Resend 免费档每日 100 封。通知类邮件只用到额度的 90%，剩下 10% 留给登录邮件。发送遇到限额（本地计数或服务商返回）时，摘要任务顺延到次日 UTC 零点之后。当日发送量达到 80% 时给管理员发告警。
+- **登录邮件同步发送，不进任务队列**：任务参数以明文存在 `river_job` 表里，登录链接中的 token 不能落库。额度用完时，登录接口直接返回 503"今天的邮件发送额度已用完"。
+- **管理员告警**（`ADMIN_EMAILS`）：金丝雀失败、熔断打开、单篇文章连续 6 次检查无结论、邮件用量达到 80%。同类告警 6 小时内只发一次，并且都会写入错误日志。
 
 ---
 
@@ -575,9 +577,12 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 已实现（M1）：`DATABASE_URL`（必填，URL 格式）、`DB_MAX_CONNS`（默认 10）、`HTTP_ADDR`（默认 `:8080`）、`BASE_URL`、`LOG_LEVEL`（默认 `info`）、`LOG_FORMAT`（`json` / `text`，默认 `json`）。
 
+已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
+`BASE_URL` 为 https 时视为生产环境：`SIGNING_KEY`、`SMTP_HOST` 必填，`SNAP_BASE_URL` 也必须是 https；开发环境缺少它们时，分别退化为随机签名密钥、只把邮件写进日志。
+
 已实现（M2）：`S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`（设置 `S3_BUCKET` 时使用 S3）、`BLOB_DIR`（开发用本地目录，两者至少设置一个）、`WATCH_DAYS`（默认 60）、`FETCH_MIN_INTERVAL`（默认 `3s`，最小 `1s`）、`FETCH_USER_AGENT`（预设名 `ios` / `android` / `desktop` 或完整 UA，默认 `ios`）、`CANARY_ALIVE_URL`、`CANARY_DELETED_URL`。
 
-计划中：`SNAP_BASE_URL`、`SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`SIGNING_KEY`、`REGISTRATION_MODE`、`CACHE_DIR`、`CACHE_MAX_BYTES`、`HEALTHCHECK_URL`、`ADMIN_EMAILS`、`DAILY_EMAIL_LIMIT`。
+
 
 ### 13.4 备份与恢复
 
@@ -698,6 +703,17 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **验收**：用 CLI 提交一组真实链接，能生成快照、按策略定时检查，对删除样本给出正确判定。
 
 ### M3：账号、API 与通知
+> **进行中（2026-11-19）**：不依赖外部账号的部分已完成。
+> - 邮箱登录链接（token 只存哈希，同步发信）、会话（Cookie 与 Bearer 两种，30 天滑动过期）、邀请制、按 IP 与按邮箱限流、配额。
+> - 全部 `/api/v1` 接口（§9）；跨站写请求按 `Origin` / `Sec-Fetch-Site` 拒绝。
+> - 快照域服务：签名链接、沙箱 CSP、单文件下载、图片接口、本地磁盘 LRU 缓存。
+> - SMTP 发信（go-mail）与模板、摘要合并、每日额度保护、`email_log`、管理员告警、Healthchecks 心跳。
+> - `admin invite / disable / enable / logout-all` 命令。
+> - 验收集成测试 `internal/app/flow_test.go` 在真实 HTTP、River 和 Postgres 上走完：登录 → 提交 → 生成快照 → 查看 → 下载 → 删除确认 → 收到删除邮件 → 权限隔离 → 退出与删除账号。
+> - 编译出的程序用 curl 冒烟测试通过。
+>
+> **待办（需要用户提供）**：Resend 账号与 SMTP 凭据、发件域名的 SPF/DKIM/DMARC 记录，拿到后用真实邮箱验证送达率（QQ、163、Gmail）。
+
 - 魔法链接登录、会话、限流、配额、注册模式。
 - 观察相关 API、快照签名链接、快照域服务、单文件 HTML 下载。
 - 邮件：SMTP Mailer、模板、摘要合并、日限额 Snooze、`email_log`。

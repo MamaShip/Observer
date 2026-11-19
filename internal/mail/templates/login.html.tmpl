@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><body style="margin:0;padding:24px;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2328;line-height:1.7">
+<p>你好，</p>
+<p>请在 {{.ValidMinutes}} 分钟内点击下面的链接登录{{.ServiceName}}：</p>
+<p><a href="{{.Link}}" style="display:inline-block;padding:10px 18px;background:#1f6feb;color:#fff;text-decoration:none;border-radius:6px">登录</a></p>
+<p style="color:#656d76;font-size:13px">如果按钮无法点击，请复制这个地址到浏览器打开：<br><span style="word-break:break-all">{{.Link}}</span></p>
+<p style="color:#656d76;font-size:13px">链接只能使用一次。如果不是你本人操作，忽略这封邮件即可，你的账号不会有任何变化。</p>
+<p style="color:#656d76;font-size:13px">{{.ServiceName}} · <a href="{{.ServiceURL}}" style="color:#656d76">{{.ServiceURL}}</a></p>
+</body></html>

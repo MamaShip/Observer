@@ -23,10 +23,9 @@ func (f fakeHealth) Started() time.Time           { return f.started }
 
 func get(t *testing.T, h fakeHealth, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	mux := http.NewServeMux()
-	New(mux, Deps{Version: "test", Health: h, StallAfter: 5 * time.Minute})
+	handler, _ := New(Deps{Version: "test", Health: h, StallAfter: 5 * time.Minute})
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
 }
 

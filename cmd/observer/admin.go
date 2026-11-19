@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MamaShip/Observer/internal/app"
+	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/blob"
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/jobs"
@@ -26,6 +28,9 @@ import (
 const adminUsage = `Usage: observer admin <command>
 
   stats                            service counters
+  invite <email>                   let an address log in (REGISTRATION_MODE=invite)
+  disable <email> | enable <email> block or unblock an account (disabling also logs it out)
+  logout-all <email>               end every session of an account
   submit -email ADDR <url>...      watch links as that user (created if new)
   articles [-n N]                  recent articles and their state
   check <article-id>               check an alive article at the next scheduler run
@@ -53,6 +58,8 @@ func runAdmin(ctx context.Context, args []string) error {
 	switch cmd, rest := args[0], args[1:]; cmd {
 	case "stats":
 		return adminStats(ctx, q)
+	case "invite", "disable", "enable", "logout-all":
+		return adminUser(ctx, q, cmd, rest)
 	case "submit":
 		return adminSubmit(ctx, cfg, pool, q, rest)
 	case "articles":
@@ -92,6 +99,46 @@ func adminStats(ctx context.Context, q *db.Queries) error {
 	return nil
 }
 
+func adminUser(ctx context.Context, q *db.Queries, cmd string, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: observer admin %s <email>", cmd)
+	}
+	email, err := auth.NormalizeEmail(args[0])
+	if err != nil {
+		return err
+	}
+	if cmd == "invite" {
+		u, err := q.CreateUser(ctx, email)
+		if err == nil {
+			fmt.Printf("%s can now log in (user %s, status %s)\n", u.Email, u.ID, u.Status)
+		}
+		return err
+	}
+	u, err := q.GetUserByEmail(ctx, email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("no account for %s", email)
+	}
+	if err != nil {
+		return err
+	}
+	switch cmd {
+	case "disable", "enable":
+		status := map[string]string{"disable": "disabled", "enable": "active"}[cmd]
+		if _, err := q.SetUserStatus(ctx, db.SetUserStatusParams{Email: email, Status: status}); err != nil {
+			return err
+		}
+		fmt.Printf("%s is now %s\n", email, status)
+		if cmd == "enable" {
+			return nil
+		}
+	}
+	n, err := q.DeleteUserSessions(ctx, u.ID)
+	if err == nil {
+		fmt.Printf("%d sessions ended\n", n)
+	}
+	return err
+}
+
 func adminSubmit(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, q *db.Queries, args []string) error {
 	fs := flag.NewFlagSet("submit", flag.ExitOnError)
 	email := fs.String("email", "", "user email (required)")
@@ -100,7 +147,7 @@ func adminSubmit(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, q *
 		return errors.New("usage: observer admin submit -email ADDR URL [URL ...]")
 	}
 	log := cfg.Logger()
-	svc, _, err := app.NewService(cfg, pool, log)
+	svc, _, err := app.NewService(cfg, pool, log, nil, nil)
 	if err != nil {
 		return err
 	}

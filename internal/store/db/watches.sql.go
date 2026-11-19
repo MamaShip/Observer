@@ -34,6 +34,33 @@ func (q *Queries) ActivateResolvingWatches(ctx context.Context, articleID uuid.U
 	return result.RowsAffected(), nil
 }
 
+const countOpenWatches = `-- name: CountOpenWatches :one
+SELECT count(*)::bigint FROM watches WHERE user_id = $1 AND status IN ('resolving', 'active')
+`
+
+func (q *Queries) CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOpenWatches, userID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countWatchesSince = `-- name: CountWatchesSince :one
+SELECT count(*)::bigint FROM watches WHERE user_id = $1 AND created_at > $2::timestamptz
+`
+
+type CountWatchesSinceParams struct {
+	UserID uuid.UUID
+	Since  time.Time
+}
+
+func (q *Queries) CountWatchesSince(ctx context.Context, arg CountWatchesSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countWatchesSince, arg.UserID, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createWatch = `-- name: CreateWatch :one
 INSERT INTO watches (user_id, article_id, submitted_url, status, end_reason, expires_at, ended_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -205,6 +232,105 @@ func (q *Queries) GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Wat
 	return i, err
 }
 
+const getUserWatch = `-- name: GetUserWatch :one
+SELECT w.id, w.user_id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at, w.notified_at, a.title, a.account_name, a.author, a.published_at, a.status AS article_status,
+       a.canonical_url, a.deleted_reason_code, a.deleted_reason_text, a.deleted_at,
+       a.last_checked_at, a.next_check_at
+FROM watches w LEFT JOIN articles a ON a.id = w.article_id
+WHERE w.id = $1 AND w.user_id = $2
+`
+
+type GetUserWatchParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+type GetUserWatchRow struct {
+	Watch             Watch
+	Title             *string
+	AccountName       *string
+	Author            *string
+	PublishedAt       *time.Time
+	ArticleStatus     *string
+	CanonicalUrl      *string
+	DeletedReasonCode *string
+	DeletedReasonText *string
+	DeletedAt         *time.Time
+	LastCheckedAt     *time.Time
+	NextCheckAt       *time.Time
+}
+
+func (q *Queries) GetUserWatch(ctx context.Context, arg GetUserWatchParams) (GetUserWatchRow, error) {
+	row := q.db.QueryRow(ctx, getUserWatch, arg.ID, arg.UserID)
+	var i GetUserWatchRow
+	err := row.Scan(
+		&i.Watch.ID,
+		&i.Watch.UserID,
+		&i.Watch.ArticleID,
+		&i.Watch.SubmittedUrl,
+		&i.Watch.Status,
+		&i.Watch.EndReason,
+		&i.Watch.CreatedAt,
+		&i.Watch.ExpiresAt,
+		&i.Watch.EndedAt,
+		&i.Watch.NotifiedAt,
+		&i.Title,
+		&i.AccountName,
+		&i.Author,
+		&i.PublishedAt,
+		&i.ArticleStatus,
+		&i.CanonicalUrl,
+		&i.DeletedReasonCode,
+		&i.DeletedReasonText,
+		&i.DeletedAt,
+		&i.LastCheckedAt,
+		&i.NextCheckAt,
+	)
+	return i, err
+}
+
+const listRecentCheckRuns = `-- name: ListRecentCheckRuns :many
+SELECT checked_at, mode, result, reason FROM check_runs
+WHERE article_id = $1 ORDER BY checked_at DESC LIMIT $2
+`
+
+type ListRecentCheckRunsParams struct {
+	ArticleID uuid.UUID
+	MaxRows   int32
+}
+
+type ListRecentCheckRunsRow struct {
+	CheckedAt time.Time
+	Mode      string
+	Result    string
+	Reason    *string
+}
+
+func (q *Queries) ListRecentCheckRuns(ctx context.Context, arg ListRecentCheckRunsParams) ([]ListRecentCheckRunsRow, error) {
+	rows, err := q.db.Query(ctx, listRecentCheckRuns, arg.ArticleID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentCheckRunsRow{}
+	for rows.Next() {
+		var i ListRecentCheckRunsRow
+		if err := rows.Scan(
+			&i.CheckedAt,
+			&i.Mode,
+			&i.Result,
+			&i.Reason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserWatches = `-- name: ListUserWatches :many
 SELECT w.id, w.user_id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at, w.notified_at, a.title, a.status AS article_status
 FROM watches w LEFT JOIN articles a ON a.id = w.article_id
@@ -260,6 +386,78 @@ func (q *Queries) ListUserWatches(ctx context.Context, userID uuid.UUID) ([]List
 	return items, nil
 }
 
+const listWatchesPage = `-- name: ListWatchesPage :many
+SELECT w.id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at,
+       a.title, a.account_name, a.status AS article_status, a.deleted_reason_code
+FROM watches w LEFT JOIN articles a ON a.id = w.article_id
+WHERE w.user_id = $1
+  AND ($2::text IS NULL OR w.status = $2::text)
+  AND ($3::uuid IS NULL OR w.id < $3::uuid)
+ORDER BY w.id DESC
+LIMIT $4
+`
+
+type ListWatchesPageParams struct {
+	UserID   uuid.UUID
+	Status   *string
+	BeforeID *uuid.UUID
+	MaxRows  int32
+}
+
+type ListWatchesPageRow struct {
+	ID                uuid.UUID
+	ArticleID         *uuid.UUID
+	SubmittedUrl      string
+	Status            string
+	EndReason         *string
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+	EndedAt           *time.Time
+	Title             *string
+	AccountName       *string
+	ArticleStatus     *string
+	DeletedReasonCode *string
+}
+
+// ListWatchesPage pages newest first by id (UUIDv7 ids sort by creation time).
+func (q *Queries) ListWatchesPage(ctx context.Context, arg ListWatchesPageParams) ([]ListWatchesPageRow, error) {
+	rows, err := q.db.Query(ctx, listWatchesPage,
+		arg.UserID,
+		arg.Status,
+		arg.BeforeID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWatchesPageRow{}
+	for rows.Next() {
+		var i ListWatchesPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArticleID,
+			&i.SubmittedUrl,
+			&i.Status,
+			&i.EndReason,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.EndedAt,
+			&i.Title,
+			&i.AccountName,
+			&i.ArticleStatus,
+			&i.DeletedReasonCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const moveWatches = `-- name: MoveWatches :exec
 UPDATE watches SET article_id = $1::uuid WHERE article_id = $2::uuid
 `
@@ -275,6 +473,26 @@ type MoveWatchesParams struct {
 func (q *Queries) MoveWatches(ctx context.Context, arg MoveWatchesParams) error {
 	_, err := q.db.Exec(ctx, moveWatches, arg.ToID, arg.FromID)
 	return err
+}
+
+const stopWatch = `-- name: StopWatch :execrows
+UPDATE watches SET status = 'ended', end_reason = 'user_stopped', ended_at = $1::timestamptz,
+                   notified_at = $1::timestamptz
+WHERE id = $2 AND user_id = $3 AND status IN ('resolving', 'active')
+`
+
+type StopWatchParams struct {
+	Now    time.Time
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) StopWatch(ctx context.Context, arg StopWatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, stopWatch, arg.Now, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertUserByEmail = `-- name: UpsertUserByEmail :one
@@ -296,4 +514,24 @@ func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, er
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const userCanViewSnapshot = `-- name: UserCanViewSnapshot :one
+SELECT EXISTS (
+  SELECT 1 FROM snapshots s JOIN watches w ON w.article_id = s.article_id
+  WHERE s.id = $1 AND w.user_id = $2
+)
+`
+
+type UserCanViewSnapshotParams struct {
+	SnapshotID uuid.UUID
+	UserID     uuid.UUID
+}
+
+// A user may see an article's snapshots if they ever watched it.
+func (q *Queries) UserCanViewSnapshot(ctx context.Context, arg UserCanViewSnapshotParams) (bool, error) {
+	row := q.db.QueryRow(ctx, userCanViewSnapshot, arg.SnapshotID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

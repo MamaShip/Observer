@@ -29,7 +29,7 @@ linters:
       - std-error-handling
     rules:
       - path: _test\.go
-        linters: [errcheck]
+        linters: [errcheck, bodyclose]
 
 formatters:
   enable:

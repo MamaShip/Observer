@@ -30,6 +30,17 @@ type Session interface {
 	Close()
 }
 
+// Alerter notifies the operators; notify.Notifier implements it.
+type Alerter interface {
+	Alert(ctx context.Context, key, subject, body string)
+}
+
+type logAlerter struct{ log *slog.Logger }
+
+func (l logAlerter) Alert(_ context.Context, key, subject, body string) {
+	l.log.Error("alert", "key", key, "subject", subject, "body", body)
+}
+
 // Config holds the tunables.
 type Config struct {
 	WatchDays        int
@@ -45,6 +56,7 @@ type Deps struct {
 	NewSession func() Session
 	Log        *slog.Logger
 	Config     Config
+	Alerter    Alerter // defaults to logging
 }
 
 // Service implements the watch workflows.
@@ -56,6 +68,7 @@ type Service struct {
 	log        *slog.Logger
 	cfg        Config
 	jobs       JobInserter
+	alert      Alerter
 	limiter    *Limiter
 	breaker    *Breaker
 	now        func() time.Time
@@ -63,7 +76,11 @@ type Service struct {
 
 // New builds the service. Call SetJobs before running any workflow.
 func New(d Deps) *Service {
+	if d.Alerter == nil {
+		d.Alerter = logAlerter{d.Log}
+	}
 	return &Service{
+		alert:      d.Alerter,
 		pool:       d.Pool,
 		q:          db.New(d.Pool),
 		blob:       d.Blob,
@@ -193,7 +210,11 @@ func (s *Service) fetchPage(ctx context.Context, url string, mode wechat.FetchMo
 		}
 	}
 	if s.breaker.Record(f.result.Verdict) {
-		s.log.Warn("WeChat is blocking requests; pausing all fetches", "until", s.breaker.OpenUntil())
+		until := s.breaker.OpenUntil()
+		s.log.Warn("WeChat is blocking requests; pausing all fetches", "until", until)
+		s.alert.Alert(ctx, "breaker", "微信频繁返回验证页，抓取已暂停",
+			fmt.Sprintf("10 分钟内多次遇到验证页或限流，所有抓取暂停到 %s。最近一次：%s（%s）。\n频繁出现时考虑加大 FETCH_MIN_INTERVAL，或启用本地抓取节点（plan.md §11.3）。",
+				until.Format(time.RFC3339), url, f.result.Rule))
 	}
 	return f, nil
 }

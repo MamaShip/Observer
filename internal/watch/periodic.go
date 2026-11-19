@@ -2,6 +2,7 @@ package watch
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -49,12 +50,15 @@ func (s *Service) Expire(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Users who did not ask for expiry emails: mark them as notified now.
+	if _, err := s.q.SkipExpiryNotifications(ctx, s.now()); err != nil {
+		return err
+	}
 	dormant, err := s.q.MarkUnwatchedArticlesDormant(ctx)
 	if err != nil {
 		return err
 	}
 	if len(ended) > 0 || dormant > 0 {
-		// M3 queues expiry emails for users who asked for them.
 		s.log.Info("watches expired", "watches", len(ended), "articles_dormant", dormant)
 	}
 	return nil
@@ -89,8 +93,9 @@ func (s *Service) Canary(ctx context.Context) ([]CanaryResult, error) {
 		if f.result.Verdict != c.want {
 			r := CanaryResult{URL: c.url, Want: c.want, Got: f.result.Verdict, Rule: f.result.Rule}
 			bad = append(bad, r)
-			// M3 turns this into an alert email to the admins.
-			s.log.Error("canary check failed: detection may be broken", "url", r.URL, "want", r.Want, "got", r.Got, "rule", r.Rule)
+			s.alert.Alert(ctx, "canary", "金丝雀检测失败：删除检测可能已失效",
+				fmt.Sprintf("%s 预期 %s，实际 %s（规则 %s）。微信可能改了页面结构，请用 observer probe 检查并更新 internal/wechat 的规则。",
+					r.URL, r.Want, r.Got, r.Rule))
 		}
 	}
 	return bad, nil

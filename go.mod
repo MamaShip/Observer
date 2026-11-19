@@ -14,6 +14,8 @@ require (
 	github.com/riverqueue/river v0.51.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.51.2
 	github.com/riverqueue/river/rivertype v0.51.2
+	github.com/wneessen/go-mail v0.8.2
+	golang.org/x/time v0.16.0
 )
 
 require (

@@ -5,7 +5,9 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"sync/atomic"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/MamaShip/Observer/internal/auth"
+	"github.com/MamaShip/Observer/internal/notify"
 	"github.com/MamaShip/Observer/internal/watch"
 )
 
@@ -66,11 +70,14 @@ func (w *heartbeatWorker) Timeout(*river.Job[HeartbeatArgs]) time.Duration { ret
 // result maps the watch service's errors onto River's job outcomes.
 func result(err error) error {
 	var snooze *watch.SnoozeError
+	var retry *notify.RetryAt
 	switch {
 	case err == nil:
 		return nil
 	case errors.As(err, &snooze):
 		return river.JobSnooze(snooze.After)
+	case errors.As(err, &retry):
+		return river.JobSnooze(time.Until(retry.Time))
 	case errors.Is(err, watch.ErrPermanent):
 		return river.JobCancel(err)
 	default:
@@ -131,9 +138,53 @@ func (w *periodicWorker[T]) Work(ctx context.Context, _ *river.Job[T]) error {
 
 func (w *periodicWorker[T]) Timeout(*river.Job[T]) time.Duration { return w.timeout }
 
+type digestWorker struct {
+	river.WorkerDefaults[notify.DigestArgs]
+	n *notify.Notifier
+}
+
+func (w *digestWorker) Work(ctx context.Context, job *river.Job[notify.DigestArgs]) error {
+	return result(w.n.SendDigest(ctx, job.Args.UserID))
+}
+
+type alertWorker struct {
+	river.WorkerDefaults[notify.AlertArgs]
+	n *notify.Notifier
+}
+
+func (w *alertWorker) Work(ctx context.Context, job *river.Job[notify.AlertArgs]) error {
+	return result(w.n.SendAlert(ctx, job.Args))
+}
+
+// AuthCleanupArgs deletes expired login tokens and sessions.
+type AuthCleanupArgs struct{}
+
+func (AuthCleanupArgs) Kind() string { return "auth_cleanup" }
+
+// PingArgs reports liveness to an external monitor (Healthchecks.io).
+type PingArgs struct{}
+
+func (PingArgs) Kind() string { return "healthcheck_ping" }
+
+// InsertOpts: the next periodic run is the retry.
+func (PingArgs) InsertOpts() river.InsertOpts { return river.InsertOpts{MaxAttempts: 1} }
+
+// PingInterval is how often the external monitor hears from us.
+const PingInterval = 5 * time.Minute
+
+// Services are what the workers call.
+type Services struct {
+	Watch  *watch.Service
+	Notify *notify.Notifier
+	Auth   *auth.Service
+	// HealthcheckURL is pinged every PingInterval while the worker runs.
+	HealthcheckURL string
+}
+
 // NewClient builds the River client with all workers and periodic jobs, and
-// hands it to the service as its job queue.
-func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, svc *watch.Service) (*river.Client[pgx.Tx], error) {
+// hands it to the services as their job queue.
+func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, s Services) (*river.Client[pgx.Tx], error) {
+	svc := s.Watch
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &heartbeatWorker{hb: hb})
 	river.AddWorker(workers, &resolveWorker{svc: svc})
@@ -152,6 +203,16 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, svc *watch.S
 		return err
 	}})
 	river.AddWorker(workers, &periodicWorker[watch.CleanupArgs]{timeout: 10 * time.Minute, run: svc.Cleanup})
+	river.AddWorker(workers, &digestWorker{n: s.Notify})
+	river.AddWorker(workers, &alertWorker{n: s.Notify})
+	river.AddWorker(workers, &periodicWorker[notify.SweepArgs]{timeout: time.Minute, run: func(ctx context.Context) error {
+		_, err := s.Notify.Sweep(ctx)
+		return err
+	}})
+	river.AddWorker(workers, &periodicWorker[AuthCleanupArgs]{timeout: time.Minute, run: s.Auth.Cleanup})
+	river.AddWorker(workers, &periodicWorker[PingArgs]{timeout: 30 * time.Second, run: func(ctx context.Context) error {
+		return ping(ctx, s.HealthcheckURL)
+	}})
 
 	periodic := func(every time.Duration, args river.JobArgs, onStart bool) *river.PeriodicJob {
 		return river.NewPeriodicJob(river.PeriodicInterval(every),
@@ -165,6 +226,7 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, svc *watch.S
 			river.QueueDefault:  {MaxWorkers: 2},
 			watch.QueueFetch:    {MaxWorkers: 2}, // serialized further by the fetch limiter
 			watch.QueueSnapshot: {MaxWorkers: 1}, // one full page in memory at a time
+			notify.QueueEmail:   {MaxWorkers: 1}, // serial, so the daily limit count is exact
 		},
 		PeriodicJobs: []*river.PeriodicJob{
 			periodic(HeartbeatInterval, HeartbeatArgs{}, true),
@@ -172,13 +234,39 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, svc *watch.S
 			periodic(watch.ExpireInterval, watch.ExpireArgs{}, true),
 			periodic(watch.CanaryInterval, watch.CanaryArgs{}, false),
 			periodic(watch.CleanupInterval, watch.CleanupArgs{}, false),
+			periodic(notify.SweepInterval, notify.SweepArgs{}, true),
+			periodic(24*time.Hour, AuthCleanupArgs{}, false),
+			periodic(PingInterval, PingArgs{}, true),
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	svc.SetJobs(client)
+	s.Notify.SetJobs(client)
 	return client, nil
+}
+
+// ping tells the external monitor the worker is alive. A failed ping is
+// logged by River and retried at the next interval; the monitor alerts if
+// pings stop.
+func ping(ctx context.Context, url string) error {
+	if url == "" {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("healthcheck ping: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // NewInsertOnlyClient is a client that only enqueues jobs, for CLI commands

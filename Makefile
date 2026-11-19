@@ -9,7 +9,7 @@ COMPOSE_DEV := docker compose -f deploy/compose.dev.yaml
 
 ## dev: start Postgres and run the service on http://localhost:8080
 dev: dev-db
-	DATABASE_URL='$(DEV_DATABASE_URL)' BLOB_DIR=data/blob LOG_FORMAT=text LOG_LEVEL=debug go run ./cmd/observer serve
+	DATABASE_URL='$(DEV_DATABASE_URL)' BLOB_DIR=data/blob REGISTRATION_MODE=open LOG_FORMAT=text LOG_LEVEL=debug go run ./cmd/observer serve
 
 ## dev-db: start the development Postgres and wait until it is healthy
 dev-db:

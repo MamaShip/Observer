@@ -17,10 +17,15 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/MamaShip/Observer/internal/api"
+	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/blob"
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/jobs"
+	"github.com/MamaShip/Observer/internal/mail"
+	"github.com/MamaShip/Observer/internal/notify"
+	"github.com/MamaShip/Observer/internal/snapserver"
 	"github.com/MamaShip/Observer/internal/store"
+	"github.com/MamaShip/Observer/internal/store/db"
 	"github.com/MamaShip/Observer/internal/watch"
 	"github.com/MamaShip/Observer/internal/wechat"
 )
@@ -35,53 +40,129 @@ type App struct {
 	pool    *pgxpool.Pool
 	river   *river.Client[pgx.Tx]
 	hb      *jobs.Heartbeat
-	svc     *watch.Service
 	started time.Time
 	handler http.Handler
+
+	Watch  *watch.Service
+	Notify *notify.Notifier
+	Auth   *auth.Service
+}
+
+// Overrides replace external dependencies, for tests.
+type Overrides struct {
+	NewSession func() watch.Session // instead of real WeChat requests
+	Mailer     mail.Mailer          // instead of the configured mailer
 }
 
 // New connects to the database, applies migrations and builds the workers
 // and HTTP handler. Call Close when done, whether or not Run was called.
-func New(ctx context.Context, cfg config.Config, log *slog.Logger, version string) (*App, error) {
+func New(ctx context.Context, cfg config.Config, log *slog.Logger, version string, o ...Overrides) (*App, error) {
+	var ov Overrides
+	if len(o) > 0 {
+		ov = o[0]
+	}
 	pool, err := store.Open(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
 	if err != nil {
 		return nil, err
 	}
-	if err := store.Migrate(ctx, pool, log); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	svc, _, err := NewService(cfg, pool, log)
+	a, err := build(ctx, cfg, log, version, pool, ov)
 	if err != nil {
 		pool.Close()
 		return nil, err
 	}
-	hb := &jobs.Heartbeat{}
-	rc, err := jobs.NewClient(pool, log, hb, svc)
-	if err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("river: %w", err)
-	}
-	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, svc: svc, started: time.Now()}
-
-	mux := http.NewServeMux()
-	api.New(mux, api.Deps{Version: version, Health: a, StallAfter: jobs.StallAfter})
-	a.handler = recoverer(log, accessLog(log, mux))
 	return a, nil
 }
 
+func build(ctx context.Context, cfg config.Config, log *slog.Logger, version string, pool *pgxpool.Pool, ov Overrides) (*App, error) {
+	if err := store.Migrate(ctx, pool, log); err != nil {
+		return nil, err
+	}
+	mailer := ov.Mailer
+	if mailer == nil {
+		m, err := cfg.Mailer(log)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.SMTPHost == "" {
+			log.Warn("SMTP_HOST not set: emails are written to the log instead of being sent")
+		}
+		mailer = m
+	}
+	notifier := notify.New(pool, mailer, cfg.Notify(), log)
+	svc, store, err := NewService(cfg, pool, log, notifier, ov.NewSession)
+	if err != nil {
+		return nil, err
+	}
+	authSvc := auth.New(pool, notifier, auth.Config{BaseURL: cfg.Origin(), Mode: cfg.RegistrationMode}, log)
+
+	hb := &jobs.Heartbeat{}
+	rc, err := jobs.NewClient(pool, log, hb, jobs.Services{Watch: svc, Notify: notifier, Auth: authSvc, HealthcheckURL: cfg.HealthcheckURL})
+	if err != nil {
+		return nil, fmt.Errorf("river: %w", err)
+	}
+
+	signer, random, err := cfg.Signer()
+	if err != nil {
+		return nil, err
+	}
+	if random {
+		log.Warn("SIGNING_KEY not set: using a random key; snapshot links stop working after a restart")
+	}
+	snapStore := store
+	if cfg.CacheDir != "" {
+		if snapStore, err = blob.NewCache(store, cfg.CacheDir, cfg.CacheMaxBytes); err != nil {
+			return nil, fmt.Errorf("cache: %w", err)
+		}
+	}
+	q := db.New(pool)
+	snap := snapserver.New(q, snapStore, signer, cfg.Origin(), log)
+
+	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, started: time.Now(), Watch: svc, Notify: notifier, Auth: authSvc}
+	apiHandler, _ := api.New(api.Deps{
+		Version: version, Health: a, StallAfter: jobs.StallAfter,
+		Auth: authSvc, Watch: svc, Queries: q, Signer: signer,
+		BaseURL: cfg.Origin(), SnapBaseURL: cfg.SnapOrigin(), TrustProxy: cfg.TrustProxyHeaders,
+		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions},
+	})
+	main := siteHeaders(cfg.Production(), apiHandler)
+	snapHost, snapHandler := cfg.SnapHost(), snap.Handler()
+	a.handler = recoverer(log, accessLog(log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == snapHost {
+			snapHandler.ServeHTTP(w, r)
+			return
+		}
+		main.ServeHTTP(w, r)
+	})))
+	return a, nil
+}
+
+// siteHeaders adds the main site's security headers. Snapshot pages set
+// their own (they must be frameable by the main site).
+func siteHeaders(https bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("X-Frame-Options", "DENY")
+		if https {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // NewService builds the watch service and its object store. The caller sets
-// its job queue (jobs.NewClient does).
-func NewService(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*watch.Service, blob.Store, error) {
+// its job queue (jobs.NewClient does). alerter and newSession may be nil.
+func NewService(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger, alerter watch.Alerter, newSession func() watch.Session) (*watch.Service, blob.Store, error) {
 	store, err := cfg.Blob()
 	if err != nil {
 		return nil, nil, fmt.Errorf("object storage: %w", err)
 	}
-	ua := cfg.UserAgent()
-	svc := watch.New(watch.Deps{
-		Pool: pool, Blob: store, Log: log, Config: cfg.Watch(),
-		NewSession: func() watch.Session { return wechat.NewSession(wechat.Options{UserAgent: ua}) },
-	})
+	if newSession == nil {
+		ua := cfg.UserAgent()
+		newSession = func() watch.Session { return wechat.NewSession(wechat.Options{UserAgent: ua}) }
+	}
+	svc := watch.New(watch.Deps{Pool: pool, Blob: store, Log: log, Config: cfg.Watch(), NewSession: newSession, Alerter: alerter})
 	return svc, store, nil
 }
 
