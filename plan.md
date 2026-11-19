@@ -243,7 +243,8 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 1. `POST /api/v1/watches {url}` → 预规范化、校验域名。
 2. 命中 `url_aliases` 且文章状态为 `alive`：直接创建 `active` 观察，返回 201。
 3. 否则创建 `resolving` 观察，在同一事务内入队高优先级抓取任务，返回 202；前端轮询观察详情。
-4. 抓取完成后：确定规范 ID → 合并或创建文章 → 生成快照 → 观察转为 `active`；或转为 `failed`。
+4. 抓取完成后：先把原始页面存入对象存储；再在一个事务内确定规范 ID → 合并或创建文章 → 观察转为 `active`（或 `failed`）→ 入队快照任务。快照任务异步读取原始页面、下载图片并生成阅读版，所以观察可能比快照早几秒到几十秒生效，前端需显示"备份中"。
+   - 同一用户用两种链接提交了同一篇文章时，合并后只保留一个观察，多出来的 `resolving` 观察会被删除。M3 的 API 在轮询到已删除的观察时，应返回该用户对同一文章的现有观察。
 5. 配额：每用户最多 50 个活跃观察，每日最多提交 30 次（可配置）。
 
 ### 6.3 抓取与快照生成
@@ -423,14 +424,15 @@ CREATE TABLE email_log (
 
 ```
 assets/<sha256 前 2 位>/<sha256>          图片（不可变，内容寻址）
-snapshots/<article_id>/<snapshot_id>/page.html      阅读版 HTML
-snapshots/<article_id>/<snapshot_id>/raw.html.gz    原始页面
+snapshots/<snapshot_id>/page.html        阅读版 HTML（图片引用为 /a/<sha256>）
+snapshots/<snapshot_id>/raw.html.gz      原始页面
 backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 ```
 
 - Bucket 私有，只由 app 访问，用户永远不直连 Wasabi（大陆访问速度不可控，并且可以把 Wasabi 出站量控制在存储量以内）。
 - **90 天最短存储期**：除数据库备份外，所有对象都是长期保留，不受影响；数据库备份默认保留 120 天。**不要把 Wasabi 当临时存储用**，临时文件只放本地磁盘。
-- 本地磁盘 LRU 缓存上限 5 GB（配置项），存放热点图片与快照 HTML。
+- 本地磁盘 LRU 缓存上限 5 GB（配置项），存放热点图片与快照 HTML。只在读取（快照域服务）时用到，所以与快照域一起在 M3 实现。
+- 开发与测试用本地目录（`BLOB_DIR`）代替 S3，代码路径相同；S3 实现另有一个连真实 bucket 的测试（`TestS3`，需设置 `TEST_S3_*`），M2 已在 VPS 上对 Wasabi 跑通。
 - Region 选 **新加坡 `ap-southeast-1`**（`s3.ap-southeast-1.wasabisys.com`）：M0 从香港 VPS 实测连接耗时 34 ms，是所有区域中最低的（东京 55 ms，Wasabi 没有香港区域）。Bucket 的区域在创建时确定，Wasabi 套餐按账号计费，新建 bucket 不增加费用。
 - 已创建 bucket `observer-backup-001`（2026-11-19）：私有、未开启版本控制与 Object Lock；程序使用专用子用户 `observer-app` 的密钥，策略只允许访问该 bucket（`netcheck -s3` 已验证列出全部 bucket 会被拒绝）。
 - 从 VPS 实测：8 MB 对象上传 13–15 MB/s、下载 4–5 MB/s；64 KB 对象（接近文章图片大小）上传中位数 48–69 ms、下载 76–101 ms。一篇 55 张图的文章串行上传约 3–4 秒。
@@ -573,7 +575,9 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 已实现（M1）：`DATABASE_URL`（必填，URL 格式）、`DB_MAX_CONNS`（默认 10）、`HTTP_ADDR`（默认 `:8080`）、`BASE_URL`、`LOG_LEVEL`（默认 `info`）、`LOG_FORMAT`（`json` / `text`，默认 `json`）。
 
-计划中：`SNAP_BASE_URL`、`S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`SIGNING_KEY`、`REGISTRATION_MODE`、`WATCH_DAYS`、`FETCH_MIN_INTERVAL`、`CACHE_DIR`、`CACHE_MAX_BYTES`、`HEALTHCHECK_URL`、`CANARY_ALIVE_URL`、`CANARY_DELETED_URL`、`ADMIN_EMAILS`、`DAILY_EMAIL_LIMIT`。
+已实现（M2）：`S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`（设置 `S3_BUCKET` 时使用 S3）、`BLOB_DIR`（开发用本地目录，两者至少设置一个）、`WATCH_DAYS`（默认 60）、`FETCH_MIN_INTERVAL`（默认 `3s`，最小 `1s`）、`FETCH_USER_AGENT`（预设名 `ios` / `android` / `desktop` 或完整 UA，默认 `ios`）、`CANARY_ALIVE_URL`、`CANARY_DELETED_URL`。
+
+计划中：`SNAP_BASE_URL`、`SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`SIGNING_KEY`、`REGISTRATION_MODE`、`CACHE_DIR`、`CACHE_MAX_BYTES`、`HEALTHCHECK_URL`、`ADMIN_EMAILS`、`DAILY_EMAIL_LIMIT`。
 
 ### 13.4 备份与恢复
 
@@ -678,6 +682,16 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **验收**：`make dev` 启动全部服务，`/healthz` 正常，CI 通过。
 
 ### M2：抓取、检测与快照
+> **已完成（2026-11-19）**：`blob`（S3 / 本地目录）、`snapshot`（图片收集与内容寻址存储、样式清洗、bluemonday 二次清洗、阅读版模板与打印样式、单文件 HTML 内联）、`watch`（提交、首次抓取与文章合并、定期检查、删除二次确认、失败退避、全局限速、熔断、到期与休眠、金丝雀、`check_runs` 清理）、River 任务与周期任务、`admin submit / articles / check / export` 命令。
+> 验收（本机，真实微信页面）：
+> - 2 篇正常文章生成快照（56 张、8 张图，0 缺失）。
+> - 作者删除、违规两篇首次抓取即判定不可用。
+> - 缺 `chksm` 的长链用占位值抓取成功，并合并到同一篇文章。
+> - 定期检查由调度器自动执行，每次约 200 KB，请求间隔约 4 秒。
+> - 导出的单文件 HTML 用本机 Chrome 截图与打印 PDF，排版正常。
+> - S3 实现已在 VPS 上对 Wasabi 测试通过。
+> 未做：本地磁盘缓存移到 M3（与快照域一起）；删除通知、金丝雀告警邮件在 M3 接入（代码中已留位置）。真实文章的"删除二次确认"只有样本测试，没有线上实例。
+
 - `wechat` 包：规范化、抓取、解析、检测，样本测试覆盖全部页面类型。
 - `snapshot` 与 `blob`：图片去重上传、阅读版 HTML、原始 HTML 存档、本地缓存。
 - 调度、检查任务、熔断、`check_runs`、金丝雀检测。
@@ -774,7 +788,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 **关键发现**
 
-1. **长链缺 `chksm` 必定触发验证页**，带上任意 `chksm`（包括占位值 `00000000`）就能正常访问。旧实现的 `_trim_URL` 恰好把 `chksm` 删掉了。处理方式：请求时保留 `chksm`，首次抓取后改用页面中的 `msg_link` 短链。占位 `chksm` 只作为兜底手段。
+1. **长链缺 `chksm` 必定触发验证页**，带上任意 `chksm`（包括占位值 `00000000`）就能正常访问。旧实现的 `_trim_URL` 恰好把 `chksm` 删掉了。处理方式：请求时保留 `chksm`；用户给的长链没有 `chksm` 时，服务直接带上占位值请求（`Link.ServiceFetchURL`），避免每次先撞一次验证页、拉低 IP 信誉；首次抓取后改用页面中的 `msg_link`。
 2. **`PAGE_MID` 赋值语句出现得很晚**（~0.7 MB 处，页面前部那次只是 `typeof` 判断）。所以页面头部判断只能依靠 Open Graph 标签，删除页和验证页都没有这些标签。
 3. **提前停止读取有效**：HTTP/2 接收窗口设为 16 KB 时，`check` 方式约 210 KB，`head` 方式约 26 KB；窗口设为 128 KB 时，两者分别为 242 KB 和 58 KB（服务端会多推送数据）。默认窗口取 16 KB。
 4. **图片**（`mmbiz.qpic.cn`）不带 Referer 也能下载（本机网络）。实现上仍然带上 Referer。

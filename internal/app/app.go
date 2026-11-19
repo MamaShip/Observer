@@ -17,9 +17,12 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/MamaShip/Observer/internal/api"
+	"github.com/MamaShip/Observer/internal/blob"
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/jobs"
 	"github.com/MamaShip/Observer/internal/store"
+	"github.com/MamaShip/Observer/internal/watch"
+	"github.com/MamaShip/Observer/internal/wechat"
 )
 
 // ShutdownTimeout bounds how long in-flight requests and jobs get to finish.
@@ -32,6 +35,7 @@ type App struct {
 	pool    *pgxpool.Pool
 	river   *river.Client[pgx.Tx]
 	hb      *jobs.Heartbeat
+	svc     *watch.Service
 	started time.Time
 	handler http.Handler
 }
@@ -47,18 +51,38 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger, version strin
 		pool.Close()
 		return nil, err
 	}
+	svc, _, err := NewService(cfg, pool, log)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
 	hb := &jobs.Heartbeat{}
-	rc, err := jobs.NewClient(pool, log, hb)
+	rc, err := jobs.NewClient(pool, log, hb, svc)
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("river: %w", err)
 	}
-	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, started: time.Now()}
+	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, svc: svc, started: time.Now()}
 
 	mux := http.NewServeMux()
 	api.New(mux, api.Deps{Version: version, Health: a, StallAfter: jobs.StallAfter})
 	a.handler = recoverer(log, accessLog(log, mux))
 	return a, nil
+}
+
+// NewService builds the watch service and its object store. The caller sets
+// its job queue (jobs.NewClient does).
+func NewService(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*watch.Service, blob.Store, error) {
+	store, err := cfg.Blob()
+	if err != nil {
+		return nil, nil, fmt.Errorf("object storage: %w", err)
+	}
+	ua := cfg.UserAgent()
+	svc := watch.New(watch.Deps{
+		Pool: pool, Blob: store, Log: log, Config: cfg.Watch(),
+		NewSession: func() watch.Session { return wechat.NewSession(wechat.Options{UserAgent: ua}) },
+	})
+	return svc, store, nil
 }
 
 // Handler is the root HTTP handler.

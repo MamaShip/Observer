@@ -6,89 +6,92 @@ package db
 
 import (
 	"net/netip"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/google/uuid"
 )
 
 type Article struct {
-	ID                  pgtype.UUID
-	CanonicalKey        pgtype.Text
-	CanonicalUrl        pgtype.Text
+	ID                  uuid.UUID
+	CanonicalKey        *string
+	CanonicalUrl        *string
 	Status              string
-	Title               pgtype.Text
-	AccountName         pgtype.Text
-	Author              pgtype.Text
-	PublishedAt         pgtype.Timestamptz
-	DeletedReasonCode   pgtype.Text
-	DeletedReasonText   pgtype.Text
-	DeletedAt           pgtype.Timestamptz
-	FirstSeenAt         pgtype.Timestamptz
-	LastCheckedAt       pgtype.Timestamptz
-	LastAliveAt         pgtype.Timestamptz
-	NextCheckAt         pgtype.Timestamptz
+	Title               *string
+	AccountName         *string
+	Author              *string
+	PublishedAt         *time.Time
+	DeletedReasonCode   *string
+	DeletedReasonText   *string
+	DeletedAt           *time.Time
+	FirstSeenAt         time.Time
+	LastCheckedAt       *time.Time
+	LastAliveAt         *time.Time
+	NextCheckAt         *time.Time
 	ConsecutiveFailures int32
+	DeletionSuspectedAt *time.Time
 }
 
 type Asset struct {
 	Sha256      []byte
 	ContentType string
 	SizeBytes   int64
-	CreatedAt   pgtype.Timestamptz
+	CreatedAt   time.Time
 }
 
 type CheckRun struct {
-	ID         int64
-	ArticleID  pgtype.UUID
-	CheckedAt  pgtype.Timestamptz
-	Mode       string
-	Result     string
-	Reason     pgtype.Text
-	Rule       pgtype.Text
-	HttpStatus pgtype.Int4
-	WireBytes  pgtype.Int4
-	DurationMs pgtype.Int4
-	Detail     pgtype.Text
+	ID          int64
+	ArticleID   uuid.UUID
+	CheckedAt   time.Time
+	Mode        string
+	Result      string
+	Reason      *string
+	Rule        *string
+	HttpStatus  *int32
+	WireBytes   *int32
+	DurationMs  *int32
+	Detail      *string
+	StateChange bool
 }
 
 type EmailLog struct {
-	ID         pgtype.UUID
-	UserID     pgtype.UUID
+	ID         uuid.UUID
+	UserID     *uuid.UUID
 	Kind       string
 	ToEmail    string
 	Subject    string
 	Status     string
-	ProviderID pgtype.Text
-	LastError  pgtype.Text
-	CreatedAt  pgtype.Timestamptz
-	SentAt     pgtype.Timestamptz
+	ProviderID *string
+	LastError  *string
+	CreatedAt  time.Time
+	SentAt     *time.Time
 }
 
 type LoginToken struct {
-	ID        pgtype.UUID
+	ID        uuid.UUID
 	Email     string
 	TokenHash []byte
-	ExpiresAt pgtype.Timestamptz
-	UsedAt    pgtype.Timestamptz
+	ExpiresAt time.Time
+	UsedAt    *time.Time
 	RequestIp *netip.Addr
-	CreatedAt pgtype.Timestamptz
+	CreatedAt time.Time
 }
 
 type Session struct {
-	ID         pgtype.UUID
-	UserID     pgtype.UUID
+	ID         uuid.UUID
+	UserID     uuid.UUID
 	TokenHash  []byte
-	UserAgent  pgtype.Text
-	CreatedAt  pgtype.Timestamptz
-	LastSeenAt pgtype.Timestamptz
-	ExpiresAt  pgtype.Timestamptz
+	UserAgent  *string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
 }
 
 type Snapshot struct {
-	ID            pgtype.UUID
-	ArticleID     pgtype.UUID
-	CapturedAt    pgtype.Timestamptz
+	ID            uuid.UUID
+	ArticleID     uuid.UUID
+	CapturedAt    time.Time
 	ContentHash   []byte
-	Title         pgtype.Text
+	Title         *string
 	HtmlKey       string
 	RawKey        string
 	SizeBytes     int64
@@ -97,36 +100,36 @@ type Snapshot struct {
 }
 
 type SnapshotAsset struct {
-	SnapshotID pgtype.UUID
+	SnapshotID uuid.UUID
 	Sha256     []byte
 	SourceUrl  string
 }
 
 type UrlAlias struct {
 	Url       string
-	ArticleID pgtype.UUID
-	CreatedAt pgtype.Timestamptz
+	ArticleID uuid.UUID
+	CreatedAt time.Time
 }
 
 type User struct {
-	ID             pgtype.UUID
+	ID             uuid.UUID
 	Email          string
 	Role           string
 	Status         string
 	NotifyOnExpire bool
-	CreatedAt      pgtype.Timestamptz
-	LastLoginAt    pgtype.Timestamptz
+	CreatedAt      time.Time
+	LastLoginAt    *time.Time
 }
 
 type Watch struct {
-	ID           pgtype.UUID
-	UserID       pgtype.UUID
-	ArticleID    pgtype.UUID
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	ArticleID    *uuid.UUID
 	SubmittedUrl string
 	Status       string
-	EndReason    pgtype.Text
-	CreatedAt    pgtype.Timestamptz
-	ExpiresAt    pgtype.Timestamptz
-	EndedAt      pgtype.Timestamptz
-	NotifiedAt   pgtype.Timestamptz
+	EndReason    *string
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
+	EndedAt      *time.Time
+	NotifiedAt   *time.Time
 }

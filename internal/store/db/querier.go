@@ -6,10 +6,60 @@ package db
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type Querier interface {
+	// ActivateResolvingWatches turns at most one resolving watch per user into
+	// an active one (a user may have submitted two different links of the same
+	// article); DeleteResolvingWatches then removes the leftovers.
+	ActivateResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
+	ArticleHasSnapshot(ctx context.Context, articleID uuid.UUID) (bool, error)
+	ConfirmArticleDeleted(ctx context.Context, arg ConfirmArticleDeletedParams) error
+	// CreateAlias reports 0 rows when the URL already belongs to an article
+	// (possibly one a concurrent submission created a moment ago).
+	CreateAlias(ctx context.Context, arg CreateAliasParams) (int64, error)
+	CreateArticle(ctx context.Context) (Article, error)
+	CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch, error)
+	DeleteArticle(ctx context.Context, id uuid.UUID) error
+	DeleteOldCheckRuns(ctx context.Context, before time.Time) (int64, error)
+	DeleteResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
+	DueArticles(ctx context.Context, arg DueArticlesParams) ([]uuid.UUID, error)
+	EndActiveWatchesDeleted(ctx context.Context, arg EndActiveWatchesDeletedParams) ([]EndActiveWatchesDeletedRow, error)
+	ExpireWatches(ctx context.Context, now time.Time) ([]ExpireWatchesRow, error)
+	FailResolvingWatches(ctx context.Context, arg FailResolvingWatchesParams) (int64, error)
+	GetArticle(ctx context.Context, id uuid.UUID) (Article, error)
+	GetArticleByAlias(ctx context.Context, url string) (Article, error)
+	GetArticleByKeyForUpdate(ctx context.Context, canonicalKey *string) (Article, error)
+	GetArticleForUpdate(ctx context.Context, id uuid.UUID) (Article, error)
+	GetAsset(ctx context.Context, sha256 []byte) (Asset, error)
+	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
+	GetSnapshot(ctx context.Context, id uuid.UUID) (Snapshot, error)
+	InsertAsset(ctx context.Context, arg InsertAssetParams) error
+	InsertCheckRun(ctx context.Context, arg InsertCheckRunParams) error
+	InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) error
+	InsertSnapshotAsset(ctx context.Context, arg InsertSnapshotAssetParams) error
+	ListArticles(ctx context.Context, maxRows int32) ([]ListArticlesRow, error)
+	ListSnapshots(ctx context.Context, articleID uuid.UUID) ([]Snapshot, error)
+	ListUserWatches(ctx context.Context, userID uuid.UUID) ([]ListUserWatchesRow, error)
+	MarkArticleAlive(ctx context.Context, arg MarkArticleAliveParams) (Article, error)
+	MarkArticleInvalid(ctx context.Context, arg MarkArticleInvalidParams) error
+	MarkUnwatchedArticlesDormant(ctx context.Context) (int64, error)
+	MoveAliases(ctx context.Context, arg MoveAliasesParams) error
+	MoveCheckRuns(ctx context.Context, arg MoveCheckRunsParams) error
+	// MoveWatches is used when a pending article turns out to be a known one.
+	// A pending article never has active watches, so the one-active-watch
+	// index cannot conflict.
+	MoveWatches(ctx context.Context, arg MoveWatchesParams) error
+	ReactivateArticle(ctx context.Context, arg ReactivateArticleParams) error
+	RecordArticleAlive(ctx context.Context, arg RecordArticleAliveParams) error
+	RecordArticleFailure(ctx context.Context, arg RecordArticleFailureParams) (int32, error)
+	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
 	Stats(ctx context.Context) (StatsRow, error)
+	SuspectArticleDeleted(ctx context.Context, arg SuspectArticleDeletedParams) error
+	UpsertUserByEmail(ctx context.Context, email string) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

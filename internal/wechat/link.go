@@ -94,6 +94,20 @@ func ParseLink(raw string) (Link, error) {
 	return Link{}, ErrNotArticle
 }
 
+// PlaceholderChksm stands in for a missing chksm. WeChat answers a long link
+// without chksm with the verification page, but accepts any value (M0,
+// 2026-11); requesting without one would only teach WeChat to distrust us.
+const PlaceholderChksm = "00000000"
+
+// ServiceFetchURL is the URL the service requests: FetchURL, plus
+// PlaceholderChksm for long links that came without a chksm.
+func (l Link) ServiceFetchURL() string {
+	if l.Kind == LinkLong && l.Chksm == "" {
+		return LongURL(l.Biz, l.Mid, l.Idx, l.Sn, PlaceholderChksm)
+	}
+	return l.FetchURL
+}
+
 // LongURL builds a long article link with parameters in a fixed order.
 // "=" in __biz is kept literal, as WeChat itself writes it.
 func LongURL(biz, mid, idx, sn, chksm string) string {

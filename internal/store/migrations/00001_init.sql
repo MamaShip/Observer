@@ -55,7 +55,10 @@ CREATE TABLE articles (
   last_checked_at      timestamptz,
   last_alive_at        timestamptz,
   next_check_at        timestamptz,
-  consecutive_failures int NOT NULL DEFAULT 0
+  consecutive_failures int NOT NULL DEFAULT 0,
+  -- set by the first check that sees a deletion page; a second check about
+  -- 10 minutes later confirms it (plan.md §5.3)
+  deletion_suspected_at timestamptz
 );
 CREATE INDEX articles_next_check ON articles (next_check_at)
   WHERE status IN ('pending', 'alive');
@@ -73,7 +76,8 @@ CREATE TABLE watches (
   article_id    uuid REFERENCES articles (id), -- may be NULL while resolving
   submitted_url text NOT NULL,
   status        text NOT NULL CHECK (status IN ('resolving', 'active', 'ended', 'failed')),
-  end_reason    text CHECK (end_reason IN ('deleted', 'expired', 'user_stopped', 'invalid')),
+  -- unreachable: the first fetch kept failing (blocked or error) until retries ran out
+  end_reason    text CHECK (end_reason IN ('deleted', 'expired', 'user_stopped', 'invalid', 'unreachable')),
   created_at    timestamptz NOT NULL DEFAULT now(),
   expires_at    timestamptz NOT NULL,
   ended_at      timestamptz,
@@ -90,7 +94,7 @@ CREATE TABLE snapshots (
   captured_at    timestamptz NOT NULL DEFAULT now(),
   content_hash   bytea NOT NULL, -- sha256 of the plain text, for future change detection
   title          text,
-  html_key       text NOT NULL,  -- Wasabi object keys
+  html_key       text NOT NULL,  -- object keys, see plan.md §8
   raw_key        text NOT NULL,
   size_bytes     bigint NOT NULL,
   asset_count    int NOT NULL,
@@ -122,9 +126,11 @@ CREATE TABLE check_runs (
   reason      text,
   rule        text,
   http_status int,
-  wire_bytes  int,
-  duration_ms int,
-  detail      text
+  wire_bytes   int,
+  duration_ms  int,
+  detail       text,
+  -- runs that changed the article's state are kept forever; others for 180 days
+  state_change boolean NOT NULL DEFAULT false
 );
 CREATE INDEX check_runs_article ON check_runs (article_id, checked_at DESC);
 CREATE INDEX check_runs_checked ON check_runs (checked_at);

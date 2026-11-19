@@ -63,3 +63,20 @@ func TestParseLink(t *testing.T) {
 		})
 	}
 }
+
+func TestServiceFetchURL(t *testing.T) {
+	long := "https://mp.weixin.qq.com/s?__biz=MzU1NDQ2OTg1NQ==&mid=2247501049&idx=1&sn=4ba683d7a4184285569a2d6a29dc951b"
+	for in, want := range map[string]string{
+		long:                     long + "&chksm=" + PlaceholderChksm,
+		long + "&chksm=abcdef12": long + "&chksm=abcdef12",
+		"https://mp.weixin.qq.com/s/YPak1xLfYK-BOjk-OYbAKg": "https://mp.weixin.qq.com/s/YPak1xLfYK-BOjk-OYbAKg",
+	} {
+		l, err := ParseLink(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := l.ServiceFetchURL(); got != want {
+			t.Errorf("ServiceFetchURL(%s) = %s, want %s", in, got, want)
+		}
+	}
+}

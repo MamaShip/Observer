@@ -17,7 +17,7 @@ import (
 // the heartbeat job has gone through River, then shut down cleanly.
 func TestServeUntilHealthy(t *testing.T) {
 	url := storetest.EmptyDB(t)
-	cfg := config.Config{DatabaseURL: url, DBMaxConns: 5}
+	cfg := config.Config{DatabaseURL: url, DBMaxConns: 5, BlobDir: t.TempDir(), WatchDays: 60, FetchMinInterval: 3 * time.Second}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

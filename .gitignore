@@ -13,3 +13,6 @@ fixtures/
 .idea/
 .vscode/
 *.log
+
+# local snapshot storage for make dev
+/data/

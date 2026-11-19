@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +14,6 @@ import (
 	"github.com/MamaShip/Observer/internal/app"
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/store"
-	"github.com/MamaShip/Observer/internal/store/db"
 )
 
 func runServe(ctx context.Context, args []string) error {
@@ -129,31 +127,5 @@ func runHealthcheck(ctx context.Context, args []string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unhealthy: %s %s", resp.Status, body)
 	}
-	return nil
-}
-
-func runAdmin(ctx context.Context, args []string) error {
-	if len(args) == 0 || args[0] != "stats" {
-		return errors.New("usage: observer admin stats")
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	pool, err := store.Open(ctx, cfg.DatabaseURL, 2)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	s, err := db.New(pool).Stats(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("users            %d\n", s.Users)
-	fmt.Printf("active watches   %d\n", s.ActiveWatches)
-	fmt.Printf("articles         %d (deleted %d)\n", s.Articles, s.DeletedArticles)
-	fmt.Printf("snapshots        %d\n", s.Snapshots)
-	fmt.Printf("checks (24h)     %d (blocked %d)\n", s.Checks24h, s.Blocked24h)
 	return nil
 }
