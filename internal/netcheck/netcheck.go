@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -97,7 +97,7 @@ func Run(ctx context.Context, w io.Writer, targets []Target, samples int) {
 			for i, s := range ok {
 				ds[i] = f(s)
 			}
-			sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
+			slices.Sort(ds)
 			d := ds[len(ds)/2]
 			if d == 0 {
 				return "-"
@@ -177,7 +177,7 @@ func measureSMTP(ctx context.Context, addr string, implicitTLS bool) sample {
 		s.tls = time.Since(t0)
 		conn = tc
 	}
-	conn.SetReadDeadline(time.Now().Add(8 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(8 * time.Second))
 	t0 := time.Now()
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	s.ttfb = time.Since(t0)

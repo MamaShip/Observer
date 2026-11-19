@@ -1,11 +1,15 @@
-*.log
-*.conf
-.idea
-__pycache__
 # Go build output
 /bin/
 /dist/
-# probe output
+
+# probe fixtures and M0 field-test results (full pages, not for the repo)
 fixtures/
-# M0 field-test results (scripts/m0/run.sh)
 /m0-*
+
+# local secrets and editor state
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,25 @@
+# Local development only: Postgres for `make dev` and `make test`.
+# The app runs on the host with `go run`; production compose comes in M5.
+# Bound to 127.0.0.1, so the fixed dev password never leaves this machine.
+name: observer-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: observer
+      POSTGRES_PASSWORD: observer
+      POSTGRES_DB: observer
+    ports:
+      - "127.0.0.1:${DEV_PG_PORT:-55432}:5432"
+    volumes:
+      # Postgres 18 images keep PGDATA under /var/lib/postgresql/18/docker.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "observer", "-d", "observer"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  pgdata:

@@ -1,7 +1,0 @@
-Flask
-wechatpy
-bs4
-python_docx
-mysql-connector
-requests
-fake-useragent

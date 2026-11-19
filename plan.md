@@ -81,6 +81,8 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
   - `observer migrate`：执行数据库迁移（`serve` 启动时也会自动执行）。
   - `observer probe <url>`：抓取诊断工具，打印检测结论，可选 `--save-fixture` 保存为测试样本。服务器上和开发者本机都可以运行。
   - `observer admin ...`：管理命令（统计、用户禁用、手动触发检查、重放邮件等）。
+  - `observer healthcheck`：请求本机 `/api/v1/healthz`，供 Docker `HEALTHCHECK` 使用（distroless 镜像里没有 curl）。
+  - `observer netcheck`：测量到微信、Wasabi、SMTP 的网络路径（M0 工具）。
 - 未来如需拆分，可通过参数让 API 与 worker 分别运行，代码无需改动。
 
 ### 3.2 模块划分
@@ -211,7 +213,7 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 
 另外，首次快照（整页加图片下载，再上传 Wasabi）约 10 MB/篇。
 
-- 全部使用 `check`：约 58 MB/篇，500 GB 月流量（预留约 200 GB 给用户查看）大约能支撑每月 5000 篇新文章。
+- 全部使用 `check`：约 58 MB/篇，500 GB 月流量（同机代理每月约 20 GB，再预留约 200 GB 给用户查看）大约能支撑每月 5000 篇新文章。
 - 可选方案：**`head` 日常检查，每天一次 `check` 复核**：约 29 MB/篇，可支撑每月 1 万篇以上。
 - **第一阶段先全部用 `check`**。M0 中删除页和验证页都没有 Open Graph 标签，但样本还不全；M2 补齐投诉、封号等删除样本后，再决定是否切换到 `head`。
 
@@ -383,10 +385,14 @@ CREATE TABLE check_runs (
   id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   article_id  uuid NOT NULL REFERENCES articles(id),
   checked_at  timestamptz NOT NULL DEFAULT now(),
-  result      text NOT NULL CHECK (result IN ('alive','deleted','blocked','error')),
+  mode        text NOT NULL CHECK (mode IN ('full','check','head')),
+  result      text NOT NULL CHECK (result IN ('alive','deleted','invalid','blocked','error')),
+  reason      text,                            -- 删除原因分类
+  rule        text,                            -- 命中的判定规则，便于排障
   http_status int,
-  detail      text,
-  duration_ms int
+  wire_bytes  int,                             -- 实际传输字节数，用于核对流量预算
+  duration_ms int,
+  detail      text
 );
 CREATE INDEX check_runs_article ON check_runs (article_id, checked_at DESC);
 
@@ -405,7 +411,8 @@ CREATE TABLE email_log (
 ```
 
 说明：
-- River 的任务表由 River 自带的迁移创建，纳入同一套 goose 迁移流程。
+- 实际迁移文件：`internal/store/migrations/00001_init.sql`（以它为准；上线前可以直接修改，上线后只能追加新迁移）。
+- River 的任务表由 River 自带的迁移创建，包装为 goose 的 Go 迁移（版本 2），固定在 River 迁移版本 8。升级 River 后如果它带了新迁移，测试 `TestRiverSchemaPinned` 会失败，提醒追加一个 goose 迁移。River 的部分迁移不能放进同一个事务，所以这一步不在 goose 事务中执行。
 - `check_runs` 保留 180 天（周期任务清理），引起状态变化的记录永久保留。
 - `login_tokens` 与过期 `sessions` 每天清理。
 - 删除账号时级联删除会话与观察；文章与快照属于公共备份，不随用户删除。
@@ -535,7 +542,24 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | 系统 + Docker | — | ~150–200 MB | — |
 
 - 常态总占用约 400–600 MB，1 GB 内存有余量。仍建议配置 1 GB swap，防止偶发峰值导致 OOM。
-- **M0 实测提醒**：VPS 实际可见内存 913 MB，部署前已用 494 MB、可用约 420 MB，且没有 swap。M5 部署前需要查清已占用内存的进程（停掉无关服务），并**必须配置 swap**；否则上表预算放不下。
+- **M0 实测提醒**：VPS 实际可见内存 913 MB，部署前已用 494 MB、可用约 420 MB，且没有 swap。
+- **与 xray / x-ui 共存**（用户自用代理，2026-11-19 核实）：x-ui 约 84 MB、xray 约 25 MB；其余为系统服务，其中 journald 约 55 MB、fail2ban 约 39 MB、multipathd 约 27 MB、udisks2 约 10 MB、ModemManager 约 9 MB。
+  - 停用 VPS 上用不到的 multipathd、udisks2、ModemManager，并限制 journald 日志大小，可省约 50–100 MB。
+  - 配置 **2 GB swap**（`vm.swappiness=10`）。
+  - 加上 dockerd/containerd（约 70 MB）后，上表各容器合计 220–380 MB，物理内存仍然偏紧。M5 上线后按实测调整：必要时把 Postgres 的 `shared_buffers` 降到 64–96 MB，容器上限降到 256 MB。
+
+### 13.1.1 端口规划（与 xray / x-ui 共存）
+
+| 端口 | 占用者 | 说明 |
+|---|---|---|
+| 22/tcp | sshd | 不变 |
+| 80/tcp | **caddy** | ACME HTTP-01 与跳转 HTTPS（当前空闲） |
+| 443/tcp | **caddy** | 主站与 `snap.` 子域。原来由 xray 占用，**部署前需把 xray 入站移到其他端口** |
+| 443/udp | caddy（可选） | HTTP/3，当前空闲 |
+| 52154/tcp、2096/tcp | x-ui | 面板与订阅服务，不变；建议面板只监听 127.0.0.1，通过 SSH 隧道访问 |
+| 127.0.0.1:62789 | xray API | 仅本机，不冲突 |
+
+app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口。
 - app 设置 `GOMEMLIMIT=200MiB`；图片下载按流处理，不在内存中整体缓存大文件；单文件 HTML 也以流式输出。
 - Postgres 参数：`shared_buffers=128MB`、`effective_cache_size=256MB`、`work_mem=4MB`、`maintenance_work_mem=32MB`、`max_connections=30`；pgx 连接池上限 10。
 
@@ -545,7 +569,9 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 
 ### 13.3 配置项（环境变量）
 
-`BASE_URL`、`SNAP_BASE_URL`、`DATABASE_URL`、`S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`SIGNING_KEY`、`REGISTRATION_MODE`、`WATCH_DAYS`、`FETCH_MIN_INTERVAL`、`CACHE_DIR`、`CACHE_MAX_BYTES`、`HEALTHCHECK_URL`、`CANARY_ALIVE_URL`、`CANARY_DELETED_URL`、`ADMIN_EMAILS`、`DAILY_EMAIL_LIMIT`。
+已实现（M1）：`DATABASE_URL`（必填，URL 格式）、`DB_MAX_CONNS`（默认 10）、`HTTP_ADDR`（默认 `:8080`）、`BASE_URL`、`LOG_LEVEL`（默认 `info`）、`LOG_FORMAT`（`json` / `text`，默认 `json`）。
+
+计划中：`SNAP_BASE_URL`、`S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`SIGNING_KEY`、`REGISTRATION_MODE`、`WATCH_DAYS`、`FETCH_MIN_INTERVAL`、`CACHE_DIR`、`CACHE_MAX_BYTES`、`HEALTHCHECK_URL`、`CANARY_ALIVE_URL`、`CANARY_DELETED_URL`、`ADMIN_EMAILS`、`DAILY_EMAIL_LIMIT`。
 
 ### 13.4 备份与恢复
 
@@ -575,6 +601,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 ├── cmd/observer/            # main：serve / migrate / probe / admin
 ├── internal/
 │   ├── api/                 # Huma handlers
+│   ├── app/                 # serve 的组装：连接、迁移、worker、HTTP、优雅退出
 │   ├── auth/
 │   ├── blob/
 │   ├── config/
@@ -585,7 +612,8 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 │   ├── snapshot/
 │   │   └── templates/       # 阅读版 HTML 模板
 │   ├── store/
-│   │   ├── migrations/      # goose SQL
+│   │   ├── migrations/      # goose SQL（River 的迁移在 store.go 中注册）
+│   │   ├── storetest/       # 测试用：每个测试一个独立的临时数据库
 │   │   ├── queries/         # sqlc 查询
 │   │   └── db/              # sqlc 生成代码
 │   ├── watch/               # 业务核心
@@ -601,6 +629,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 │   └── runbook.md
 ├── .github/workflows/
 ├── Dockerfile
+├── .golangci.yml
 ├── Makefile                 # 常用命令：dev、test、lint、sqlc、build
 ├── go.mod
 ├── sqlc.yaml
@@ -623,6 +652,8 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | 前端 | 类型检查；关键组件少量测试 | `vue-tsc`、Vitest |
 | 线上 | 金丝雀检测 | §6.6 |
 
+- 需要数据库的测试读取 `TEST_DATABASE_URL`，未设置时跳过；`make test` 会启动本地 Postgres 并设置它。每个测试新建一个独立的临时数据库并在结束时删除，因为不同包的测试是并行运行的。
+
 每个修复的线上问题都必须补充对应的样本或回归测试。
 
 ---
@@ -637,6 +668,8 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 - **验收**：回答 §11.1 的 6 个问题；确定是否需要本地抓取节点（§11.3），以及 Wasabi 使用哪个 region。
 
 ### M1：项目骨架
+> **已完成（2026-11-19）**：旧代码已删除；配置、日志、Postgres + goose + River 迁移、sqlc、River worker（心跳周期任务）、Huma `/api/v1/healthz` 与 `/api/v1/openapi.json`、`serve` / `migrate` / `healthcheck` / `admin stats` 子命令、`compose.dev.yaml`、golangci-lint 配置、CI 工作流。本机验收通过；CI 工作流要等首次推送后才能在 GitHub 上实际运行。空载 RSS 约 21 MB。
+
 - 删除旧代码，初始化 Go module、目录结构、Makefile、配置、日志。
 - Postgres + goose 迁移 + sqlc + River 接入；Huma 提供 `/healthz` 与 OpenAPI。
 - `compose.dev.yaml` 本地开发环境；CI（lint + test）。
