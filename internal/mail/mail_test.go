@@ -108,8 +108,8 @@ func TestSMTPSend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id == "" {
-		t.Error("no Message-ID returned")
+	if !strings.HasSuffix(id, "@example.com>") || len(id) != len("<@example.com>")+32 {
+		t.Errorf("Message-ID = %q, want <32 hex>@example.com", id)
 	}
 	f.mu.Lock()
 	raw := strings.Join(f.messages, "")

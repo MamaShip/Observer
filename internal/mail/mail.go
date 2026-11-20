@@ -4,9 +4,12 @@ package mail
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	netmail "net/mail"
 	"strings"
 	"sync"
 	"time"
@@ -46,8 +49,9 @@ type SMTPConfig struct {
 // SMTP sends through an SMTP server, one connection per message (volumes
 // are tiny; no pool to go stale).
 type SMTP struct {
-	cfg  SMTPConfig
-	opts []gomail.Option
+	cfg    SMTPConfig
+	opts   []gomail.Option
+	domain string // of the From address, for Message-IDs
 }
 
 // NewSMTP validates the configuration. It does not connect.
@@ -72,15 +76,17 @@ func NewSMTP(c SMTPConfig) (*SMTP, error) {
 			gomail.WithUsername(c.Username), gomail.WithPassword(c.Password))
 	}
 	// Fail early on a malformed From.
-	if err := gomail.NewMsg().From(c.From); err != nil {
+	from, err := netmail.ParseAddress(c.From)
+	if err != nil {
 		return nil, fmt.Errorf("mail: from address: %w", err)
 	}
-	return &SMTP{cfg: c, opts: opts}, nil
+	domain := from.Address[strings.LastIndex(from.Address, "@")+1:]
+	return &SMTP{cfg: c, opts: opts, domain: domain}, nil
 }
 
 // Send implements Mailer.
 func (s *SMTP) Send(ctx context.Context, m Message) (string, error) {
-	msg, err := build(s.cfg.From, m)
+	msg, err := build(s.cfg.From, s.domain, m)
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +118,9 @@ func (s *SMTP) Check(ctx context.Context) error {
 }
 
 // build makes the MIME message, plain text first with an HTML alternative.
-func build(from string, m Message) (*gomail.Msg, error) {
+// The Message-ID uses the sender's domain rather than the machine's host
+// name, which spam filters would see as a mismatch.
+func build(from, domain string, m Message) (*gomail.Msg, error) {
 	msg := gomail.NewMsg()
 	if err := msg.From(from); err != nil {
 		return nil, err
@@ -121,7 +129,11 @@ func build(from string, m Message) (*gomail.Msg, error) {
 		return nil, err
 	}
 	msg.Subject(m.Subject)
-	msg.SetMessageID()
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return nil, err
+	}
+	msg.SetMessageIDWithValue(hex.EncodeToString(id) + "@" + domain)
 	msg.SetDate()
 	msg.SetBodyString(gomail.TypeTextPlain, m.Text)
 	if m.HTML != "" {
