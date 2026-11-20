@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +66,8 @@ func TestServer(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := storetest.NewPool(t)
 	q := db.New(pool)
-	store, err := blob.NewDir(t.TempDir())
+	dir := t.TempDir()
+	store, err := blob.NewDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +155,27 @@ func TestServer(t *testing.T) {
 		t.Errorf("download once a slot is free: %d", again.Code)
 	}
 	<-srv.downloads
+
+	// An image that cannot be read mid-way cuts the connection rather than
+	// ending the response normally with half a page.
+	if err := os.Remove(filepath.Join(dir, filepath.FromSlash(blob.AssetKey(sha)))); err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() {
+			r := recover()
+			if err, _ := r.(error); !errors.Is(err, http.ErrAbortHandler) {
+				t.Errorf("unreadable image: recovered %v, want http.ErrAbortHandler", r)
+			}
+		}()
+		get(path(dl))
+	}()
+	if len(srv.downloads) != 0 {
+		t.Error("an aborted download kept its slot")
+	}
+	if err := store.Put(ctx, blob.AssetKey(sha), bytes.NewReader(png), int64(len(png)), "image/png"); err != nil {
+		t.Fatal(err)
+	}
 	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") ||
 		!strings.Contains(cd, "filename*=UTF-8''"+url.PathEscape("标题_带_特殊_字符-20261119.html")) {
 		t.Errorf("Content-Disposition = %s", cd)

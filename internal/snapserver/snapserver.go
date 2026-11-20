@@ -201,7 +201,8 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Disposition", attachment(deref(snap.Title), snap.CapturedAt))
 	h.Set("Cache-Control", "private, no-store")
 	bw := bufio.NewWriterSize(w, 64<<10)
-	if _, err := file.WriteTo(bw); err == nil {
+	_, err = file.WriteTo(bw)
+	if err == nil {
 		err = bw.Flush()
 	}
 	if err != nil {
