@@ -1,4 +1,23 @@
+# Go build output
+/bin/
+/dist/
+
+# probe fixtures and M0 field-test results (full pages, not for the repo)
+fixtures/
+/m0-*
+
+# local secrets and editor state
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
 *.log
-*.conf
-.idea
-__pycache__
+
+# local snapshot storage for make dev
+/data/
+
+# Web app build output (embedded by internal/webui)
+/internal/webui/dist/app/
+node_modules/
+/web/openapi.json

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>{{.Title}}</title>
+<style>
+  :root { color-scheme: light; --fg: #1f2328; --muted: #656d76; --rule: #d0d7de; --note-bg: #f6f8fa; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: #fff; color: var(--fg);
+         font: 17px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+  .obs-page { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; }
+  .obs-header h1 { font-size: 1.45em; line-height: 1.4; margin: 0 0 12px; }
+  .obs-meta { color: var(--muted); font-size: 14px; line-height: 1.6; }
+  .obs-meta a { color: inherit; word-break: break-all; }
+  .obs-notice { margin: 16px 0 24px; padding: 10px 12px; background: var(--note-bg); border-left: 3px solid var(--rule);
+                color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .obs-content { overflow-wrap: break-word; }
+  .obs-content img { max-width: 100% !important; height: auto !important; }
+  .obs-content table { max-width: 100%; border-collapse: collapse; }
+  .obs-content section, .obs-content p { max-width: 100%; }
+  .obs-missing { display: inline-block; min-width: 8em; padding: 4px 8px; border: 1px dashed var(--rule);
+                 color: var(--muted); font-size: 13px; }
+  .obs-media { margin: 12px 0; padding: 12px; border: 1px dashed var(--rule); color: var(--muted);
+               font-size: 14px; text-align: center; }
+  .obs-footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted);
+                font-size: 13px; line-height: 1.6; }
+  .obs-footer a { color: inherit; word-break: break-all; }
+
+  @media print {
+    @page { size: A4; margin: 16mm 14mm 18mm; }
+    body { font-size: 11pt; line-height: 1.7; }
+    .obs-page { max-width: none; padding: 0; }
+    .obs-notice { border-left-color: #999; }
+    .obs-content img { break-inside: avoid; page-break-inside: avoid; }
+    .obs-content h1, .obs-content h2, .obs-content h3 { break-after: avoid; page-break-after: avoid; }
+    .obs-content p { orphans: 3; widows: 3; }
+    a { color: inherit; text-decoration: none; }
+    .obs-footer { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<article class="obs-page">
+  <header class="obs-header">
+    <h1>{{.Title}}</h1>
+    <div class="obs-meta">
+      {{- if .AccountName}}<span>{{.AccountName}}</span>{{end -}}
+      {{- if and .Author (ne .Author .AccountName)}} · <span>{{.Author}}</span>{{end -}}
+      {{- if .Published}} · <time>{{.Published}}</time>{{end}}
+    </div>
+  </header>
+  <div class="obs-notice">
+    本页是折光观察者于 {{.Captured}}（UTC+8）保存的备份，内容来自微信公众号文章，版权归原作者所有。
+    {{- if .Missing}} 有 {{.Missing}} 张图片未能备份。{{end}}
+    原文：<a href="{{.URL}}" rel="noreferrer noopener" target="_blank">{{.URL}}</a>
+  </div>
+  <div class="obs-content">
+{{.Body}}
+  </div>
+  <footer class="obs-footer">
+    原文链接：<a href="{{.URL}}" rel="noreferrer noopener" target="_blank">{{.URL}}</a><br>
+    备份时间：{{.Captured}}（UTC+8）
+  </footer>
+</article>
+</body>
+</html>

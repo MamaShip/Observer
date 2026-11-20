@@ -1,0 +1,17 @@
+# M0 sample links. Expected verdict in the comment after each group.
+
+# alive
+https://mp.weixin.qq.com/s/YPak1xLfYK-BOjk-OYbAKg
+https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A
+
+# deleted: author_deleted
+https://mp.weixin.qq.com/s/aIWmD5E2y-Yg7oMltd2i8w
+
+# deleted: violation
+https://mp.weixin.qq.com/s/hAeOjjWPixvnkiQ58-ohRg
+
+# long link without chksm: blocked (verification page)
+https://mp.weixin.qq.com/s?__biz=MzU1NDQ2OTg1NQ==&mid=2247501049&idx=1&sn=4ba683d7a4184285569a2d6a29dc951b
+
+# long link with a placeholder chksm: alive (from a mainland network, 2026-11-19)
+https://mp.weixin.qq.com/s?__biz=MzU1NDQ2OTg1NQ==&mid=2247501049&idx=1&sn=4ba683d7a4184285569a2d6a29dc951b&chksm=00000000

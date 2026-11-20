@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN"><body style="margin:0;padding:24px;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2328;line-height:1.7">
+<p>你好，</p>
+{{range .Items}}
+<div style="margin:16px 0;padding:12px 14px;border:1px solid #d0d7de;border-radius:6px">
+  <div style="font-size:13px;color:{{if .Deleted}}#cf222e{{else}}#656d76{{end}}">{{if .Deleted}}已删除{{else}}观察期结束{{end}}</div>
+  <div style="font-weight:600;margin:4px 0">{{.Title}}</div>
+  {{if .AccountName}}<div style="font-size:13px;color:#656d76">{{.AccountName}}</div>{{end}}
+  {{if .Reason}}<div style="font-size:13px;color:#656d76">微信提示：{{.Reason}}</div>{{end}}
+  <div style="margin-top:6px"><a href="{{.Link}}" style="color:#1f6feb">查看备份</a></div>
+</div>
+{{end}}
+<p style="color:#656d76;font-size:13px">备份只对观察过该文章的用户可见，需要登录后查看。<br>
+不想收到观察期结束的邮件，可以在<a href="{{.SettingsURL}}" style="color:#656d76">设置</a>中关闭。</p>
+<p style="color:#656d76;font-size:13px">{{.ServiceName}} · <a href="{{.ServiceURL}}" style="color:#656d76">{{.ServiceURL}}</a></p>
+</body></html>
