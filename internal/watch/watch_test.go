@@ -155,7 +155,7 @@ func (e *env) user(email string) uuid.UUID {
 
 func (e *env) submit(user uuid.UUID, url string) db.Watch {
 	e.t.Helper()
-	w, err := e.svc.Submit(e.ctx, user, url)
+	w, err := e.svc.Submit(e.ctx, user, url, Quota{})
 	if err != nil {
 		e.t.Fatalf("Submit(%s): %v", url, err)
 	}
@@ -347,6 +347,22 @@ func TestDeletionNeedsConfirmation(t *testing.T) {
 		t.Error("watch ended on a single deleted check")
 	}
 
+	// A check run early (an admin asked for one) does not confirm: the
+	// first answer stays the evidence and the confirmation stays due.
+	suspected := *a.DeletionSuspectedAt
+	if err := e.svc.Check(e.ctx, CheckArgs{ArticleID: art.ID}); err != nil {
+		t.Fatal(err)
+	}
+	a = e.article(art.ID)
+	if a.Status != "alive" || a.DeletionSuspectedAt == nil || !a.DeletionSuspectedAt.Equal(suspected) ||
+		a.NextCheckAt == nil || !a.NextCheckAt.Equal(suspected.Add(deletionConfirmDelay)) {
+		t.Fatalf("after an early check: status=%s suspected=%v next=%v", a.Status, a.DeletionSuspectedAt, a.NextCheckAt)
+	}
+	if e.watch(w.ID).Status != "active" {
+		t.Error("watch ended on an early second check")
+	}
+
+	e.svc.now = func() time.Time { return time.Now().Add(deletionConfirmDelay) }
 	if err := e.svc.Check(e.ctx, CheckArgs{ArticleID: art.ID}); err != nil {
 		t.Fatal(err)
 	}
@@ -361,8 +377,8 @@ func TestDeletionNeedsConfirmation(t *testing.T) {
 	if err := e.svc.Check(e.ctx, CheckArgs{ArticleID: art.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if n := e.count("SELECT count(*) FROM check_runs WHERE article_id = $1", art.ID); n != 3 {
-		t.Errorf("%d check runs, want 3", n)
+	if n := e.count("SELECT count(*) FROM check_runs WHERE article_id = $1", art.ID); n != 4 {
+		t.Errorf("%d check runs, want 4", n)
 	}
 	if wd := e.submit(e.user("dave@example.com"), shortURL); wd.Status != "ended" || deref(wd.EndReason) != "deleted" {
 		t.Errorf("late watcher = %s/%s", wd.Status, deref(wd.EndReason))
@@ -382,6 +398,29 @@ func TestDeletionNotConfirmed(t *testing.T) {
 	}
 	if a := e.article(art.ID); a.Status != "alive" || a.DeletionSuspectedAt != nil {
 		t.Errorf("status=%s suspected=%v, want alive and cleared", a.Status, a.DeletionSuspectedAt)
+	}
+}
+
+// A deleted answer from before an article went dormant does not count once
+// someone watches it again: it may have been online in between.
+func TestReactivationForgetsSuspicion(t *testing.T) {
+	e := newEnv(t)
+	_, art := e.aliveArticle(e.user("alice@example.com"))
+	e.web.set(shortURL, fixture(t, "deleted_by_author.html"))
+	if err := e.svc.Check(e.ctx, CheckArgs{ArticleID: art.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(e.ctx, `UPDATE articles SET status = 'dormant', next_check_at = NULL,
+		deletion_suspected_at = deletion_suspected_at - interval '30 days' WHERE id = $1`, art.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.submit(e.user("bob@example.com"), shortURL)
+	if err := e.svc.Check(e.ctx, CheckArgs{ArticleID: art.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if a := e.article(art.ID); a.Status != "alive" || a.DeletionSuspectedAt == nil ||
+		time.Since(*a.DeletionSuspectedAt) > time.Minute {
+		t.Errorf("status=%s suspected=%v, want alive with a new suspicion", a.Status, a.DeletionSuspectedAt)
 	}
 }
 
@@ -520,7 +559,7 @@ func TestExpireAndReactivate(t *testing.T) {
 func TestSubmitRejectsBadLinks(t *testing.T) {
 	e := newEnv(t)
 	for _, u := range []string{"https://example.com/s/abc", "not a url", "https://mp.weixin.qq.com/s?__biz=&timestamp=1&signature=x"} {
-		if _, err := e.svc.Submit(e.ctx, e.user("alice@example.com"), u); !errors.Is(err, ErrBadLink) {
+		if _, err := e.svc.Submit(e.ctx, e.user("alice@example.com"), u, Quota{}); !errors.Is(err, ErrBadLink) {
 			t.Errorf("Submit(%q) = %v, want ErrBadLink", u, err)
 		}
 	}

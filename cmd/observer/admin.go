@@ -24,6 +24,7 @@ import (
 	"github.com/MamaShip/Observer/internal/snapserver"
 	"github.com/MamaShip/Observer/internal/store"
 	"github.com/MamaShip/Observer/internal/store/db"
+	"github.com/MamaShip/Observer/internal/watch"
 )
 
 const adminUsage = `Usage: observer admin <command>
@@ -227,7 +228,7 @@ func adminSubmit(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, q *
 	}
 	var failed error
 	for _, u := range fs.Args() {
-		w, err := svc.Submit(ctx, user.ID, u)
+		w, err := svc.Submit(ctx, user.ID, u, watch.Quota{})
 		if err != nil {
 			fmt.Printf("%s\n  error: %v\n", u, err)
 			failed = errors.New("some links were rejected")

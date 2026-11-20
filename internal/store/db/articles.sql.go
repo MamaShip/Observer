@@ -504,8 +504,29 @@ func (q *Queries) MoveCheckRuns(ctx context.Context, arg MoveCheckRunsParams) er
 	return err
 }
 
+const postponeConfirmation = `-- name: PostponeConfirmation :exec
+UPDATE articles SET
+  last_checked_at      = $1::timestamptz,
+  consecutive_failures = 0,
+  next_check_at        = $2::timestamptz
+WHERE id = $3
+`
+
+type PostponeConfirmationParams struct {
+	Now         time.Time
+	NextCheckAt time.Time
+	ID          uuid.UUID
+}
+
+// PostponeConfirmation keeps the first deleted answer and looks again once
+// the confirmation delay after it is over.
+func (q *Queries) PostponeConfirmation(ctx context.Context, arg PostponeConfirmationParams) error {
+	_, err := q.db.Exec(ctx, postponeConfirmation, arg.Now, arg.NextCheckAt, arg.ID)
+	return err
+}
+
 const reactivateArticle = `-- name: ReactivateArticle :exec
-UPDATE articles SET status = 'alive', next_check_at = $1::timestamptz
+UPDATE articles SET status = 'alive', deletion_suspected_at = NULL, next_check_at = $1::timestamptz
 WHERE id = $2 AND status = 'dormant'
 `
 
@@ -514,6 +535,8 @@ type ReactivateArticleParams struct {
 	ID          uuid.UUID
 }
 
+// ReactivateArticle forgets a deleted answer from before the article went
+// dormant: the article may have been online in between.
 func (q *Queries) ReactivateArticle(ctx context.Context, arg ReactivateArticleParams) error {
 	_, err := q.db.Exec(ctx, reactivateArticle, arg.NextCheckAt, arg.ID)
 	return err

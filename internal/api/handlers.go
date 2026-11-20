@@ -313,17 +313,12 @@ func (h *handlers) registerWatches(g huma.API) {
 		Description: "201 when the article is already known (backed up, or already deleted); 202 while it is fetched for the first time — poll GET /watches/{id}.",
 	}, func(ctx context.Context, in *submitInput) (*watchOutput, error) {
 		u := principalFrom(ctx).User
-		if u.Role != "admin" {
-			if err := h.checkQuota(ctx, u.ID); err != nil {
-				return nil, err
-			}
-		}
-		w, err := h.d.Watch.Submit(ctx, u.ID, in.Body.URL)
+		w, err := h.d.Watch.Submit(ctx, u.ID, in.Body.URL, h.quota(u))
 		if errors.Is(err, watch.ErrBadLink) {
 			return nil, huma.Error422UnprocessableEntity("这不是有效的微信公众号文章链接（需要 mp.weixin.qq.com 开头的完整链接）。")
 		}
 		if err != nil {
-			return nil, err
+			return nil, h.quotaError(err)
 		}
 		detail, err := h.detail(ctx, u.ID, w.ID)
 		if err != nil {
@@ -393,19 +388,7 @@ func (h *handlers) registerWatches(g huma.API) {
 			"is watched again if the article is still online (this counts toward the open-watch limit).",
 	}, func(ctx context.Context, in *idInput) (*watchOutput, error) {
 		u := principalFrom(ctx).User
-		cur, err := h.d.Queries.GetUserWatch(ctx, db.GetUserWatchParams{ID: in.ID, UserID: u.ID})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, huma.Error404NotFound("没有找到这个观察。")
-		}
-		if err != nil {
-			return nil, err
-		}
-		if cur.Watch.Status != "active" && u.Role != "admin" {
-			if err := h.checkOpenWatches(ctx, u.ID); err != nil {
-				return nil, err
-			}
-		}
-		_, err = h.d.Watch.Renew(ctx, u.ID, in.ID)
+		_, err := h.d.Watch.Renew(ctx, u.ID, in.ID, h.quota(u))
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			return nil, huma.Error404NotFound("没有找到这个观察。")
@@ -414,7 +397,7 @@ func (h *handlers) registerWatches(g huma.API) {
 		case errors.Is(err, watch.ErrNotRenewable):
 			return nil, huma.Error409Conflict("这条观察不能续期：只有观察中、已到期或已停止，且文章仍在线的观察可以续期。")
 		case err != nil:
-			return nil, err
+			return nil, h.quotaError(err)
 		}
 		detail, err := h.detail(ctx, u.ID, in.ID)
 		if err != nil {
@@ -444,29 +427,23 @@ func (h *handlers) registerWatches(g huma.API) {
 	})
 }
 
-func (h *handlers) checkOpenWatches(ctx context.Context, userID uuid.UUID) error {
-	open, err := h.d.Queries.CountOpenWatches(ctx, userID)
-	if err != nil {
-		return err
+// quota is the user's watch quota; admins have none.
+func (h *handlers) quota(u db.User) watch.Quota {
+	if u.Role == "admin" {
+		return watch.Quota{}
 	}
-	if lim := h.d.Limits.MaxOpenWatches; lim > 0 && open >= int64(lim) {
-		return huma.Error429TooManyRequests("同时观察的文章已达上限（" + strconv.Itoa(lim) + " 篇），请先停止一些观察。")
-	}
-	return nil
+	return watch.Quota{MaxOpen: h.d.Limits.MaxOpenWatches, MaxDaily: h.d.Limits.MaxDailySubmission}
 }
 
-func (h *handlers) checkQuota(ctx context.Context, userID uuid.UUID) error {
-	if err := h.checkOpenWatches(ctx, userID); err != nil {
-		return err
+// quotaError turns a quota error from Submit or Renew into a 429.
+func (h *handlers) quotaError(err error) error {
+	switch {
+	case errors.Is(err, watch.ErrOpenLimit):
+		return huma.Error429TooManyRequests("同时观察的文章已达上限（" + strconv.Itoa(h.d.Limits.MaxOpenWatches) + " 篇），请先停止一些观察。")
+	case errors.Is(err, watch.ErrDailyLimit):
+		return huma.Error429TooManyRequests("24 小时内提交的链接已达上限（" + strconv.Itoa(h.d.Limits.MaxDailySubmission) + " 个），请稍后再试。")
 	}
-	today, err := h.d.Queries.CountWatchesSince(ctx, db.CountWatchesSinceParams{UserID: userID, Since: time.Now().Add(-24 * time.Hour)})
-	if err != nil {
-		return err
-	}
-	if lim := h.d.Limits.MaxDailySubmission; lim > 0 && today >= int64(lim) {
-		return huma.Error429TooManyRequests("24 小时内提交的链接已达上限（" + strconv.Itoa(lim) + " 个），请稍后再试。")
-	}
-	return nil
+	return err
 }
 
 func (h *handlers) detail(ctx context.Context, userID, watchID uuid.UUID) (*WatchDetail, error) {

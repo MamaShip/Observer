@@ -127,6 +127,11 @@ type Querier interface {
 	// index cannot conflict.
 	MoveWatches(ctx context.Context, arg MoveWatchesParams) error
 	PendingNotifications(ctx context.Context, userID uuid.UUID) ([]PendingNotificationsRow, error)
+	// PostponeConfirmation keeps the first deleted answer and looks again once
+	// the confirmation delay after it is over.
+	PostponeConfirmation(ctx context.Context, arg PostponeConfirmationParams) error
+	// ReactivateArticle forgets a deleted answer from before the article went
+	// dormant: the article may have been online in between.
 	ReactivateArticle(ctx context.Context, arg ReactivateArticleParams) error
 	RecordArticleAlive(ctx context.Context, arg RecordArticleAliveParams) error
 	RecordArticleFailure(ctx context.Context, arg RecordArticleFailureParams) (int32, error)

@@ -267,9 +267,16 @@ func TestUserFlow(t *testing.T) {
 	}
 	bob.api(http.MethodGet, "/watches/"+id.String(), nil, http.StatusNotFound, nil)
 
-	// The article is deleted: two checks confirm it, the sweep emails Alice.
+	// The article is deleted: two checks ten minutes apart confirm it, the
+	// sweep emails Alice.
 	web.Set(watchtest.AliveURL, watchtest.Fixture(t, "deleted_by_author.html"))
-	for range 2 {
+	for i := range 2 {
+		if i == 1 {
+			if _, err := a.pool.Exec(ctx, `UPDATE articles SET deletion_suspected_at = deletion_suspected_at - interval '10 minutes' WHERE id = $1`,
+				w.Watch.Article.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if err := a.Watch.Check(ctx, watch.CheckArgs{ArticleID: w.Watch.Article.ID}); err != nil {
 			t.Fatal(err)
 		}

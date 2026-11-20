@@ -75,6 +75,15 @@ UPDATE articles SET
   next_check_at         = sqlc.arg(next_check_at)::timestamptz
 WHERE id = sqlc.arg(id);
 
+-- PostponeConfirmation keeps the first deleted answer and looks again once
+-- the confirmation delay after it is over.
+-- name: PostponeConfirmation :exec
+UPDATE articles SET
+  last_checked_at      = sqlc.arg(now)::timestamptz,
+  consecutive_failures = 0,
+  next_check_at        = sqlc.arg(next_check_at)::timestamptz
+WHERE id = sqlc.arg(id);
+
 -- name: ConfirmArticleDeleted :exec
 UPDATE articles SET
   status              = 'deleted',
@@ -93,8 +102,10 @@ UPDATE articles SET
 WHERE id = sqlc.arg(id)
 RETURNING consecutive_failures;
 
+-- ReactivateArticle forgets a deleted answer from before the article went
+-- dormant: the article may have been online in between.
 -- name: ReactivateArticle :exec
-UPDATE articles SET status = 'alive', next_check_at = sqlc.arg(next_check_at)::timestamptz
+UPDATE articles SET status = 'alive', deletion_suspected_at = NULL, next_check_at = sqlc.arg(next_check_at)::timestamptz
 WHERE id = sqlc.arg(id) AND status = 'dormant';
 
 -- name: RequestCheckNow :execrows

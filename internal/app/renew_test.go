@@ -98,6 +98,29 @@ func TestRenewWatch(t *testing.T) {
 		t.Errorf("watched again = %+v", r.Watch)
 	}
 
+	// At the open-watch limit, submitting the same article again returns her
+	// watch; only a new article is refused.
+	if _, err := a.pool.Exec(ctx, `
+		WITH art AS (INSERT INTO articles (status) VALUES ('pending') RETURNING id)
+		INSERT INTO watches (user_id, article_id, submitted_url, status, expires_at)
+		SELECT u.id, art.id, 'https://mp.weixin.qq.com/s/x', 'resolving', now() + interval '60 days'
+		FROM art, users u WHERE u.email = 'alice@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	var same api.WatchDetail
+	alice.api(http.MethodPost, "/watches", map[string]string{"url": watchtest.AliveURL}, http.StatusCreated, &same)
+	if same.Watch.ID != r.Watch.ID {
+		t.Errorf("resubmitted at the limit: watch %s, want %s", same.Watch.ID, r.Watch.ID)
+	}
+	if resp, b := alice.do(http.MethodPost, site, api.Prefix+"/watches",
+		map[string]string{"url": "https://mp.weixin.qq.com/s/aIWmD5E2y-Yg7oMltd2i8w"}); resp.StatusCode != http.StatusTooManyRequests ||
+		!strings.Contains(string(b), "2 篇") {
+		t.Errorf("new article at the limit: %d %s", resp.StatusCode, b)
+	}
+	if _, err := a.pool.Exec(ctx, `DELETE FROM watches WHERE status = 'resolving'`); err != nil {
+		t.Fatal(err)
+	}
+
 	// Someone else's watch, a deleted article.
 	bob := &client{t: t, addr: alice.addr}
 	bob.login(mailer, "bob@example.com")

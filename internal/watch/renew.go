@@ -36,12 +36,17 @@ func Renewable(status, endReason, articleStatus string) bool {
 
 // Renew sets the user's watch to end WatchDays from now and makes it active.
 // An article nobody watched any more is checked again at once. Reopening an
-// ended watch counts toward the open-watch limit, which the caller checks.
-// It returns pgx.ErrNoRows if the watch is not the user's.
-func (s *Service) Renew(ctx context.Context, userID, watchID uuid.UUID) (db.Watch, error) {
+// ended watch counts toward quota.MaxOpen (ErrOpenLimit); the day's
+// submissions are not affected. It returns pgx.ErrNoRows if the watch is not
+// the user's.
+func (s *Service) Renew(ctx context.Context, userID, watchID uuid.UUID, quota Quota) (db.Watch, error) {
 	var w db.Watch
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		// Serialised with the user's submissions, which count open watches too.
+		if _, err := q.LockUser(ctx, userID); err != nil {
+			return err
+		}
 		cur, err := q.LockUserWatch(ctx, db.LockUserWatchParams{ID: watchID, UserID: userID})
 		if err != nil {
 			return err
@@ -61,6 +66,9 @@ func (s *Service) Renew(ctx context.Context, userID, watchID uuid.UUID) (db.Watc
 			if _, err := q.GetOpenWatch(ctx, db.GetOpenWatchParams{UserID: userID, ArticleID: art.ID}); err == nil {
 				return ErrWatchingAgain
 			} else if !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if err := checkOpen(ctx, q, userID, quota); err != nil {
 				return err
 			}
 			if art.Status == "dormant" {

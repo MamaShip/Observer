@@ -39,11 +39,11 @@ func TestRenew(t *testing.T) {
 	e.svc.now = func() time.Time { return start.Add(50 * 24 * time.Hour) }
 
 	// Not hers.
-	if _, err := e.svc.Renew(e.ctx, bob, w.ID); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := e.svc.Renew(e.ctx, bob, w.ID, Quota{}); !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("someone else's watch: %v", err)
 	}
 	// An active watch runs to 60 days from now.
-	got, err := e.svc.Renew(e.ctx, alice, w.ID)
+	got, err := e.svc.Renew(e.ctx, alice, w.ID, Quota{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestRenew(t *testing.T) {
 	if a := e.article(art.ID); a.Status != "dormant" {
 		t.Fatalf("article = %s, want dormant", a.Status)
 	}
-	got, err = e.svc.Renew(e.ctx, alice, w.ID)
+	got, err = e.svc.Renew(e.ctx, alice, w.ID, Quota{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestRenew(t *testing.T) {
 	if _, err := e.pool.Exec(e.ctx, "UPDATE watches SET status = 'ended', end_reason = 'user_stopped', ended_at = now(), notified_at = now() WHERE id = $1", w.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := e.svc.Renew(e.ctx, alice, w.ID); err != nil || got.Status != "active" {
+	if got, err := e.svc.Renew(e.ctx, alice, w.ID, Quota{}); err != nil || got.Status != "active" {
 		t.Errorf("stopped: %+v, %v", got, err)
 	}
 
@@ -94,10 +94,10 @@ func TestRenew(t *testing.T) {
 		t.Fatal(err)
 	}
 	w2 := e.submit(alice, shortURL)
-	if _, err := e.svc.Renew(e.ctx, alice, w.ID); !errors.Is(err, ErrWatchingAgain) {
+	if _, err := e.svc.Renew(e.ctx, alice, w.ID, Quota{}); !errors.Is(err, ErrWatchingAgain) {
 		t.Errorf("with another open watch: %v", err)
 	}
-	if _, err := e.svc.Renew(e.ctx, alice, w2.ID); err != nil {
+	if _, err := e.svc.Renew(e.ctx, alice, w2.ID, Quota{}); err != nil {
 		t.Errorf("the new watch: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestRenew(t *testing.T) {
 	if _, err := e.pool.Exec(e.ctx, "UPDATE articles SET status = 'deleted' WHERE id = $1", art.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Renew(e.ctx, alice, w.ID); !errors.Is(err, ErrNotRenewable) {
+	if _, err := e.svc.Renew(e.ctx, alice, w.ID, Quota{}); !errors.Is(err, ErrNotRenewable) {
 		t.Errorf("deleted article: %v", err)
 	}
 }

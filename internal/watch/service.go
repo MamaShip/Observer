@@ -100,14 +100,42 @@ func (s *Service) SetJobs(j JobInserter) { s.jobs = j }
 // BreakerOpenUntil reports when fetching resumes, or zero if it is running.
 func (s *Service) BreakerOpenUntil() time.Time { return s.breaker.OpenUntil() }
 
-// Errors returned by Submit.
+// Errors returned by Submit and Renew.
 var (
 	ErrBadLink = errors.New("not a supported WeChat article link")
+	// ErrOpenLimit: the user already has Quota.MaxOpen open watches.
+	ErrOpenLimit = errors.New("too many open watches")
+	// ErrDailyLimit: the user created Quota.MaxDaily watches in the last 24 hours.
+	ErrDailyLimit = errors.New("too many watches created today")
 )
 
+// Quota limits one user's watches (plan.md §18). Zero means no limit.
+type Quota struct {
+	MaxOpen  int // resolving or active watches
+	MaxDaily int // watches created in the last 24 hours
+}
+
+// checkOpen returns ErrOpenLimit if the user may not open another watch.
+// The caller holds the user's row lock, so concurrent requests are counted
+// one after the other.
+func checkOpen(ctx context.Context, q *db.Queries, userID uuid.UUID, quota Quota) error {
+	if quota.MaxOpen <= 0 {
+		return nil
+	}
+	n, err := q.CountOpenWatches(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if n >= int64(quota.MaxOpen) {
+		return ErrOpenLimit
+	}
+	return nil
+}
+
 // Submit starts watching a link for a user. It returns the user's existing
-// open watch if there is one for the same article.
-func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string) (db.Watch, error) {
+// open watch if there is one for the same article; that is free. Otherwise
+// the new watch counts toward the quota.
+func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string, quota Quota) (db.Watch, error) {
 	link, err := wechat.ParseLink(rawURL)
 	if err != nil {
 		return db.Watch{}, fmt.Errorf("%w: %w", ErrBadLink, err)
@@ -115,6 +143,11 @@ func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string) (
 	var w db.Watch
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		// One submission per user at a time: the duplicate check and the
+		// quota hold until this watch is created.
+		if _, err := q.LockUser(ctx, userID); err != nil {
+			return err
+		}
 		now := s.now()
 
 		art, err := q.GetArticleByAlias(ctx, link.Key)
@@ -128,6 +161,23 @@ func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string) (
 			return nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return err
+		}
+
+		// A deleted or invalid article gives a watch that is over at once:
+		// it counts toward the day's submissions but is not open.
+		if art.Status == "pending" || art.Status == "alive" || art.Status == "dormant" {
+			if err := checkOpen(ctx, q, userID, quota); err != nil {
+				return err
+			}
+		}
+		if quota.MaxDaily > 0 {
+			n, err := q.CountWatchesSince(ctx, db.CountWatchesSinceParams{UserID: userID, Since: now.Add(-24 * time.Hour)})
+			if err != nil {
+				return err
+			}
+			if n >= int64(quota.MaxDaily) {
+				return ErrDailyLimit
+			}
 		}
 
 		p := db.CreateWatchParams{

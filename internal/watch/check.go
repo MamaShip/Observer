@@ -14,8 +14,10 @@ import (
 
 // Check looks at an alive article once (plan.md §5.3, §5.5). Only alive and
 // deleted answers change anything; a deletion counts only when a second
-// check about ten minutes later agrees. Everything else is recorded and the
-// article is retried with backoff.
+// check at least deletionConfirmDelay after the first agrees, however early
+// the second check runs. Everything else is recorded and the article is
+// retried with backoff. The state is re-read under a row lock after the
+// fetch, so a concurrent change is not overwritten.
 func (s *Service) Check(ctx context.Context, args CheckArgs) error {
 	art, err := s.q.GetArticle(ctx, args.ArticleID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -40,6 +42,14 @@ func (s *Service) Check(ctx context.Context, args CheckArgs) error {
 
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		art, err := q.GetArticleForUpdate(ctx, art.ID)
+		if err != nil {
+			return err
+		}
+		if art.Status != "alive" {
+			log.Info("article changed during the check; recording the answer only", "status", art.Status)
+			return s.recordCheck(ctx, q, art.ID, f, false)
+		}
 		stateChange := false
 		switch r.Verdict {
 		case wechat.VerdictAlive:
@@ -54,6 +64,17 @@ func (s *Service) Check(ctx context.Context, args CheckArgs) error {
 				log.Info("article looks deleted; confirming in 10 minutes")
 				if err := q.SuspectArticleDeleted(ctx, db.SuspectArticleDeletedParams{
 					ID: art.ID, Now: f.at, NextCheckAt: f.at.Add(deletionConfirmDelay),
+				}); err != nil {
+					return err
+				}
+				break
+			}
+			if confirmAt := art.DeletionSuspectedAt.Add(deletionConfirmDelay); f.at.Before(confirmAt) {
+				// Checked early (an admin asked for it): this answer does not
+				// confirm the first one, and the confirmation stays due.
+				log.Info("article still looks deleted; too early to confirm", "confirm_at", confirmAt)
+				if err := q.PostponeConfirmation(ctx, db.PostponeConfirmationParams{
+					ID: art.ID, Now: f.at, NextCheckAt: confirmAt,
 				}); err != nil {
 					return err
 				}
