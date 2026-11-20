@@ -56,6 +56,12 @@ type verifyOutput struct {
 	}
 }
 
+type sessionOutput struct {
+	Body struct {
+		User *Me `json:"user,omitempty" doc:"Absent when not logged in"`
+	}
+}
+
 type logoutOutput struct {
 	SetCookie *http.Cookie `header:"Set-Cookie"`
 }
@@ -122,6 +128,22 @@ func (h *handlers) registerAuth(g huma.API) {
 			out.Body.Token = sess.Token
 		} else {
 			out.SetCookie = sessionCookie(sess.Token, sess.TTL)
+		}
+		return out, nil
+	})
+
+	huma.Register(g, huma.Operation{
+		OperationID: "get-session", Method: http.MethodGet, Path: "/auth/session",
+		Summary: "Who is logged in", Tags: []string{"auth"},
+		Description: "Like GET /me, but answers 200 with no user for visitors, so a page can ask without an error.",
+	}, func(ctx context.Context, _ *struct{}) (*sessionOutput, error) {
+		out := &sessionOutput{}
+		if p := principalFrom(ctx); p != nil {
+			me, err := h.me(ctx, p.User)
+			if err != nil {
+				return nil, err
+			}
+			out.Body.User = &me.Body
 		}
 		return out, nil
 	})

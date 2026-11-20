@@ -42,8 +42,7 @@ function codeFromLog() {
 
 function watch(page) {
   page.on('console', (m) => {
-    // An anonymous visitor's GET /me is a 401 by design.
-    if (m.type() === 'error' && !/status of 401/.test(m.text())) problems.push(`console: ${m.text()}`)
+    if (m.type() === 'error') problems.push(`console: ${m.text()}`)
   })
   page.on('pageerror', (e) => problems.push(`page error: ${e.message}`))
   page.on('response', (r) => r.status() >= 500 && problems.push(`HTTP ${r.status()} ${r.url()}`))
@@ -93,7 +92,9 @@ try {
   const detailURL = page.url()
   await shot('04-detail-new')
   const t0 = Date.now()
-  await page.waitForSelector('iframe.preview', { timeout: 300_000 })
+  await page.waitForSelector('a:has-text("在新窗口阅读")', { timeout: 300_000 })
+  await page.click('text=在页面内预览') // collapsed on phones
+  await page.waitForSelector('iframe.preview')
   await page.waitForTimeout(3000)
   step(`backup readable after ${Math.round((Date.now() - t0) / 1000)} s`)
   await shot('05-detail')
@@ -133,7 +134,7 @@ try {
   const wpage = await wctx.newPage()
   watch(wpage)
   await wpage.goto(detailURL)
-  await wpage.waitForSelector('iframe.preview')
+  await wpage.waitForSelector('a:has-text("在新窗口阅读")')
   if (!(await wpage.isVisible('text=微信内置浏览器不能下载文件或打印'))) problems.push('no WeChat hint on the detail page')
   await wpage.screenshot({ path: `${out}/10-wechat-detail.png`, fullPage: true })
   step('WeChat in-app browser hint shown')

@@ -22,6 +22,10 @@ const viewError = ref('')
 const downloading = ref(false)
 const showPrint = ref(false)
 const confirmStop = ref(false)
+// On phones a page-high frame inside a scrolling page is awkward: start
+// collapsed there, and offer the new-window reader first.
+const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches
+const showPreview = ref(!narrow)
 const stopping = ref(false)
 
 const w = computed(() => detail.value?.watch)
@@ -227,8 +231,11 @@ async function stop() {
         <PrintHelp v-if="showPrint && view" :url="view.url" />
         <p v-if="viewError" class="notice notice-danger" role="alert">{{ viewError }}</p>
 
+        <button v-if="view" type="button" class="btn-link small" :aria-expanded="showPreview" @click="showPreview = !showPreview">
+          {{ showPreview ? '收起预览' : '在页面内预览' }}
+        </button>
         <iframe
-          v-if="view"
+          v-if="view && showPreview"
           :key="view.snapshotId"
           class="preview"
           :src="view.url"

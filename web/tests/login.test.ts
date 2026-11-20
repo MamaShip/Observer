@@ -34,7 +34,7 @@ const site = { service_name: '折光观察者', registration_mode: 'invite', wat
 
 function baseRoutes() {
   routes = {
-    'GET /api/v1/me': () => ({ status: 401, body: { detail: '请先登录。' } }),
+    'GET /api/v1/auth/session': () => ({ status: 200, body: {} }),
     'GET /api/v1/site': () => ({ status: 200, body: site }),
   }
 }

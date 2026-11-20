@@ -29,5 +29,11 @@
   },
   "engines": {
     "node": ">=22.12"
+  },
+  "overrides": {
+    "js-beautify": {
+      "glob": "^14.0.6",
+      "minimatch": "^11.0.9"
+    }
   }
 }

@@ -159,7 +159,18 @@ func TestUserFlow(t *testing.T) {
 
 	// Not logged in yet.
 	alice.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
+	var session struct {
+		User *api.Me `json:"user"`
+	}
+	alice.api(http.MethodGet, "/auth/session", nil, http.StatusOK, &session)
+	if session.User != nil {
+		t.Fatalf("visitor has a session user: %+v", session.User)
+	}
 	alice.login(mailer, "alice@example.com")
+	alice.api(http.MethodGet, "/auth/session", nil, http.StatusOK, &session)
+	if session.User == nil || session.User.Email != "alice@example.com" {
+		t.Fatalf("session after login: %+v", session.User)
+	}
 	var me api.Me
 	alice.api(http.MethodGet, "/me", nil, 200, &me)
 	if me.Email != "alice@example.com" || me.NotifyOnExpire || me.EmailsThisMonth != 0 || me.MonthlyEmails != 20 {

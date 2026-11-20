@@ -467,6 +467,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 |---|---|---|
 | POST | `/auth/code` | `{email}` → 202 `{remaining, resend_after}`；超限 429 |
 | POST | `/auth/verify` | `{email, code}` → 设置会话 Cookie |
+| GET | `/auth/session` | 当前登录用户（同 `/me`）；未登录时返回 200 且无用户，前端启动时用它，避免访客页面出现 401 报错 |
 | POST | `/auth/logout` | 注销当前会话 |
 | GET | `/me` | 当前用户信息与设置，含本月通知邮件数与上限（`emails_this_month`、`monthly_emails`） |
 | PATCH | `/me` | 修改设置（`notify_on_expire`） |
@@ -632,7 +633,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **PR / push**：golangci-lint → `go test -race ./...`（CI 使用 Postgres 18 service container）→ 前端 `vue-tsc` + 构建。
 - **tag `v*`**（`.github/workflows/release.yml`）：构建 amd64 镜像并推送 `ghcr.io/mamaship/observer:vX.Y.Z` 与 `latest`；配置了部署密钥时，SSH 到 VPS 运行 `/opt/observer/update.sh vX.Y.Z`。部署密钥在服务器上用 `command=` 限定只能运行 `update.sh`，且只接受版本号格式的标签。`update.sh` 先只更新 app 并等健康检查，失败自动回滚到原镜像。迁移在 app 启动时自动执行。
 - 没有发布版本时：开发机 `make image`，`docker save | ssh ... docker load`，`update.sh observer:local`。
-- Renovate 或 Dependabot 每月汇总依赖更新 PR。
+- Dependabot（`.github/dependabot.yml`）每月为 Go、npm、GitHub Actions、Dockerfile 与 compose 镜像各开一个汇总 PR；镜像不自动升级大版本（Postgres 18 → 19 需要数据迁移，且 app 镜像里的 `pg_dump` 版本要一起换）。安全更新由 GitHub 随时单独提出。
+- 2026-11-20 处理 Dependabot 安全警告：`minimatch`（<11.0.1）与 `glob`（9.0.0–14.0.1）只经 `@vue/test-utils` → `js-beautify` 进入开发依赖，不进生产构建；在 `web/package.json` 的 `overrides` 里只对 `js-beautify` 这一支升级到 `minimatch@^11.0.9`、`glob@^14.0.6`，`npm audit` 为 0。
 
 ---
 
@@ -794,6 +796,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 > - 可选：自动部署密钥（runbook）、Healthchecks.io（`HEALTHCHECK_URL`）。
 > - 真机验收（M4 遗留）：iOS Safari、安卓 Chrome、iOS / 安卓微信内置浏览器，各打印一次 PDF。
 > - 邀请制运行两周，观察内存、拦截率、邮件用量，再决定是否开放注册。
+>
+> **收尾小项（2026-11-20）**：Dependabot；`/auth/session` 消除访客页面的 401 控制台报错；手机上观察详情的预览默认收起（避免页面内嵌套滚动），保留"在新窗口阅读"；查明"共 8 张图片、页面 7 个 `<img>`"不是问题（另 1 张是样式里的背景图，均被引用）。`legacy-python` 标签已在远端。
 >
 > **上线后（2026-11-20）**：用户登录验证、简单检查 PDF 通过；隐私说明与服务条款文字已审阅；`v0.1.0` 由 Release workflow 发布到 GHCR（公开），服务器已用 `update.sh v0.1.0` 切换。自动部署密钥等项目更成熟后再配置。新增每账号每月通知邮件上限（§5.6，迁移 00003）。
 
