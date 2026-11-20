@@ -570,7 +570,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 |---|---|---|---|
 | caddy | `caddy:2-alpine` | ~30 MB | 64 MB |
 | postgres | `postgres:18-alpine` | 150–250 MB | 320 MB |
-| app | `distroless/static` + `observer` 二进制（另加 `pg_dump`，见 §13.4） | 40–100 MB | 256 MB |
+| app | `alpine:3.24` + `observer` 二进制 + `postgresql18-client`（备份用，见 §13.4），镜像约 40 MB，非 root 运行 | 40–100 MB | 256 MB |
 | 系统 + Docker | — | ~150–200 MB | — |
 
 - 常态总占用约 400–600 MB，1 GB 内存有余量。仍建议配置 1 GB swap，防止偶发峰值导致 OOM。
@@ -593,7 +593,8 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 
 app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口。
 - app 设置 `GOMEMLIMIT=200MiB`；图片下载按流处理，不在内存中整体缓存大文件；单文件 HTML 也以流式输出。
-- Postgres 参数：`shared_buffers=128MB`、`effective_cache_size=256MB`、`work_mem=4MB`、`maintenance_work_mem=32MB`、`max_connections=30`；pgx 连接池上限 10。
+- Postgres 参数（`deploy/compose.yaml`）：`shared_buffers=96MB`、`effective_cache_size=256MB`、`work_mem=4MB`、`maintenance_work_mem=32MB`、`max_connections=30`、`max_wal_size=512MB`；pgx 连接池上限 10。
+- 本机按生产配置实测（`deploy/compose.local.yaml`，空库）：caddy 14 MB、app 10 MB、postgres 52 MB。
 
 ### 13.2 磁盘规划（30 GB）
 
@@ -613,9 +614,10 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 ### 13.4 备份与恢复
 
-- 周期任务每天执行 `pg_dump | gzip` 上传到 Wasabi `backups/postgres/`，保留 120 天。app 镜像中包含 `postgresql-client`。
+- 已实现（`internal/backup`）：每天北京时间 03:30 由 River 周期任务执行 `pg_dump --format=custom`（自带压缩），先写临时文件再上传到 Wasabi `backups/postgres/YYYY-MM-DD.dump`，保留 120 天（每次删除恰好过期的及之前 6 天的，覆盖偶尔漏跑的日子）；失败时告警。只在配置了 S3 时启用。连接信息通过 `PG*` 环境变量传给客户端工具，密码不出现在命令行。
+- `observer admin backup` 立即备份；`observer admin restore -db <URL> [-date]` 只恢复到空数据库。本机用 PostgreSQL 18 真实工具演练过：备份 → 恢复到新库 → 数据与迁移版本一致；对在用的库会拒绝。
 - 快照、图片、PDF 本身就在 Wasabi 中。
-- 编写恢复手册（`docs/runbook.md`），内容包括：新机器 → 安装 Docker → 拉取镜像 → 恢复数据库 → 启动。上线前至少演练一次。
+- 恢复手册见 `docs/runbook.md`（新机器 → 安装 Docker → 拉取镜像 → 恢复数据库 → 启动）。上线后在生产环境再演练一次。
 
 ### 13.5 监控告警
 
@@ -627,7 +629,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 ### 13.6 CI/CD
 
 - **PR / push**：golangci-lint → `go test -race ./...`（CI 使用 Postgres 18 service container）→ 前端 `vue-tsc` + 构建。
-- **tag `v*`**：构建 amd64 镜像并推送 GHCR → 通过 SSH 在 VPS 上执行 `docker compose pull && docker compose up -d`；迁移在 app 启动时自动执行。
+- **tag `v*`**（`.github/workflows/release.yml`）：构建 amd64 镜像并推送 `ghcr.io/mamaship/observer:vX.Y.Z` 与 `latest`；配置了部署密钥时，SSH 到 VPS 运行 `/opt/observer/update.sh vX.Y.Z`。部署密钥在服务器上用 `command=` 限定只能运行 `update.sh`，且只接受版本号格式的标签。`update.sh` 先只更新 app 并等健康检查，失败自动回滚到原镜像。迁移在 app 启动时自动执行。
+- 没有发布版本时：开发机 `make image`，`docker save | ssh ... docker load`，`update.sh observer:local`。
 - Renovate 或 Dependabot 每月汇总依赖更新 PR。
 
 ---
@@ -641,6 +644,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 │   ├── api/                 # Huma handlers
 │   ├── app/                 # serve 的组装：连接、迁移、worker、HTTP、优雅退出
 │   ├── auth/
+│   ├── backup/              # 每日 pg_dump 到 Wasabi、恢复
 │   ├── blob/
 │   ├── config/
 │   ├── jobs/
@@ -660,10 +664,12 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 │       └── testdata/        # 真实页面样本
 ├── web/                     # Vue 3 + Vite + TS（src/views、src/components、src/lib、tests、e2e/smoke.mjs）
 ├── deploy/
-│   ├── compose.yaml
-│   ├── compose.dev.yaml
-│   ├── Caddyfile
-│   └── postgres.conf
+│   ├── compose.yaml         # 生产：caddy + app + postgres
+│   ├── compose.local.yaml   # 在开发机上运行生产配置（localhost:8443，自签证书，本地存储）
+│   ├── compose.dev.yaml     # 开发用 Postgres
+│   ├── Caddyfile            # 无访问日志
+│   ├── .env.example
+│   └── update.sh            # 服务器上切换版本（含回滚）；也是部署密钥的强制命令
 ├── docs/
 │   └── runbook.md
 ├── .github/workflows/
@@ -768,6 +774,14 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **验收**：在手机浏览器与微信内置浏览器中完成全部操作；在桌面 Chrome / Safari、iOS Safari、安卓 Chrome 上打印出的 PDF 排版可用（不截断图片、分页合理）。
 
 ### M5：上线
+> **进行中（2026-11-20）**：仓库部分完成，待部署到 VPS。
+> - `Dockerfile`（多阶段：前端 → Go → alpine + PostgreSQL 18 客户端，约 40 MB，非 root）、`deploy/compose.yaml`（内存上限、日志轮转、健康检查）、`Caddyfile`（自动 HTTPS、无访问日志）、`.env.example`、`update.sh`、`release.yml`、`docs/runbook.md`。
+> - 每日数据库备份与恢复命令（§13.4）；`observer admin session` 为冒烟测试签发会话；`web/e2e/smoke.mjs` 支持用会话令牌登录任意部署。
+> - 去掉 Huma 在响应里加的 `$schema` 链接（在 TLS 代理后会写成 http://）。
+> - 在开发机上用 `compose.local.yaml` 按生产配置跑通：HTTPS/HTTP3、HSTS、CSP、主站与快照域分流、Caddy 与 app 日志中都没有访问者 IP；浏览器冒烟测试全部通过；容器内备份与恢复演练通过。
+>
+> **待办**：DNS（`ob`、`snap.ob` 的 A 记录）、VPS 上安装 Docker 与 journald 限额（需用户同意）、`.env`、首次部署与生产冒烟测试、生产恢复演练、GHCR 包设为公开、可选的自动部署密钥与 Healthchecks.io、真机验收（M4 遗留）。
+
 - 生产 Compose、Caddy、swap、Postgres 调参、`.env` 模板。
 - tag 触发部署、数据库每日备份、恢复演练、Healthchecks、告警。
 - README、`docs/runbook.md`（隐私说明与服务条款页已在 M4 完成）。

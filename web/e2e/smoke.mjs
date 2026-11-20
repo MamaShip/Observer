@@ -4,19 +4,27 @@
 // WeChat's in-app browser. Fails on console errors, CSP violations, 5xx
 // responses and images that do not load.
 //
-// It needs a running service whose emails go to its log (no SMTP_HOST), and
-// Chrome or Chromium:
+// It needs Chrome or Chromium and a running service, and logs in one of two
+// ways:
 //
-//   BASE=http://localhost:8080 LOG=/path/to/service.log OUT=/tmp/shots \
-//   ARTICLE=https://mp.weixin.qq.com/s/... CHROME=/usr/bin/google-chrome npm run smoke
+// - With a code from the service's log (development: no SMTP_HOST,
+//   REGISTRATION_MODE=open, BASE_URL=$BASE):
+//     BASE=http://localhost:8080 LOG=/path/to/service.log OUT=/tmp/shots \
+//     ARTICLE=https://mp.weixin.qq.com/s/... npm run smoke
 //
-// The service must run with BASE_URL=$BASE, and REGISTRATION_MODE=open.
+// - With a session token from `observer admin session <email>` (any
+//   deployment, production included):
+//     BASE=https://ob.portkey.click SESSION=<token> ARTICLE=... npm run smoke
+//
+// INSECURE_TLS=1 accepts self-signed certificates (the local production
+// stack, deploy/compose.local.yaml). CHROME is the browser binary.
 import { mkdirSync, readFileSync } from 'node:fs'
 import { chromium } from 'playwright-core'
 
 const env = (k, d) => process.env[k] ?? d ?? (console.error(`set ${k}`), process.exit(2))
 const base = env('BASE', 'http://localhost:8080')
-const logFile = env('LOG')
+const session = process.env.SESSION
+const logFile = session ? '' : env('LOG')
 const out = env('OUT', 'e2e-shots')
 const article = env('ARTICLE')
 const chrome = env('CHROME', '/usr/bin/google-chrome')
@@ -44,7 +52,8 @@ function watch(page) {
 const step = (s) => console.log(`- ${s}`)
 const browser = await chromium.launch({ executablePath: chrome })
 const phone = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'zh-CN' }
-const ctx = await browser.newContext({ ...phone, userAgent: iPhone })
+const insecure = { ignoreHTTPSErrors: process.env.INSECURE_TLS === '1' }
+const ctx = await browser.newContext({ ...phone, ...insecure, userAgent: iPhone })
 const page = await ctx.newPage()
 watch(page)
 const shot = (name) => page.screenshot({ path: `${out}/${name}.png`, fullPage: true })
@@ -56,19 +65,26 @@ try {
   await page.waitForURL((u) => u.pathname === '/login')
   step('logged-out visitors are sent to the login page')
 
-  await page.fill('input[name=email]', email)
-  await page.click('button[type=submit]')
-  await page.waitForSelector('input[name=code]')
-  await shot('02-login-code')
-  let code
-  for (let i = 0; i < 40 && !code; i++) {
-    await page.waitForTimeout(250)
-    code = codeFromLog()
+  if (session) {
+    await ctx.addCookies([{ name: '__Host-session', value: session, url: base, secure: true, httpOnly: true, sameSite: 'Lax' }])
+    await page.goto(base + '/watches')
+    await page.waitForURL((u) => u.pathname === '/watches')
+    step('logged in with the given session')
+  } else {
+    await page.fill('input[name=email]', email)
+    await page.click('button[type=submit]')
+    await page.waitForSelector('input[name=code]')
+    await shot('02-login-code')
+    let code
+    for (let i = 0; i < 40 && !code; i++) {
+      await page.waitForTimeout(250)
+      code = codeFromLog()
+    }
+    if (!code) throw new Error(`no login code for ${email} in ${logFile}`)
+    await page.fill('input[name=code]', code) // submits itself at 6 digits
+    await page.waitForURL((u) => u.pathname === '/watches')
+    step('logged in with the emailed code')
   }
-  if (!code) throw new Error(`no login code for ${email} in ${logFile}`)
-  await page.fill('input[name=code]', code) // submits itself at 6 digits
-  await page.waitForURL((u) => u.pathname === '/watches')
-  step('logged in with the emailed code')
   await shot('03-list-empty')
 
   await page.fill('textarea[name=url]', `看看这篇 ${article} 来自微信`)
@@ -92,7 +108,7 @@ try {
   const viewURL = await page.getAttribute('a:has-text("在新窗口阅读")', 'href')
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('text=下载 HTML')])
   step(`download: ${download.suggestedFilename()}`)
-  const snap = await browser.newPage()
+  const snap = await ctx.newPage()
   await snap.goto(viewURL)
   await snap.pdf({ path: `${out}/snapshot.pdf`, format: 'A4' })
   await snap.close()
@@ -112,7 +128,7 @@ try {
   // The same detail page in WeChat's in-app browser, which cannot download
   // or print: it must say so.
   const cookies = await ctx.cookies()
-  const wctx = await browser.newContext({ ...phone, userAgent: weChat })
+  const wctx = await browser.newContext({ ...phone, ...insecure, userAgent: weChat })
   await wctx.addCookies(cookies)
   const wpage = await wctx.newPage()
   watch(wpage)

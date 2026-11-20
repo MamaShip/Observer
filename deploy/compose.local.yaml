@@ -1,0 +1,28 @@
+# Run the production stack on a development machine, to test the image,
+# Caddy and the deployment before touching the server:
+#
+#   make image
+#   cd deploy && docker compose -f compose.yaml -f compose.local.yaml --env-file local.env up -d
+#
+# local.env needs DOMAIN=localhost, POSTGRES_PASSWORD, SIGNING_KEY and
+# OBSERVER_IMAGE=observer:local. The site is https://localhost:8443 and
+# snapshots https://snap.localhost:8443, with Caddy's own (untrusted)
+# certificate. Files go to a volume instead of S3, so the daily backup job
+# is off; `observer admin backup` still works. Email goes nowhere: log in
+# with `docker compose exec app observer admin session <email>`.
+
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:8443:443"
+
+  app:
+    env_file: !override local.env
+    environment:
+      BASE_URL: https://localhost:8443
+      SNAP_BASE_URL: https://snap.localhost:8443
+      BLOB_DIR: /cache/blob
+      S3_BUCKET: ""
+      SMTP_HOST: smtp.invalid
+      MAIL_FROM: test <noreply@localhost.invalid>
+      REGISTRATION_MODE: invite

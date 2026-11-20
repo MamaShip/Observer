@@ -1,0 +1,15 @@
+# The site and the snapshot origin, both served by the app, which tells them
+# apart by Host. TLS certificates are obtained automatically.
+#
+# No `log` directive: Caddy then keeps no access log, so visitors' IP
+# addresses are not recorded (promised on /privacy, plan.md §12).
+
+{$SITE_HOST} {
+	encode zstd gzip
+	reverse_proxy app:8080
+}
+
+{$SNAP_HOST} {
+	encode zstd gzip
+	reverse_proxy app:8080
+}

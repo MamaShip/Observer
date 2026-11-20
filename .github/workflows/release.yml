@@ -1,0 +1,64 @@
+name: Release
+
+# A version tag (v1.2.3) builds the image, pushes it to GHCR and, when the
+# deploy key is configured, switches the server to it (docs/runbook.md).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/observer
+          tags: |
+            type=semver,pattern=v{{version}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    # Set the repository variable DEPLOY_HOST and the secrets
+    # DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS to enable.
+    if: vars.DEPLOY_HOST != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Switch the server to this version
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ vars.DEPLOY_HOST }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key's forced command on the server runs update.sh with $TAG.
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$HOST" "$TAG"

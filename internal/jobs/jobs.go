@@ -17,6 +17,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/MamaShip/Observer/internal/auth"
+	"github.com/MamaShip/Observer/internal/backup"
 	"github.com/MamaShip/Observer/internal/notify"
 	"github.com/MamaShip/Observer/internal/watch"
 )
@@ -163,6 +164,17 @@ type AuthCleanupArgs struct{}
 
 func (AuthCleanupArgs) Kind() string { return "auth_cleanup" }
 
+// BackupArgs dumps the database to object storage.
+type BackupArgs struct{}
+
+func (BackupArgs) Kind() string { return "backup" }
+
+// InsertOpts: a few quick retries; tomorrow's run is the real retry.
+func (BackupArgs) InsertOpts() river.InsertOpts { return river.InsertOpts{MaxAttempts: 3} }
+
+// BackupAt is when the daily backup runs: 03:30 Beijing time.
+var BackupAt = backup.DailyAt{Hour: 19, Minute: 30}
+
 // PingArgs reports liveness to an external monitor (Healthchecks.io).
 type PingArgs struct{}
 
@@ -179,6 +191,8 @@ type Services struct {
 	Watch  *watch.Service
 	Notify *notify.Notifier
 	Auth   *auth.Service
+	// Backup makes the daily database backup; nil disables it.
+	Backup *backup.Service
 	// HealthcheckURL is pinged every PingInterval while the worker runs.
 	HealthcheckURL string
 }
@@ -221,6 +235,21 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, s Services) 
 			func() (river.JobArgs, *river.InsertOpts) { return args, nil },
 			&river.PeriodicJobOpts{RunOnStart: onStart})
 	}
+	periodicJobs := []*river.PeriodicJob{
+		periodic(HeartbeatInterval, HeartbeatArgs{}, true),
+		periodic(watch.ScheduleInterval, watch.ScheduleArgs{}, true),
+		periodic(watch.ExpireInterval, watch.ExpireArgs{}, true),
+		periodic(watch.CanaryInterval, watch.CanaryArgs{}, false),
+		periodic(watch.CleanupInterval, watch.CleanupArgs{}, false),
+		periodic(notify.SweepInterval, notify.SweepArgs{}, true),
+		periodic(24*time.Hour, AuthCleanupArgs{}, false),
+		periodic(PingInterval, PingArgs{}, true),
+	}
+	if s.Backup != nil {
+		river.AddWorker(workers, &periodicWorker[BackupArgs]{timeout: 30 * time.Minute, run: s.Backup.Daily})
+		periodicJobs = append(periodicJobs, river.NewPeriodicJob(BackupAt,
+			func() (river.JobArgs, *river.InsertOpts) { return BackupArgs{}, nil }, nil))
+	}
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger:  log.With("component", "river"),
 		Workers: workers,
@@ -230,16 +259,7 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, s Services) 
 			watch.QueueSnapshot: {MaxWorkers: 1}, // one full page in memory at a time
 			notify.QueueEmail:   {MaxWorkers: 1}, // serial, so the daily limit count is exact
 		},
-		PeriodicJobs: []*river.PeriodicJob{
-			periodic(HeartbeatInterval, HeartbeatArgs{}, true),
-			periodic(watch.ScheduleInterval, watch.ScheduleArgs{}, true),
-			periodic(watch.ExpireInterval, watch.ExpireArgs{}, true),
-			periodic(watch.CanaryInterval, watch.CanaryArgs{}, false),
-			periodic(watch.CleanupInterval, watch.CleanupArgs{}, false),
-			periodic(notify.SweepInterval, notify.SweepArgs{}, true),
-			periodic(24*time.Hour, AuthCleanupArgs{}, false),
-			periodic(PingInterval, PingArgs{}, true),
-		},
+		PeriodicJobs: periodicJobs,
 	})
 	if err != nil {
 		return nil, err

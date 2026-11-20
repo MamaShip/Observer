@@ -246,22 +246,44 @@ func (s *Service) Verify(ctx context.Context, email, code, userAgent string) (Se
 		if user.Status != "active" {
 			return ErrDisabled
 		}
-		sessToken, sessHash, err := newToken()
-		if err != nil {
-			return err
-		}
-		if err := q.CreateSession(ctx, db.CreateSessionParams{
-			UserID: user.ID, TokenHash: sessHash, UserAgent: nonEmpty(truncate(userAgent, 300)), ExpiresAt: now.Add(SessionTTL),
-		}); err != nil {
-			return err
-		}
 		if err := q.TouchUserLogin(ctx, db.TouchUserLoginParams{ID: user.ID, Now: now}); err != nil {
 			return err
 		}
-		out = Session{Token: sessToken, User: user, TTL: SessionTTL}
-		return nil
+		out, err = s.newSession(ctx, q, user, userAgent)
+		return err
 	})
 	return out, err
+}
+
+// IssueSession starts a session for an active user without a login code.
+// It is for operators (observer admin session), e.g. to smoke-test the
+// production site.
+func (s *Service) IssueSession(ctx context.Context, email, userAgent string) (Session, error) {
+	email, err := NormalizeEmail(email)
+	if err != nil {
+		return Session{}, err
+	}
+	user, err := s.q.GetUserByEmail(ctx, email)
+	if err != nil {
+		return Session{}, err
+	}
+	if user.Status != "active" {
+		return Session{}, ErrDisabled
+	}
+	return s.newSession(ctx, s.q, user, userAgent)
+}
+
+func (s *Service) newSession(ctx context.Context, q *db.Queries, user db.User, userAgent string) (Session, error) {
+	token, hash, err := newToken()
+	if err != nil {
+		return Session{}, err
+	}
+	if err := q.CreateSession(ctx, db.CreateSessionParams{
+		UserID: user.ID, TokenHash: hash, UserAgent: nonEmpty(truncate(userAgent, 300)), ExpiresAt: s.now().Add(SessionTTL),
+	}); err != nil {
+		return Session{}, err
+	}
+	return Session{Token: token, User: user, TTL: SessionTTL}, nil
 }
 
 // Authenticate returns the user of a session token, extending the session

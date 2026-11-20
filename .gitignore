@@ -21,3 +21,5 @@ fixtures/
 /internal/webui/dist/app/
 node_modules/
 /web/openapi.json
+/deploy/.env
+/deploy/local.env

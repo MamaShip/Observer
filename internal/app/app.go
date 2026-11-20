@@ -19,6 +19,7 @@ import (
 
 	"github.com/MamaShip/Observer/internal/api"
 	"github.com/MamaShip/Observer/internal/auth"
+	"github.com/MamaShip/Observer/internal/backup"
 	"github.com/MamaShip/Observer/internal/blob"
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/jobs"
@@ -98,7 +99,13 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 	authSvc := auth.New(pool, notifier, auth.Config{Mode: cfg.RegistrationMode}, log)
 
 	hb := &jobs.Heartbeat{}
-	rc, err := jobs.NewClient(pool, log, hb, jobs.Services{Watch: svc, Notify: notifier, Auth: authSvc, HealthcheckURL: cfg.HealthcheckURL})
+	var backups *backup.Service
+	if cfg.S3Bucket != "" {
+		// Production only: dumps go next to the snapshots. (Development has
+		// no matching pg_dump and nowhere useful to put them.)
+		backups = backup.New(backup.Config{DatabaseURL: cfg.DatabaseURL}, store, notifier, log)
+	}
+	rc, err := jobs.NewClient(pool, log, hb, jobs.Services{Watch: svc, Notify: notifier, Auth: authSvc, Backup: backups, HealthcheckURL: cfg.HealthcheckURL})
 	if err != nil {
 		return nil, fmt.Errorf("river: %w", err)
 	}

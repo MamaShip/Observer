@@ -84,6 +84,9 @@ func build(d Deps, all bool) (http.Handler, huma.API) {
 	cfg.OpenAPIPath = Prefix + "/openapi"
 	cfg.SchemasPath = Prefix + "/schemas"
 	cfg.DocsPath = "" // the built-in docs page loads scripts from a CDN
+	// No $schema links in responses: they add nothing for our clients, and
+	// behind the TLS-terminating proxy they would say http://.
+	cfg.CreateHooks = nil
 	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"session": {Type: "apiKey", In: "cookie", Name: auth.CookieName},
 		"bearer":  {Type: "http", Scheme: "bearer", Description: "The token from POST /auth/verify with bearer: true."},

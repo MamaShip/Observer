@@ -422,6 +422,30 @@ func TestCleanupEmailLog(t *testing.T) {
 	}
 }
 
+func TestIssueSession(t *testing.T) {
+	ctx := context.Background()
+	s, _, q, _ := newService(t, ModeInvite)
+	if _, err := s.IssueSession(ctx, "nobody@example.com", ""); err == nil {
+		t.Error("session for an unknown address")
+	}
+	if _, err := q.CreateUser(ctx, "ops@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := s.IssueSession(ctx, "OPS@example.com", "smoke")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := s.Authenticate(ctx, sess.Token); err != nil || u.Email != "ops@example.com" {
+		t.Fatalf("Authenticate = %v, %v", u.Email, err)
+	}
+	if _, err := q.SetUserStatus(ctx, db.SetUserStatusParams{Email: "ops@example.com", Status: "disabled"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.IssueSession(ctx, "ops@example.com", ""); !errors.Is(err, ErrDisabled) {
+		t.Errorf("disabled account: %v", err)
+	}
+}
+
 func TestLogoutAll(t *testing.T) {
 	ctx := context.Background()
 	s, sender, _, clk := newService(t, ModeOpen)

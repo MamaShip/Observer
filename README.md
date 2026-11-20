@@ -49,6 +49,7 @@ observer admin stats               # 统计
 observer admin invite <email>      # 邀请制下开通账号（另有 disable / enable / logout-all / submit / articles / check / export）
 observer mailtest -env-file F [-to ADDR]  # 验证 SMTP 配置；加 -to 发送示例邮件
 observer openapi                   # 输出 API 的 OpenAPI 文档
+observer admin backup | restore    # 立即备份数据库到对象存储 / 恢复到空数据库
 observer probe <url>...            # 抓取诊断：看微信对某个链接返回了什么
 observer netcheck                  # 测量到微信、Wasabi、SMTP 的网络路径
 ```
@@ -56,6 +57,8 @@ observer netcheck                  # 测量到微信、Wasabi、SMTP 的网络�
 API 的 OpenAPI 文档：`http://localhost:8080/api/v1/openapi.yaml`（或 `.json`）。
 
 配置全部来自环境变量，见 [plan.md §13.3](plan.md)。
+
+部署、发布、备份恢复与告警处理见 [docs/runbook.md](docs/runbook.md)。
 
 ## 背景
 

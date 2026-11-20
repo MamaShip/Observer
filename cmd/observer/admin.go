@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -31,10 +32,15 @@ const adminUsage = `Usage: observer admin <command>
   invite <email>                   let an address log in (REGISTRATION_MODE=invite)
   disable <email> | enable <email> block or unblock an account (disabling also logs it out)
   logout-all <email>               end every session of an account
+  session <email>                  start a session and print its token (for smoke tests;
+                                   end it with logout-all)
   submit -email ADDR <url>...      watch links as that user (created if new)
   articles [-n N]                  recent articles and their state
   check <article-id>               check an alive article at the next scheduler run
   export [-o FILE] <snapshot-id>   write a snapshot as one self-contained HTML file
+  backup                           dump the database to object storage now
+  restore -db URL [-date YYYY-MM-DD]
+                                   load a backup (default: today's) into an empty database
 
 Jobs are queued for a running "observer serve" to execute.
 `
@@ -79,6 +85,21 @@ func runAdmin(ctx context.Context, args []string) error {
 		return err
 	case "export":
 		return adminExport(ctx, cfg, q, rest)
+	case "session":
+		if len(rest) != 1 {
+			return errors.New("usage: observer admin session <email>")
+		}
+		sess, err := auth.New(pool, nil, auth.Config{Mode: cfg.RegistrationMode}, slog.New(slog.DiscardHandler)).IssueSession(ctx, rest[0], "observer admin session")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("no account with that email (observer admin invite creates one)")
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Println(sess.Token)
+		return nil
+	case "backup", "restore":
+		return adminBackup(ctx, cfg, cmd, rest)
 	default:
 		fmt.Fprint(os.Stderr, adminUsage)
 		os.Exit(2)

@@ -1,11 +1,11 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 DEV_PG_PORT ?= 55432
 DEV_DATABASE_URL ?= postgres://observer:observer@127.0.0.1:$(DEV_PG_PORT)/observer?sslmode=disable
 COMPOSE_DEV := docker compose -f deploy/compose.dev.yaml
 
-.PHONY: dev dev-db dev-down test test-unit lint sqlc sqlc-check build dist clean web web-dev web-test openapi openapi-check
+.PHONY: dev dev-db dev-down test test-unit lint sqlc sqlc-check build dist clean web web-dev web-test openapi openapi-check image
 
 ## dev: start Postgres and run the service on http://localhost:8080 (with the
 ## web app as last built by `make web`). Override HTTP_ADDR, BASE_URL and
@@ -73,6 +73,11 @@ build: web
 dist: web
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/observer-linux-amd64 ./cmd/observer
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/observer-linux-arm64 ./cmd/observer
+
+## image: build the production image (observer:local), with this machine's GOPROXY
+IMAGE ?= observer:local
+image:
+	docker build --build-arg VERSION=$(VERSION) --build-arg GOPROXY=$(shell go env GOPROXY) -t $(IMAGE) .
 
 clean:
 	rm -rf bin dist

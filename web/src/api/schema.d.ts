@@ -240,22 +240,10 @@ export interface components {
             result: "alive" | "deleted" | "invalid" | "blocked" | "error";
         };
         CodeInputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/CodeInputBody.json
-             */
-            readonly $schema?: string;
             /** @description Where to send the login code */
             email: string;
         };
         CodeOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/CodeOutputBody.json
-             */
-            readonly $schema?: string;
             message: string;
             /**
              * Format: int64
@@ -297,12 +285,6 @@ export interface components {
         };
         ErrorModel: {
             /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/ErrorModel.json
-             */
-            readonly $schema?: string;
-            /**
              * @description A human-readable explanation specific to this occurrence of the problem.
              * @example Property foo is required but is missing.
              */
@@ -335,12 +317,6 @@ export interface components {
             type: string;
         };
         Health: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/Health.json
-             */
-            readonly $schema?: string;
             /** @enum {string} */
             database: "ok" | "unavailable";
             /**
@@ -358,42 +334,18 @@ export interface components {
             worker: "ok" | "starting" | "stalled";
         };
         LinkOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/LinkOutputBody.json
-             */
-            readonly $schema?: string;
             /** Format: date-time */
             expires_at: string;
             url: string;
         };
         ListOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/ListOutputBody.json
-             */
-            readonly $schema?: string;
             items: components["schemas"]["Watch"][];
             next_cursor?: string;
         };
         PatchMeInputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/PatchMeInputBody.json
-             */
-            readonly $schema?: string;
             notify_on_expire?: boolean;
         };
         Site: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/Site.json
-             */
-            readonly $schema?: string;
             /** Format: int64 */
             code_ttl_minutes: number;
             /**
@@ -425,22 +377,10 @@ export interface components {
             missing_images: number;
         };
         SubmitInputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/SubmitInputBody.json
-             */
-            readonly $schema?: string;
             /** @description A mp.weixin.qq.com article link */
             url: string;
         };
         User: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/User.json
-             */
-            readonly $schema?: string;
             /** Format: date-time */
             created_at: string;
             email: string;
@@ -451,12 +391,6 @@ export interface components {
             role: "user" | "admin";
         };
         VerifyInputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/VerifyInputBody.json
-             */
-            readonly $schema?: string;
             /** @description Return the session token in the body instead of setting a cookie (for non-browser clients) */
             bearer?: boolean;
             /** @description The 6-digit code from the email */
@@ -464,12 +398,6 @@ export interface components {
             email: string;
         };
         VerifyOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/VerifyOutputBody.json
-             */
-            readonly $schema?: string;
             /** @description Session token; only when bearer was requested */
             token?: string;
             user: components["schemas"]["User"];
@@ -490,12 +418,6 @@ export interface components {
             submitted_url: string;
         };
         WatchDetail: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/v1/schemas/WatchDetail.json
-             */
-            readonly $schema?: string;
             /** @description Most recent first, at most 20 */
             checks: components["schemas"]["Check"][];
             /** @description Empty while the backup is being made */

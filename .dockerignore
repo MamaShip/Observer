@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.vscode
+bin
+dist
+data
+fixtures
+m0-*
+*.log
+.env*
+**/node_modules
+internal/webui/dist/app
+web/openapi.json
