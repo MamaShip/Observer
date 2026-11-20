@@ -497,7 +497,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | POST | `/watches/{id}/renew` | 续期：观察中的延长，已到期 / 已停止的重新观察（§6.5）；超出同时观察上限 429，不能续期 409 |
 | POST | `/snapshots/{id}/view-url` | 返回签名的在线查看链接 |
 | POST | `/snapshots/{id}/download-url` | 返回单文件 HTML 的签名下载链接 |
-| GET | `/site` | 公开的服务设置（服务名、注册模式、观察天数、验证码次数等），前端登录前使用 |
+| GET | `/site` | 公开的服务设置（服务名、注册模式、观察天数、验证码次数、运行的版本号等），前端登录前使用 |
 | GET | `/openapi.json`、`/openapi.yaml` | API 契约（`observer openapi` 也可直接输出，前端类型由它生成） |
 | GET | `/healthz` | 健康检查（DB 可用、worker 心跳） |
 
@@ -522,7 +522,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | `/watches` | 我的观察 | 顶部提交框（从粘贴的整段分享文字里提取链接）；状态筛选（全部 / 观察中 / 已结束 / 失败）；状态徽章（备份中 / 观察中 / 已删除 / 已到期 / 已停止 / 提交失败）；游标分页；有"备份中"的条目时每 5 秒刷新 |
 | `/watches/:id` | 观察详情 | 文章信息、删除原因与微信原文提示、检查时间、检查记录；备份在 iframe 中预览，可在新窗口阅读、下载单文件 HTML、打印 / 保存为 PDF（按 iOS / 安卓 / 桌面给出操作步骤）；微信内置浏览器中提示改用系统浏览器；备份生成前自动轮询（前 1 分钟每 3 秒，之后每 10 秒，最多 10 分钟）；观察到期日与剩余天数，延长观察 / 重新观察（§6.5）；停止观察（二次确认） |
 | `/settings` | 设置 | 邮箱、退出登录、本月通知邮件数与上限、邀请朋友（邀请制下：本月剩余名额、可复制的转告文字、邀请过的邮箱）、删除账号（输入"删除"确认） |
-| `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载） |
+| `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载）；关于页末尾显示当前版本，正式版本链接到 GitHub 上对应标签的源代码 |
 
 - 技术：Vue 3 + vue-router + TypeScript，原生 CSS（浅色 / 深色跟随系统），不引入组件库；API 类型由 `observer openapi` → `openapi-typescript` 生成，请求用 `openapi-fetch`。生产包约 50 KB（gzip）。
 - 构建：`make web` 用 Vite 构建到 `internal/webui/dist/app`，`go build` 时通过 `go:embed` 嵌入；没构建前端的二进制在页面路径返回 503 提示。构建目标兼容 Chrome 87 / Safari 14（较旧的微信内置浏览器）。

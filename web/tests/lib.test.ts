@@ -3,6 +3,7 @@ import type { Watch } from '@/api/client'
 import { formatRelative, formatShort } from '@/lib/format'
 import { extractLink } from '@/lib/link'
 import { daysLeft, deletedReasonText, isOpen, renewedUntil, watchBadge, watchSummary } from '@/lib/status'
+import { sourceURL } from '@/lib/version'
 import { safeNext } from '@/router'
 
 describe('extractLink', () => {
@@ -118,5 +119,19 @@ describe('safeNext', () => {
     [['/a'], '/watches'],
   ])('%j → %s', (input, want) => {
     expect(safeNext(input)).toBe(want)
+  })
+})
+
+describe('version', () => {
+  it.each([
+    ['v0.3.0', 'https://github.com/MamaShip/Observer/tree/v0.3.0'],
+    ['v1.0.0-rc.1', 'https://github.com/MamaShip/Observer/tree/v1.0.0-rc.1'],
+    ['v0.3.0-2-g1ec2416', 'https://github.com/MamaShip/Observer/commit/1ec2416'],
+    ['v0.3.0-2-g1ec2416-dirty', null],
+    ['1ec2416', null],
+    ['dev', null],
+    [undefined, null],
+  ])('%s → %s', (v, want) => {
+    expect(sourceURL(v)).toBe(want)
   })
 })

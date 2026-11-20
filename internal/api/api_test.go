@@ -63,6 +63,14 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestSiteVersion(t *testing.T) {
+	rec := get(t, fakeHealth{}, Prefix+"/site")
+	var s Site
+	if err := json.Unmarshal(rec.Body.Bytes(), &s); err != nil || rec.Code != 200 || s.Version != "test" {
+		t.Fatalf("site = %d %+v, %v", rec.Code, s, err)
+	}
+}
+
 func TestOpenAPI(t *testing.T) {
 	rec := get(t, fakeHealth{}, Prefix+"/openapi.json")
 	if rec.Code != 200 {

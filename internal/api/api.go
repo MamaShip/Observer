@@ -69,6 +69,7 @@ type Site struct {
 	CodeTTLMinutes   int    `json:"code_ttl_minutes"`
 	MaxOpenWatches   int    `json:"max_open_watches"`
 	MonthlyEmails    int    `json:"monthly_emails" doc:"Notification emails per account per month by default; 0 means no limit"`
+	Version          string `json:"version" doc:"The running release (v1.2.3), or a development build (git describe output, or dev)"`
 }
 
 type siteOutput struct{ Body Site }
@@ -107,6 +108,7 @@ func build(d Deps, all bool) (http.Handler, huma.API) {
 	}, func(context.Context, *struct{}) (*siteOutput, error) {
 		s := d.Site
 		s.CodesPerDay, s.CodeTTLMinutes = auth.CodesPerDay, int(auth.CodeTTL.Minutes())
+		s.Version = d.Version
 		return &siteOutput{Body: s}, nil
 	})
 	if all {

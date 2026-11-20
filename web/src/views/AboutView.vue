@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { sourceURL } from '@/lib/version'
 import { serviceName, session } from '@/session'
 import { computed } from 'vue'
 
 const days = computed(() => session.site?.watch_days ?? 60)
 const maxOpen = computed(() => session.site?.max_open_watches ?? 50)
 const monthlyEmails = computed(() => session.site?.monthly_emails ?? 20)
+const version = computed(() => session.site?.version)
+const versionURL = computed(() => sourceURL(version.value))
 </script>
 
 <template>
@@ -39,6 +42,9 @@ const monthlyEmails = computed(() => session.site?.monthly_emails ?? 20)
     <p>
       {{ serviceName() }}是开源软件（GPL-3.0），源代码在
       <a href="https://github.com/MamaShip/Observer" target="_blank" rel="noopener noreferrer">GitHub</a>。问题和建议欢迎在那里提出。
+    </p>
+    <p v-if="version" class="muted small">
+      当前版本：<a v-if="versionURL" :href="versionURL" target="_blank" rel="noopener noreferrer">{{ version }}</a><template v-else>{{ version }}</template>
     </p>
   </article>
 </template>

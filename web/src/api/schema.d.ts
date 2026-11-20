@@ -864,6 +864,8 @@ export interface components {
              */
             registration_mode: "open" | "invite";
             service_name: string;
+            /** @description The running release (v1.2.3), or a development build (git describe output, or dev) */
+            version: string;
             /**
              * Format: int64
              * @description How long each article is watched
