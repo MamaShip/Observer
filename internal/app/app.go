@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,7 @@ import (
 	"github.com/MamaShip/Observer/internal/store"
 	"github.com/MamaShip/Observer/internal/store/db"
 	"github.com/MamaShip/Observer/internal/watch"
+	"github.com/MamaShip/Observer/internal/webui"
 	"github.com/MamaShip/Observer/internal/wechat"
 )
 
@@ -123,8 +125,16 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 		Auth: authSvc, Watch: svc, Queries: q, Signer: signer,
 		BaseURL: cfg.Origin(), SnapBaseURL: cfg.SnapOrigin(), TrustProxy: cfg.TrustProxyHeaders,
 		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions},
+		Site:   api.Site{ServiceName: cfg.ServiceName, RegistrationMode: cfg.RegistrationMode, WatchDays: cfg.WatchDays, MaxOpenWatches: cfg.MaxOpenWatches},
 	})
-	main := siteHeaders(cfg.Production(), apiHandler)
+	web := webui.Handler(webui.CSP(cfg.SnapOrigin()))
+	main := siteHeaders(cfg.Production(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == api.Prefix || strings.HasPrefix(r.URL.Path, api.Prefix+"/") {
+			apiHandler.ServeHTTP(w, r)
+			return
+		}
+		web.ServeHTTP(w, r)
+	}))
 	snapHost, snapHandler := cfg.SnapHost(), snap.Handler()
 	a.handler = recoverer(log, accessLog(log, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host == snapHost {

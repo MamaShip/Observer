@@ -40,10 +40,13 @@ type Querier interface {
 	DeleteArticle(ctx context.Context, id uuid.UUID) error
 	DeleteExpiredLoginCodes(ctx context.Context, before time.Time) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	DeleteLoginCodesFor(ctx context.Context, email string) error
 	DeleteOldCheckRuns(ctx context.Context, before time.Time) (int64, error)
+	DeleteOldEmailLog(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldLoginRequests(ctx context.Context, before time.Time) (int64, error)
 	DeleteResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
+	// Sessions and watches go with the user (ON DELETE CASCADE).
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) (int64, error)
 	DueArticles(ctx context.Context, arg DueArticlesParams) ([]uuid.UUID, error)
@@ -91,6 +94,9 @@ type Querier interface {
 	// ReleaseLoginRequest gives back a claim whose email could not be sent.
 	ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
+	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
+	// forgets the address.
+	ScrubEmailLog(ctx context.Context, arg ScrubEmailLogParams) error
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error)
 	SkipExpiryNotifications(ctx context.Context, now time.Time) (int64, error)
 	Stats(ctx context.Context) (StatsRow, error)

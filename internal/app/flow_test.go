@@ -223,7 +223,7 @@ func TestUserFlow(t *testing.T) {
 	if resp, _ := alice.do(http.MethodGet, snap, asset, nil); resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/png" {
 		t.Errorf("image %s: %d", asset, resp.StatusCode)
 	}
-	if resp, _ := alice.do(http.MethodGet, site, u.RequestURI(), nil); resp.StatusCode != http.StatusNotFound {
+	if resp, b := alice.do(http.MethodGet, site, u.RequestURI(), nil); strings.Contains(string(b), "截至5月26日24时") {
 		t.Errorf("snapshot served on the main origin: %d", resp.StatusCode)
 	}
 	alice.api(http.MethodPost, "/snapshots/"+snapID.String()+"/download-url", nil, 200, &link)
@@ -298,6 +298,16 @@ func TestUserFlow(t *testing.T) {
 	bob.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
 	alice.api(http.MethodDelete, "/me", nil, http.StatusNoContent, nil)
 	alice.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
+	// Her address is gone from every table (plan.md §12).
+	var traces int
+	if err := a.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM users WHERE email = 'alice@example.com')
+		+ (SELECT count(*) FROM login_codes WHERE email = 'alice@example.com')
+		+ (SELECT count(*) FROM email_log WHERE to_email = 'alice@example.com')`).Scan(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if traces != 0 {
+		t.Errorf("%d rows still hold the deleted user's address", traces)
+	}
 
 	cancel()
 	if err := <-done; err != nil {

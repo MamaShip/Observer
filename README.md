@@ -10,18 +10,36 @@
 
 ## 开发
 
-需要 Go（版本见 `go.mod`）、Docker（用于本地 Postgres）、[sqlc](https://sqlc.dev/)、[golangci-lint](https://golangci-lint.run/)。
+需要 Go（版本见 `go.mod`）、Node.js 22+（只用于构建前端）、Docker（用于本地 Postgres）、[sqlc](https://sqlc.dev/)、[golangci-lint](https://golangci-lint.run/)。
 
 ```sh
-make dev        # 启动本地 Postgres（127.0.0.1:55432）并运行服务：http://localhost:8080/api/v1/healthz
-make test       # 全部测试，包括需要 Postgres 的集成测试
-make test-unit  # 只跑不需要数据库的测试
+make web        # 构建前端（web/）并放到 internal/webui/dist/app，之后的 go build 会把它嵌入二进制
+make dev        # 启动本地 Postgres（127.0.0.1:55432）并运行服务：http://localhost:8080
+make test       # 全部 Go 测试，包括需要 Postgres 的集成测试
+make test-unit  # 只跑不需要数据库的 Go 测试
+make web-test   # 前端类型检查与单元测试
 make lint
 make sqlc       # 修改 internal/store/queries 或迁移后重新生成代码
+make openapi    # 修改 API 后重新生成前端的类型（web/src/api/schema.d.ts）
+make build      # 构建前端并编译 bin/observer
 make dev-down   # 停止本地 Postgres（保留数据）
 ```
 
-`make dev` 是开放注册模式，并且没有配置 SMTP：登录验证码只写进服务日志，从日志里复制即可。8080 端口被占用时可以换端口，例如 `HTTP_ADDR=127.0.0.1:18080 make dev`。
+改前端时用 Vite 开发服务器（热更新），API 请求代理到 Go 服务：
+
+```sh
+BASE_URL=http://localhost:5173 make dev   # 终端 1：BASE_URL 要等于浏览器访问的地址
+make web-dev                              # 终端 2：打开 http://localhost:5173
+```
+
+浏览器验收（真实 Chrome、手机尺寸，从登录到打印 PDF 走一遍，会真实抓取一次微信）：
+
+```sh
+make dev > /tmp/observer.log 2>&1 &
+cd web && LOG=/tmp/observer.log OUT=/tmp/shots ARTICLE=https://mp.weixin.qq.com/s/... npm run smoke
+```
+
+`make dev` 是开放注册模式，并且没有配置 SMTP：登录验证码只写进服务日志，从日志里复制即可。8080 端口被占用时换端口，三个地址要一起改：`HTTP_ADDR=127.0.0.1:18080 BASE_URL=http://localhost:18080 SNAP_BASE_URL=http://127.0.0.1:18080 make dev`。
 
 其他子命令：
 
@@ -30,6 +48,7 @@ observer migrate [up|status]       # 数据库迁移（serve 启动时也会自�
 observer admin stats               # 统计
 observer admin invite <email>      # 邀请制下开通账号（另有 disable / enable / logout-all / submit / articles / check / export）
 observer mailtest -env-file F [-to ADDR]  # 验证 SMTP 配置；加 -to 发送示例邮件
+observer openapi                   # 输出 API 的 OpenAPI 文档
 observer probe <url>...            # 抓取诊断：看微信对某个链接返回了什么
 observer netcheck                  # 测量到微信、Wasabi、SMTP 的网络路径
 ```

@@ -110,10 +110,13 @@ func TestServer(t *testing.T) {
 		t.Fatalf("page: %d %s", rec.Code, rec.Body)
 	}
 	csp := rec.Header().Get("Content-Security-Policy")
-	for _, want := range []string{"sandbox", "default-src 'none'", "frame-ancestors https://observer.example"} {
+	for _, want := range []string{"sandbox allow-same-origin ", "default-src 'none'", "img-src 'self' data:", "frame-ancestors https://observer.example"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP %q lacks %q", csp, want)
 		}
+	}
+	if strings.Contains(csp, "allow-scripts") || strings.Contains(csp, "script-src") {
+		t.Errorf("CSP %q lets scripts run", csp)
 	}
 	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Set-Cookie") != "" {
 		t.Error("missing nosniff or unexpected cookie")

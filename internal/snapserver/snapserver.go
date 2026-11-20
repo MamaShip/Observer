@@ -109,8 +109,13 @@ func (s *Server) Handler() http.Handler {
 
 // pageCSP sandboxes third-party content: no scripts, no requests outside
 // this origin, framing only by the main site.
+//
+// allow-same-origin keeps the page on this origin. Without it the page gets
+// an opaque origin, and its requests for /a/ images are cross-origin, which
+// the images' Cross-Origin-Resource-Policy refuses. It is safe only because
+// scripts stay disallowed: never add allow-scripts next to it.
 func (s *Server) pageCSP() string {
-	return "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; " +
+	return "sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; " +
 		"style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors " + s.mainOrigin
 }
 

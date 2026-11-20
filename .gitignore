@@ -16,3 +16,8 @@ fixtures/
 
 # local snapshot storage for make dev
 /data/
+
+# Web app build output (embedded by internal/webui)
+/internal/webui/dist/app/
+node_modules/
+/web/openapi.json

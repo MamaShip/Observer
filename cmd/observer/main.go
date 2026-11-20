@@ -2,11 +2,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/MamaShip/Observer/internal/api"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -22,6 +26,7 @@ Usage:
   observer probe [flags] <url>...    fetch article links and report what WeChat returns
   observer netcheck [flags]          measure network paths to WeChat, Wasabi and SMTP
   observer mailtest [-to ADDR]       log in to the SMTP server; with -to, send sample emails
+  observer openapi                   print the API's OpenAPI document (JSON)
   observer version
 
 Configuration comes from environment variables; see plan.md §13.3.
@@ -53,6 +58,15 @@ func main() {
 		err = runNetcheck(ctx, args)
 	case "mailtest":
 		err = runMailtest(ctx, args)
+	case "openapi":
+		var b []byte
+		if b, err = api.Spec().MarshalJSON(); err == nil {
+			var out bytes.Buffer
+			if err = json.Indent(&out, b, "", "  "); err == nil {
+				out.WriteByte('\n')
+				_, err = os.Stdout.Write(out.Bytes())
+			}
+		}
 	case "version", "-v", "--version":
 		fmt.Println(version)
 	case "help", "-h", "--help":

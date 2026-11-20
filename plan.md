@@ -469,14 +469,15 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | POST | `/auth/logout` | 注销当前会话 |
 | GET | `/me` | 当前用户信息与设置 |
 | PATCH | `/me` | 修改设置（`notify_on_expire`） |
-| DELETE | `/me` | 删除账号 |
+| DELETE | `/me` | 删除账号（同时从验证码记录和发信记录中抹去邮箱） |
 | POST | `/watches` | `{url}` → 201（已备份）/ 202（解析中） |
 | GET | `/watches` | 列表，支持 `status` 过滤，游标分页 |
 | GET | `/watches/{id}` | 详情（含文章状态、最近检查记录、快照列表） |
 | DELETE | `/watches/{id}` | 停止观察 |
 | POST | `/snapshots/{id}/view-url` | 返回签名的在线查看链接 |
 | POST | `/snapshots/{id}/download-url` | 返回单文件 HTML 的签名下载链接 |
-| GET | `/openapi.json` | API 契约 |
+| GET | `/site` | 公开的服务设置（服务名、注册模式、观察天数、验证码次数等），前端登录前使用 |
+| GET | `/openapi.json`、`/openapi.yaml` | API 契约（`observer openapi` 也可直接输出，前端类型由它生成） |
 | GET | `/healthz` | 健康检查（DB 可用、worker 心跳） |
 
 **鉴权**：Web 使用会话 Cookie；未来小程序在 `Authorization: Bearer` 中携带同一种会话 token，共用 `sessions` 表。
@@ -487,23 +488,26 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 
 快照域 `snap.<domain>`：`GET /s/{snapshot_id}?sig=...`、`GET /s/{snapshot_id}/single.html?sig=...`、`GET /a/{sha256}`。
 
+主域上 `/api/` 以外的路径都由内嵌的前端提供（`internal/webui`）：带内容哈希的 `/assets/*` 长期缓存，其余路径返回 `index.html`（`no-cache`，附严格 CSP）。
+
 ---
 
 ## 10. Web 前端
 
-| 页面 | 内容 |
-|---|---|
-| 首页 / 介绍 | 服务说明、使用方法、隐私说明入口 |
-| 登录 | 输入邮箱 → 获取验证码（60 秒重发倒计时、当天剩余次数）→ 在同一页面输入验证码完成登录 |
-| 我的观察 | 列表（状态徽章：解析中 / 观察中 / 已删除 / 已到期 / 已停止），顶部为提交链接输入框 |
-| 观察详情 | 文章信息、删除原因、检查历史、快照在线查看（iframe）、下载单文件 HTML、打印 / 保存为 PDF（附操作提示）、停止观察 |
-| 设置 | 到期通知开关、退出登录、删除账号 |
-| 关于 / 隐私 / 服务条款 | 静态页 |
+| 路径 | 页面 | 内容 |
+|---|---|---|
+| `/` | 首页 | 服务说明、三步用法、邀请制提示 |
+| `/login` | 登录 | 输入邮箱 → 获取验证码（60 秒重发倒计时、当天剩余次数）→ 同一页面输入验证码，输满 6 位自动提交；步骤存在 `sessionStorage`，切到邮件 App 后页面被重新加载也能继续 |
+| `/watches` | 我的观察 | 顶部提交框（从粘贴的整段分享文字里提取链接）；状态筛选（全部 / 观察中 / 已结束 / 失败）；状态徽章（备份中 / 观察中 / 已删除 / 已到期 / 已停止 / 提交失败）；游标分页；有"备份中"的条目时每 5 秒刷新 |
+| `/watches/:id` | 观察详情 | 文章信息、删除原因与微信原文提示、检查时间、检查记录；备份在 iframe 中预览，可在新窗口阅读、下载单文件 HTML、打印 / 保存为 PDF（按 iOS / 安卓 / 桌面给出操作步骤）；微信内置浏览器中提示改用系统浏览器；备份生成前自动轮询（前 1 分钟每 3 秒，之后每 10 秒，最多 10 分钟）；停止观察（二次确认） |
+| `/settings` | 设置 | 邮箱、退出登录、到期通知开关、删除账号（输入"删除"确认） |
+| `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载） |
 
+- 技术：Vue 3 + vue-router + TypeScript，原生 CSS（浅色 / 深色跟随系统），不引入组件库；API 类型由 `observer openapi` → `openapi-typescript` 生成，请求用 `openapi-fetch`。生产包约 50 KB（gzip）。
+- 构建：`make web` 用 Vite 构建到 `internal/webui/dist/app`，`go build` 时通过 `go:embed` 嵌入；没构建前端的二进制在页面路径返回 503 提示。构建目标兼容 Chrome 87 / Safari 14（较旧的微信内置浏览器）。
+- 主域 CSP：`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src <快照域>; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`，不需要任何 `unsafe-*`。
+- 会话过期时，任何 API 请求返回 401 都会把用户带回登录页，登录后回到原来的页面（只允许站内路径）。
 - 移动端优先：大部分用户会在微信内置浏览器或手机浏览器中使用。
-- 构建产物通过 `go:embed` 嵌入二进制，由 app 直接提供；SPA 路由回退到 `index.html`。
-
----
 
 ## 11. 抓取与检测（最大技术风险）
 
@@ -541,14 +545,18 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 ## 12. 安全与合规
 
 - **快照隔离**：快照是第三方内容，只在 `snap.<domain>` 提供，该域不设置任何登录 Cookie。响应头：
-  `Content-Security-Policy: sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors https://<domain>`。
+  `Content-Security-Policy: sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors https://<domain>`。
   此外，入库前已经过 bluemonday 清洗。
+  `allow-same-origin` 是必需的：没有它，快照页会变成匿名来源（opaque origin），它对 `/a/` 图片的请求就成了跨源请求，会被图片的 `Cross-Origin-Resource-Policy: same-origin` 拦截（M4 浏览器验收时发现，此前在线查看一直不显示图片）。它只在**禁止脚本**的前提下安全，绝不能再加 `allow-scripts`；测试会检查这一点。前端 iframe 的 `sandbox` 属性同样如此设置。
 - **SSRF 防护**：抓取只允许白名单域名，页面只允许 `mp.weixin.qq.com`，资源只允许 `*.qpic.cn`、`*.qlogo.cn`、`res.wx.qq.com`（M0 样本中出现的全部资源域名）。拨号时拒绝内网、回环、链路本地、CGNAT 等非公网地址，重定向后再次校验（已在 `internal/wechat/fetch.go` 实现）。
 - **签名链接**：HMAC-SHA256，密钥来自配置，带过期时间；签名绑定快照 ID。
 - **会话安全**：token 只存哈希；Cookie 使用 `__Host-` 前缀；用户可以注销全部会话（`admin` 命令也支持）。
 - **滥用防护**：登录、提交接口按 IP 与用户限流；用户配额；注册模式配置 `REGISTRATION_MODE=open|invite|closed`（默认 `invite`，即邀请制软启动，见 §16）；后续如有邮件轰炸，可加自托管工作量证明验证（如 ALTCHA），不依赖第三方验证码服务。
 - **密钥管理**：所有密钥放在服务器 `.env`（权限 600），不进仓库；代码中不再硬编码任何邮箱、openid 或默认口令。
-- **隐私**：只收集邮箱；提供删除账号功能；隐私说明页明确数据用途与保留策略。
+- **隐私**：只收集提供服务所需的信息，隐私说明页（`/privacy`）逐项写明用途与保存期限，必须与实现一致：
+  - 验证码记录（含请求 IP）在过期一天后删除；每个邮箱的每日计数保存 2 天；会话（含 User-Agent）过期或退出后删除；发信记录保存 90 天（`auth.Cleanup` 每天清理）。
+  - 删除账号：用户、会话、观察列表级联删除；该邮箱的验证码记录删除；发信记录中的地址改为 `deleted`（保留行用于当天额度计数）；每日计数照常 2 天后过期，避免删号重注册绕过限制。集成测试检查删除后任何表里都不再有该邮箱。
+  - 服务访问日志不记录 IP 和查询参数。**M5 配置 Caddy 时也必须关闭或脱敏访问日志中的 IP**，否则隐私说明不成立。
 - **版权与下架**：快照默认仅对观察过该文章的用户可见；提供联系邮箱处理下架请求。
 - **HTTP 安全头**：主域设置 HSTS、`X-Content-Type-Options`、严格 CSP（Vue 构建产物不需要 `unsafe-eval`）。
 
@@ -647,9 +655,10 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 │   │   ├── queries/         # sqlc 查询
 │   │   └── db/              # sqlc 生成代码
 │   ├── watch/               # 业务核心
+│   ├── webui/               # 内嵌前端（dist/app 由 make web 生成，不进 git）
 │   └── wechat/
 │       └── testdata/        # 真实页面样本
-├── web/                     # Vue 3 + Vite + TS
+├── web/                     # Vue 3 + Vite + TS（src/views、src/components、src/lib、tests、e2e/smoke.mjs）
 ├── deploy/
 │   ├── compose.yaml
 │   ├── compose.dev.yaml
@@ -680,7 +689,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 | 集成 | store 查询、任务流程（提交 → 抓取 → 快照 → 删除 → 通知）、验证码登录与每日限制、HTTP API 全流程（`internal/app/flow_test.go`） | 真实 Postgres；blob 用临时目录、mailer 用内存实现；微信用 `watchtest` 按样本回放 |
 | 邮件 | 模板渲染；SMTP 发送、额度拒绝识别、登录检查 | 进程内的假 SMTP 服务器；真实送达用 `observer mailtest -to` 手动验证 |
 | 对象存储 | `blob` 的读写测试用本地目录实现；S3 实现用 `TestS3` 验证 | 设置 `TEST_S3_*` 时连真实 bucket 运行（在 VPS 上对 Wasabi 跑过），否则跳过 |
-| 前端 | 类型检查；关键组件少量测试 | `vue-tsc`、Vitest |
+| 前端 | 类型检查；工具函数与 API 错误处理的单元测试；登录页组件测试（假 API） | `vue-tsc`、Vitest + happy-dom、`@vue/test-utils` |
+| 浏览器验收 | `web/e2e/smoke.mjs`：真实 Chrome、手机尺寸，从登录到打印 PDF 走完整流程 | `playwright-core` + 本机 Chrome；需要真实微信，手动运行，不进 CI |
 | 线上 | 金丝雀检测 | §6.6 |
 
 - 需要数据库的测试读取 `TEST_DATABASE_URL`，未设置时跳过；`make test` 会启动本地 Postgres 并设置它。每个测试新建一个独立的临时数据库并在结束时删除，因为不同包的测试是并行运行的。
@@ -742,6 +752,17 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **验收**：通过 API 完成 登录 → 提交 → 查看快照 → 模拟删除 → 收到邮件 的完整流程；集成测试覆盖该流程。
 
 ### M4：Web 前端与打印样式
+> **进行中（2026-11-20）**：代码已完成，待真机验收。
+> - §10 全部页面；OpenAPI 类型生成与 CI 中的同步检查（`make openapi-check`）；前端嵌入二进制（`internal/webui`）与主域 CSP。
+> - 新增 `GET /api/v1/site`、`observer openapi`。
+> - 删除账号时从验证码与发信记录中抹去邮箱，发信记录保留 90 天（为隐私说明的承诺补上实现）。
+> - **修复**：快照页的沙箱缺少 `allow-same-origin`，导致在线查看时图片全部被浏览器拦截（见 §12）。
+> - 测试：Vitest 单元测试与登录页组件测试（42 个）；Go 端 `webui` 路由、缓存头、CSP 与真实嵌入的测试；`web/e2e/smoke.mjs` 用真实 Chrome 以手机尺寸走完 登录 → 提交真实文章 → 等待备份 → iframe 内图片全部加载 → 下载 → 打印 PDF → 各页面 → 微信内置浏览器提示 → 退出，并检查控制台错误、CSP 违规与 5xx。在全新数据库上实测：提交后 9 秒可看到备份，7/7 图片加载，PDF 13 页、图片完整、页脚含原文链接与备份时间。
+>
+> **待办**：
+> - 真机验收（需要用户）：iOS Safari、安卓 Chrome、iOS / 安卓微信内置浏览器各走一遍；iOS 与安卓上实际打印 / 存为 PDF。
+> - 隐私说明与服务条款的文字请用户审阅（联系方式目前是 GitHub Issues）。
+
 - 实现 §10 全部页面，OpenAPI 类型生成，移动端适配。
 - 阅读版 HTML 的打印样式与"保存为 PDF"操作引导。
 - **验收**：在手机浏览器与微信内置浏览器中完成全部操作；在桌面 Chrome / Safari、iOS Safari、安卓 Chrome 上打印出的 PDF 排版可用（不截断图片、分页合理）。
@@ -749,7 +770,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 ### M5：上线
 - 生产 Compose、Caddy、swap、Postgres 调参、`.env` 模板。
 - tag 触发部署、数据库每日备份、恢复演练、Healthchecks、告警。
-- README、隐私说明、服务条款、`docs/runbook.md`。
+- README、`docs/runbook.md`（隐私说明与服务条款页已在 M4 完成）。
+- Caddy 访问日志不记录客户端 IP（见 §12 隐私）；`TRUST_PROXY_HEADERS=true`。
 - 以邀请制软启动，观察两周后再决定是否开放注册。
 - **验收**：生产环境运行两周，无未告警的停摆；完成一次恢复演练。
 

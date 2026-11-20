@@ -347,6 +347,81 @@ func TestSessionSlidingExpiry(t *testing.T) {
 	}
 }
 
+func TestDeleteAccount(t *testing.T) {
+	ctx := context.Background()
+	s, sender, q, _ := newService(t, ModeOpen)
+	if _, err := s.RequestCode(ctx, "gone@example.com", ip); err != nil {
+		t.Fatal(err)
+	}
+	_, code := sender.last(t)
+	sess, err := s.Verify(ctx, "gone@example.com", code, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One email logged before the account existed, one after.
+	for _, uid := range []*uuid.UUID{nil, &sess.User.ID} {
+		if _, err := q.InsertEmailLog(ctx, db.InsertEmailLogParams{UserID: uid, Kind: "login", ToEmail: "gone@example.com", Subject: "x"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := q.InsertEmailLog(ctx, db.InsertEmailLogParams{Kind: "login", ToEmail: "other@example.com", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteAccount(ctx, sess.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteAccount(ctx, sess.User.ID); err != nil {
+		t.Errorf("deleting again: %v", err)
+	}
+	var users, codes, logged, scrubbed, others, requests int
+	if err := s.pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM users WHERE email = 'gone@example.com'),
+		(SELECT count(*) FROM login_codes WHERE email = 'gone@example.com'),
+		(SELECT count(*) FROM email_log WHERE to_email = 'gone@example.com'),
+		(SELECT count(*) FROM email_log WHERE to_email = 'deleted' AND user_id IS NULL),
+		(SELECT count(*) FROM email_log WHERE to_email = 'other@example.com'),
+		(SELECT count(*) FROM login_requests WHERE email = 'gone@example.com')`).Scan(&users, &codes, &logged, &scrubbed, &others, &requests); err != nil {
+		t.Fatal(err)
+	}
+	if users != 0 || codes != 0 || logged != 0 || scrubbed != 2 || others != 1 {
+		t.Errorf("after delete: users=%d codes=%d logged=%d scrubbed=%d others=%d", users, codes, logged, scrubbed, others)
+	}
+	if requests != 1 {
+		t.Errorf("the day's code count should stay (abuse limit), got %d rows", requests)
+	}
+	if _, err := s.Authenticate(ctx, sess.Token); !errors.Is(err, ErrNoSession) {
+		t.Errorf("session of a deleted account: %v", err)
+	}
+}
+
+func TestCleanupEmailLog(t *testing.T) {
+	ctx := context.Background()
+	s, _, q, clk := newService(t, ModeOpen)
+	if _, err := q.InsertEmailLog(ctx, db.InsertEmailLogParams{Kind: "login", ToEmail: "a@example.com", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE email_log SET created_at = $1`, clk.t.Add(-EmailLogRetention-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.InsertEmailLog(ctx, db.InsertEmailLogParams{Kind: "login", ToEmail: "b@example.com", Subject: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Cleanup(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	rows, _ := s.pool.Query(ctx, `SELECT to_email FROM email_log`)
+	for rows.Next() {
+		var e string
+		_ = rows.Scan(&e)
+		left = append(left, e)
+	}
+	if len(left) != 1 || left[0] != "b@example.com" {
+		t.Errorf("email_log after cleanup = %v", left)
+	}
+}
+
 func TestLogoutAll(t *testing.T) {
 	ctx := context.Background()
 	s, sender, _, clk := newService(t, ModeOpen)

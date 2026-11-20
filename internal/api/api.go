@@ -21,6 +21,12 @@ import (
 	"github.com/MamaShip/Observer/internal/watch"
 )
 
+func init() {
+	// Every list in a response is a non-nil slice; say so in the schema so
+	// clients need not handle null.
+	huma.DefaultArrayNullable = false
+}
+
 // Prefix is the path prefix of every API operation.
 const Prefix = "/api/v1"
 
@@ -47,10 +53,32 @@ type Deps struct {
 	SnapBaseURL string
 	TrustProxy  bool // take the client address from X-Forwarded-For (behind Caddy)
 	Limits      Limits
+	Site        Site
 }
 
+// Site is public information the web app needs before login.
+type Site struct {
+	ServiceName      string `json:"service_name"`
+	RegistrationMode string `json:"registration_mode" enum:"open,invite" doc:"invite: only addresses an admin invited receive login codes"`
+	WatchDays        int    `json:"watch_days" doc:"How long each article is watched"`
+	CodesPerDay      int    `json:"codes_per_day" doc:"Login codes one email can request per day (Beijing time)"`
+	CodeTTLMinutes   int    `json:"code_ttl_minutes"`
+	MaxOpenWatches   int    `json:"max_open_watches"`
+}
+
+type siteOutput struct{ Body Site }
+
 // New builds the API handler (with its request middleware) and the Huma API.
-func New(d Deps) (http.Handler, huma.API) {
+func New(d Deps) (http.Handler, huma.API) { return build(d, d.Auth != nil) }
+
+// Spec is the OpenAPI document of every operation; the web client's types
+// are generated from it (observer openapi, make openapi).
+func Spec() *huma.OpenAPI {
+	_, api := build(Deps{}, true)
+	return api.OpenAPI()
+}
+
+func build(d Deps, all bool) (http.Handler, huma.API) {
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("Observer API", d.Version)
 	cfg.OpenAPIPath = Prefix + "/openapi"
@@ -65,7 +93,15 @@ func New(d Deps) (http.Handler, huma.API) {
 
 	g := huma.NewGroup(api, Prefix)
 	registerHealth(g, d)
-	if d.Auth != nil {
+	huma.Register(g, huma.Operation{
+		OperationID: "get-site", Method: http.MethodGet, Path: "/site",
+		Summary: "Public service settings", Tags: []string{"system"},
+	}, func(context.Context, *struct{}) (*siteOutput, error) {
+		s := d.Site
+		s.CodesPerDay, s.CodeTTLMinutes = auth.CodesPerDay, int(auth.CodeTTL.Minutes())
+		return &siteOutput{Body: s}, nil
+	})
+	if all {
 		h := &handlers{d: d}
 		h.registerAuth(g)
 		h.registerMe(g)

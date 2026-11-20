@@ -55,8 +55,21 @@ UPDATE users SET status = sqlc.arg(status) WHERE email = sqlc.arg(email);
 UPDATE users SET notify_on_expire = sqlc.arg(notify_on_expire) WHERE id = sqlc.arg(id)
 RETURNING *;
 
+-- Sessions and watches go with the user (ON DELETE CASCADE).
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1;
+
+-- name: DeleteLoginCodesFor :exec
+DELETE FROM login_codes WHERE email = $1;
+
+-- ScrubEmailLog keeps the rows (they count toward today's sending limit) but
+-- forgets the address.
+-- name: ScrubEmailLog :exec
+UPDATE email_log SET to_email = 'deleted', user_id = NULL
+WHERE user_id = sqlc.arg(user_id) OR to_email = sqlc.arg(email);
+
+-- name: DeleteOldEmailLog :execrows
+DELETE FROM email_log WHERE created_at < sqlc.arg(before)::timestamptz;
 
 -- name: CreateSession :exec
 INSERT INTO sessions (user_id, token_hash, user_agent, expires_at)

@@ -187,9 +187,9 @@ func (h *handlers) registerMe(g huma.API) {
 	huma.Register(g, huma.Operation{
 		OperationID: "delete-me", Method: http.MethodDelete, Path: "/me",
 		Summary: "Delete the account", Tags: []string{"me"}, Security: loggedIn, DefaultStatus: http.StatusNoContent,
-		Description: "Deletes the account, its sessions and its watches. Backups of articles are shared and stay.",
+		Description: "Deletes the account, its sessions and its watches, and removes the address from login and email records. Backups of articles are shared and stay.",
 	}, func(ctx context.Context, _ *struct{}) (*logoutOutput, error) {
-		if err := h.d.Queries.DeleteUser(ctx, principalFrom(ctx).User.ID); err != nil {
+		if err := h.d.Auth.DeleteAccount(ctx, principalFrom(ctx).User.ID); err != nil {
 			return nil, err
 		}
 		return &logoutOutput{SetCookie: sessionCookie("", -1)}, nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,13 +57,26 @@ func TestServeUntilHealthy(t *testing.T) {
 		t.Fatalf("health = %+v", last)
 	}
 
-	resp, err := http.Get(base + "/no-such-page")
+	// Unknown API paths are a JSON 404; other paths belong to the web app
+	// (503 when this binary was built without it).
+	resp, err := http.Get(base + "/api/v1/no-such-operation")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown path: %d", resp.StatusCode)
+		t.Fatalf("unknown API path: %d", resp.StatusCode)
+	}
+	resp, err = http.Get(base + "/watches/some-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("web app path: %d", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusOK && !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-src") {
+		t.Errorf("web app page without its CSP: %v", resp.Header)
 	}
 
 	cancel()

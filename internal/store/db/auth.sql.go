@@ -181,6 +181,27 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, now time.Time) (int
 	return result.RowsAffected(), nil
 }
 
+const deleteLoginCodesFor = `-- name: DeleteLoginCodesFor :exec
+DELETE FROM login_codes WHERE email = $1
+`
+
+func (q *Queries) DeleteLoginCodesFor(ctx context.Context, email string) error {
+	_, err := q.db.Exec(ctx, deleteLoginCodesFor, email)
+	return err
+}
+
+const deleteOldEmailLog = `-- name: DeleteOldEmailLog :execrows
+DELETE FROM email_log WHERE created_at < $1::timestamptz
+`
+
+func (q *Queries) DeleteOldEmailLog(ctx context.Context, before time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldEmailLog, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOldLoginRequests = `-- name: DeleteOldLoginRequests :execrows
 DELETE FROM login_requests WHERE day < $1::date
 `
@@ -206,6 +227,7 @@ const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1
 `
 
+// Sessions and watches go with the user (ON DELETE CASCADE).
 func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
@@ -333,6 +355,23 @@ type ReleaseLoginRequestParams struct {
 // ReleaseLoginRequest gives back a claim whose email could not be sent.
 func (q *Queries) ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error {
 	_, err := q.db.Exec(ctx, releaseLoginRequest, arg.Email, arg.Day)
+	return err
+}
+
+const scrubEmailLog = `-- name: ScrubEmailLog :exec
+UPDATE email_log SET to_email = 'deleted', user_id = NULL
+WHERE user_id = $1 OR to_email = $2
+`
+
+type ScrubEmailLogParams struct {
+	UserID *uuid.UUID
+	Email  string
+}
+
+// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
+// forgets the address.
+func (q *Queries) ScrubEmailLog(ctx context.Context, arg ScrubEmailLogParams) error {
+	_, err := q.db.Exec(ctx, scrubEmailLog, arg.UserID, arg.Email)
 	return err
 }
 

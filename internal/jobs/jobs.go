@@ -158,7 +158,7 @@ func (w *alertWorker) Work(ctx context.Context, job *river.Job[notify.AlertArgs]
 	return result(w.n.SendAlert(ctx, job.Args))
 }
 
-// AuthCleanupArgs deletes expired login tokens and sessions.
+// AuthCleanupArgs deletes expired login codes, sessions and old email records.
 type AuthCleanupArgs struct{}
 
 func (AuthCleanupArgs) Kind() string { return "auth_cleanup" }

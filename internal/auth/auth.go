@@ -304,10 +304,41 @@ func (s *Service) LogoutAll(ctx context.Context, userID uuid.UUID) (int64, error
 	return s.q.DeleteUserSessions(ctx, userID)
 }
 
-// Cleanup deletes expired login codes, old request counts and sessions.
+// DeleteAccount removes a user with their sessions and watches, and the
+// address from login codes and the email log. Per-day code counts stay
+// until Cleanup (two days), so deleting an account does not reset the limit.
+func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		u, err := q.GetUser(ctx, userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := q.DeleteLoginCodesFor(ctx, u.Email); err != nil {
+			return err
+		}
+		if err := q.ScrubEmailLog(ctx, db.ScrubEmailLogParams{UserID: &u.ID, Email: u.Email}); err != nil {
+			return err
+		}
+		return q.DeleteUser(ctx, u.ID)
+	})
+}
+
+// EmailLogRetention is how long sent-email records (with addresses) are kept.
+const EmailLogRetention = 90 * 24 * time.Hour
+
+// Cleanup deletes expired login codes, old request counts, sessions and
+// email records older than EmailLogRetention.
 func (s *Service) Cleanup(ctx context.Context) error {
 	now := s.now()
 	codes, err := s.q.DeleteExpiredLoginCodes(ctx, now.Add(-24*time.Hour))
+	if err != nil {
+		return err
+	}
+	mails, err := s.q.DeleteOldEmailLog(ctx, now.Add(-EmailLogRetention))
 	if err != nil {
 		return err
 	}
@@ -316,8 +347,8 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		return err
 	}
 	sess, err := s.q.DeleteExpiredSessions(ctx, now)
-	if err == nil && codes+reqs+sess > 0 {
-		s.log.Info("expired logins cleaned up", "login_codes", codes, "login_requests", reqs, "sessions", sess)
+	if err == nil && codes+reqs+sess+mails > 0 {
+		s.log.Info("expired records cleaned up", "login_codes", codes, "login_requests", reqs, "sessions", sess, "email_log", mails)
 	}
 	return err
 }

@@ -57,3 +57,38 @@ jobs:
 
       - name: Build
         run: go build -o /dev/null ./cmd/observer
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - run: npm ci
+
+      - name: API types are up to date
+        run: |
+          go run ../cmd/observer openapi > openapi.json
+          npm run openapi
+          git diff --exit-code src/api/schema.d.ts
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npx vite build
