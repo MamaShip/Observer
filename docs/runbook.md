@@ -1,8 +1,8 @@
 # 运维手册
 
-Observer 生产环境的部署、日常操作、发布、备份恢复与告警处理。设计背景见 [plan.md](../plan.md) §13。
+本手册介绍如何部署和维护一个独立的观察者。开发环境的运行方法见[开发指南](development.md)。
 
-## 概览
+## 官方站点的部署环境
 
 | 项目 | 值 |
 |---|---|
@@ -16,33 +16,40 @@ Observer 生产环境的部署、日常操作、发布、备份恢复与告警�
 
 下文命令都在 `/opt/observer` 下执行；`dc` 表示 `docker compose`。
 
-## 首次部署（新机器）
+## 首次部署
 
-1. **DNS**：在 Namecheap 为 `ob` 和 `snap.ob` 添加 A 记录，指向服务器 IP。用 `dig +short ob.portkey.click @1.1.1.1` 确认生效后再启动 Caddy，否则证书申请失败会触发 Let's Encrypt 的频率限制。
-2. **系统**：
+1. **准备域名。** 选择自己的站点域名（下文以 `observer.example.org` 为例），把它和 `snap.observer.example.org` 的 A 记录指向你的服务器。第二个域名用于阅读文章快照。确认两条记录都已生效，且服务器对外开放 TCP 80 和 443 端口，以便 Caddy 申请证书。
+2. **安装 Docker 和 Compose 插件。** 已安装的可跳过。下面是 Ubuntu 24.04 上以 root 身份安装的示例。
    ```sh
    # Docker（官方源）
    install -m 0755 -d /etc/apt/keyrings
    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release; echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
    apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-   # 日志上限
-   mkdir -p /etc/systemd/journald.conf.d && printf '[Journal]\nSystemMaxUse=100M\n' > /etc/systemd/journald.conf.d/size.conf && systemctl restart systemd-journald
    ```
-   swap（2 GB，`vm.swappiness=10`）已在 M0 配置。
-3. **文件**：把仓库里的 `deploy/compose.yaml`、`deploy/Caddyfile`、`deploy/update.sh` 复制到 `/opt/observer`，`deploy/.env.example` 复制为 `.env` 并填写：
+3. **准备配置。** 在服务器上创建 `/opt/observer` 目录，把仓库 [deploy](../deploy) 下的 `compose.yaml`、`Caddyfile` 和 `update.sh` 复制进去，再将 [.env.example](../deploy/.env.example) 复制为同目录下的 `.env`。进入该目录，生成两份独立的密钥，将输出分别填入对应的配置项。
    ```sh
    openssl rand -hex 24   # POSTGRES_PASSWORD
    openssl rand -hex 32   # SIGNING_KEY
    chmod 600 .env
    ```
-4. **镜像**：GHCR 的包需设为公开（GitHub → Packages → observer → Package settings → Change visibility），或在服务器上 `docker login ghcr.io`。没有发布版本时，可以在开发机 `make image` 后：
+   在 `.env` 中将 `DOMAIN` 改为你的站点域名，`SERVICE_NAME` 改为你想展示的名称。选择 `REGISTRATION_MODE=invite`（受邀邮箱才能登录）或 `open`（开放注册）。
+
+   填写自己的 SMTP 发信配置和已验证的发件地址（`MAIL_FROM`），供站点发送验证码和删除提醒。将 `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET` 和访问密钥改为自己的 S3 兼容对象存储配置。文章、图片和数据库备份会写入这个存储桶。
+4. **选择镜像。** 默认使用项目发布的 `ghcr.io/mamaship/observer:latest`。如果使用私有镜像，先在服务器上用有读取权限的账号运行 `docker login ghcr.io`。也可以在开发机上运行 `make image`，将自行构建的镜像传到服务器。
    ```sh
    docker save observer:local | gzip | ssh root@<服务器> 'gunzip | docker load'
    ```
-   并把 `.env` 中 `OBSERVER_IMAGE` 设为 `observer:local`。
-5. **启动**：`dc up -d`，然后 `dc ps` 确认三个容器都是 healthy，`curl -s https://ob.portkey.click/api/v1/healthz`。
-6. **管理员账号**：`dc exec app observer admin invite <你的邮箱>`，然后在网页上用验证码登录。
+   使用本地镜像时，把 `.env` 中的 `OBSERVER_IMAGE` 设为 `observer:local`。
+5. **启动并验证。** 在 `/opt/observer` 下运行 `docker compose up -d --wait`，再用 `docker compose ps` 确认三个容器都在运行。把下面的示例域名换成自己的域名，检查网站是否能响应。
+   ```sh
+   curl -fsS https://observer.example.org/api/v1/healthz
+   ```
+6. **开通第一个账号。** 把下面的示例邮箱换成你自己的邮箱。第一条命令开通登录，第二条授予管理后台权限。随后在你自己的站点用邮箱验证码登录，就可以提交第一篇文章。
+   ```sh
+   docker compose exec app observer admin invite you@example.org
+   docker compose exec app observer admin role you@example.org admin
+   ```
 
 ## 日常操作
 
@@ -55,16 +62,16 @@ dc exec app observer admin invite <email>       # 用户也可以在设置页邀
 dc exec app observer admin disable <email>      # 停用并退出所有设备
 dc exec app observer admin articles -n 20
 dc exec app observer admin email-limit <email> <n|default>  # 该账号每月通知邮件上限（0 = 不限）
-dc exec app observer admin role <email> admin    # 开通管理后台 https://ob.portkey.click/admin
+dc exec app observer admin role <email> admin    # 授予本站 /admin 管理后台权限
 dc exec app observer mailtest [-to <email>]     # 检查 SMTP（用容器内的环境变量）
 docker stats --no-stream                # 内存
 ```
 
-**冒烟测试**（在开发机上用浏览器走一遍完整流程）：
+**冒烟测试**在开发机上用浏览器走一遍完整流程。将服务器、邮箱、站点域名和文章链接换成自己的值。
 
 ```sh
 TOKEN=$(ssh root@<服务器> 'cd /opt/observer && docker compose exec -T app observer admin session <你的邮箱>')
-cd web && BASE=https://ob.portkey.click SESSION=$TOKEN ARTICLE=https://mp.weixin.qq.com/s/... npm run smoke
+cd web && BASE=https://observer.example.org SESSION=$TOKEN ARTICLE=https://mp.weixin.qq.com/s/... npm run smoke
 ```
 
 脚本最后会退出登录，这个会话随之失效。

@@ -34,14 +34,13 @@ const versionURL = computed(() => sourceURL(version.value))
       <li>如果微信暂时限制访问，检查会推迟进行，期间可能无法及时发现删除。</li>
     </ul>
 
-    <h2>背景</h2>
+    <h2>创建自己的独立观察者</h2>
     <p>
-      本项目受<a href="https://github.com/Terminus2049/Terminus2049.github.io" target="_blank" rel="noopener noreferrer">端点星计划</a>启发，只为个人备份自己关注的文章，不做全量存档。全量备份工作有香港大学的
-      <a href="https://wechatscope.jmsc.hku.hk/" target="_blank" rel="noopener noreferrer">WeChatSCOPE</a> 项目在做。
+      欢迎你用这个开源项目搭建自己的观察者，把关心的文章保存在自己的服务器和存储空间里。你可以自己用，也可以邀请朋友加入。
     </p>
     <p>
-      {{ serviceName() }}是开源软件（GPL-3.0），源代码在
-      <a href="https://github.com/MamaShip/Observer" target="_blank" rel="noopener noreferrer">GitHub</a>。问题和建议欢迎在那里提出。
+      项目采用 GPL-3.0 许可证。部署指南和源代码都在
+      <a href="https://github.com/MamaShip/Observer" target="_blank" rel="noopener noreferrer">GitHub 项目主页</a>。
     </p>
     <p v-if="version" class="muted small">
       当前版本：<a v-if="versionURL" :href="versionURL" target="_blank" rel="noopener noreferrer">{{ version }}</a><template v-else>{{ version }}</template>
