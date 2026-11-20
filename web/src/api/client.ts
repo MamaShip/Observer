@@ -3,6 +3,8 @@ import type { components, paths } from './schema'
 
 export type Schemas = components['schemas']
 export type User = Schemas['User']
+/** The current account with this month's notification count. */
+export type Me = Schemas['Me']
 export type Site = Schemas['Site']
 export type Watch = Schemas['Watch']
 export type Article = Schemas['Article']

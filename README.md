@@ -46,7 +46,7 @@ cd web && LOG=/tmp/observer.log OUT=/tmp/shots ARTICLE=https://mp.weixin.qq.com/
 ```sh
 observer migrate [up|status]       # 数据库迁移（serve 启动时也会自动执行）
 observer admin stats               # 统计
-observer admin invite <email>      # 邀请制下开通账号（另有 disable / enable / logout-all / submit / articles / check / export）
+observer admin invite <email>      # 邀请制下开通账号（另有 disable / enable / logout-all / email-limit / session / submit / articles / check / export）
 observer mailtest -env-file F [-to ADDR]  # 验证 SMTP 配置；加 -to 发送示例邮件
 observer openapi                   # 输出 API 的 OpenAPI 文档
 observer admin backup | restore    # 立即备份数据库到对象存储 / 恢复到空数据库

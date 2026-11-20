@@ -120,13 +120,14 @@ type UrlAlias struct {
 }
 
 type User struct {
-	ID             uuid.UUID
-	Email          string
-	Role           string
-	Status         string
-	NotifyOnExpire bool
-	CreatedAt      time.Time
-	LastLoginAt    *time.Time
+	ID                uuid.UUID
+	Email             string
+	Role              string
+	Status            string
+	NotifyOnExpire    bool
+	CreatedAt         time.Time
+	LastLoginAt       *time.Time
+	MonthlyEmailLimit *int32
 }
 
 type Watch struct {

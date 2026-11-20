@@ -42,13 +42,15 @@ type Config struct {
 	MaxDailySubmissions int    `env:"MAX_DAILY_SUBMISSIONS" envDefault:"30"`
 
 	// Email. Without SMTP_HOST, messages are only logged (development).
-	SMTPHost        string   `env:"SMTP_HOST"`
-	SMTPPort        int      `env:"SMTP_PORT" envDefault:"587"`
-	SMTPUser        string   `env:"SMTP_USER"`
-	SMTPPassword    string   `env:"SMTP_PASSWORD"`
-	MailFrom        string   `env:"MAIL_FROM"`
-	DailyEmailLimit int      `env:"DAILY_EMAIL_LIMIT" envDefault:"100"`
-	AdminEmails     []string `env:"ADMIN_EMAILS" envSeparator:","`
+	SMTPHost        string `env:"SMTP_HOST"`
+	SMTPPort        int    `env:"SMTP_PORT" envDefault:"587"`
+	SMTPUser        string `env:"SMTP_USER"`
+	SMTPPassword    string `env:"SMTP_PASSWORD"`
+	MailFrom        string `env:"MAIL_FROM"`
+	DailyEmailLimit int    `env:"DAILY_EMAIL_LIMIT" envDefault:"100"`
+	// Notification emails per account per month; 0 means no limit.
+	MonthlyEmailLimit int      `env:"MONTHLY_EMAIL_LIMIT" envDefault:"20"`
+	AdminEmails       []string `env:"ADMIN_EMAILS" envSeparator:","`
 
 	CacheDir       string `env:"CACHE_DIR"` // local cache of snapshot files and images
 	CacheMaxBytes  int64  `env:"CACHE_MAX_BYTES" envDefault:"5368709120"`
@@ -123,6 +125,9 @@ func Load() (Config, error) {
 	}
 	if c.SMTPHost != "" && c.MailFrom == "" {
 		errs = append(errs, errors.New("SMTP_HOST needs MAIL_FROM"))
+	}
+	if c.MonthlyEmailLimit < 0 {
+		errs = append(errs, errors.New("MONTHLY_EMAIL_LIMIT must be 0 (no limit) or more"))
 	}
 	if c.DailyEmailLimit < 1 {
 		errs = append(errs, errors.New("DAILY_EMAIL_LIMIT must be positive"))
@@ -204,7 +209,8 @@ func (c Config) Mailer(log *slog.Logger) (mail.Mailer, error) {
 
 // Notify is the notifier configuration.
 func (c Config) Notify() notify.Config {
-	return notify.Config{ServiceName: c.ServiceName, BaseURL: c.Origin(), DailyLimit: c.DailyEmailLimit, AdminEmails: c.AdminEmails}
+	return notify.Config{ServiceName: c.ServiceName, BaseURL: c.Origin(), DailyLimit: c.DailyEmailLimit,
+		MonthlyLimit: c.MonthlyEmailLimit, AdminEmails: c.AdminEmails}
 }
 
 // Logger builds the process logger described by the configuration.

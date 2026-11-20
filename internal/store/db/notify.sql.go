@@ -23,6 +23,26 @@ func (q *Queries) CountEmailsSince(ctx context.Context, since time.Time) (int64,
 	return column_1, err
 }
 
+const countUserNotificationsSince = `-- name: CountUserNotificationsSince :one
+SELECT count(*)::int FROM email_log
+WHERE user_id = $1 AND kind IN ('deleted', 'expired') AND status = 'sent'
+  AND sent_at >= $2::timestamptz
+`
+
+type CountUserNotificationsSinceParams struct {
+	UserID *uuid.UUID
+	Since  time.Time
+}
+
+// CountUserNotificationsSince counts the notification emails (not login
+// codes) sent to a user since a time.
+func (q *Queries) CountUserNotificationsSince(ctx context.Context, arg CountUserNotificationsSinceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserNotificationsSince, arg.UserID, arg.Since)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const finishEmailLog = `-- name: FinishEmailLog :exec
 UPDATE email_log SET status = $1, provider_id = $2,
                      last_error = $3, sent_at = $4

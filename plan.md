@@ -223,6 +223,7 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 - **观察期满**：默认不发邮件（用户可在设置中打开）。
 - 邮件只包含标题、状态、删除原因和**查看链接**，不带附件。
 - **每日发送上限保护**：Resend 免费档每日 100 封。通知类邮件只用到额度的 90%，剩下 10% 留给登录邮件。发送遇到限额（本地计数或服务商返回）时，摘要任务顺延到次日 UTC 零点之后。当日发送量达到 80% 时给管理员发告警。
+- **每个账号每月最多 20 封通知邮件**（2026-11-20 加入，`MONTHLY_EMAIL_LIMIT`，按北京时间自然月计）：只计"已删除 / 观察期结束"的摘要邮件，验证码与管理员告警不计。达到上限后摘要任务顺延到下月 1 日 00:05，届时把这期间的全部变化合并成一封；第 20 封邮件里会说明已达上限。每个账号可单独设置上限（`users.monthly_email_limit`，空值用默认值，0 表示不限），为以后付费提高上限预留：`observer admin email-limit <email> <n|default>`。设置页显示"本月已收到 X / 20 封"。
 - **登录邮件同步发送，不进任务队列**：任务参数以明文存在 `river_job` 表里，验证码不能明文落库。额度用完时，登录接口直接返回 503"今天的邮件发送额度已用完"。
 - **管理员告警**（`ADMIN_EMAILS`）：金丝雀失败、熔断打开、单篇文章连续 6 次检查无结论、邮件用量达到 80%。同类告警 6 小时内只发一次，并且都会写入错误日志。
 
@@ -467,7 +468,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | POST | `/auth/code` | `{email}` → 202 `{remaining, resend_after}`；超限 429 |
 | POST | `/auth/verify` | `{email, code}` → 设置会话 Cookie |
 | POST | `/auth/logout` | 注销当前会话 |
-| GET | `/me` | 当前用户信息与设置 |
+| GET | `/me` | 当前用户信息与设置，含本月通知邮件数与上限（`emails_this_month`、`monthly_emails`） |
 | PATCH | `/me` | 修改设置（`notify_on_expire`） |
 | DELETE | `/me` | 删除账号（同时从验证码记录和发信记录中抹去邮箱） |
 | POST | `/watches` | `{url}` → 201（已备份）/ 202（解析中） |
@@ -604,7 +605,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 已实现（M1）：`DATABASE_URL`（必填，URL 格式）、`DB_MAX_CONNS`（默认 10）、`HTTP_ADDR`（默认 `:8080`）、`BASE_URL`、`LOG_LEVEL`（默认 `info`）、`LOG_FORMAT`（`json` / `text`，默认 `json`）。
 
-已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
+已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`MONTHLY_EMAIL_LIMIT`（每个账号每月通知邮件数，20；0 表示不限）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
 生产环境取值：`BASE_URL=https://ob.portkey.click`、`SNAP_BASE_URL=https://snap.ob.portkey.click`、`SMTP_HOST=smtp.resend.com`、`SMTP_PORT=465`、`SMTP_USER=resend`、`SMTP_PASSWORD=<Resend API Key，只给发信权限并限定发件域名>`、`MAIL_FROM=折光观察者 <noreply@ob.portkey.click>`。env 文件按 Docker Compose `env_file` 的格式书写（值不加引号，可含空格和 `<>`），`observer mailtest -env-file <文件>` 可直接读取。
 `BASE_URL` 为 https 时视为生产环境：`SIGNING_KEY`、`SMTP_HOST` 必填，`SNAP_BASE_URL` 也必须是 https；开发环境缺少它们时，分别退化为随机签名密钥、只把邮件写进日志。
 
@@ -793,6 +794,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 > - 可选：自动部署密钥（runbook）、Healthchecks.io（`HEALTHCHECK_URL`）。
 > - 真机验收（M4 遗留）：iOS Safari、安卓 Chrome、iOS / 安卓微信内置浏览器，各打印一次 PDF。
 > - 邀请制运行两周，观察内存、拦截率、邮件用量，再决定是否开放注册。
+>
+> **上线后（2026-11-20）**：用户登录验证、简单检查 PDF 通过；隐私说明与服务条款文字已审阅；`v0.1.0` 由 Release workflow 发布到 GHCR（公开），服务器已用 `update.sh v0.1.0` 切换。自动部署密钥等项目更成熟后再配置。新增每账号每月通知邮件上限（§5.6，迁移 00003）。
 
 - 生产 Compose、Caddy、swap、Postgres 调参、`.env` 模板。
 - tag 触发部署、数据库每日备份、恢复演练、Healthchecks、告警。
@@ -839,6 +842,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 | 观察期满是否发邮件 | 默认不发，用户可开启 |
 | 注册模式 | 邀请制软启动 |
 | 每用户活跃观察上限 / 每日提交上限 | 50 / 30 |
+| 每账号每月通知邮件 | 20 封（可按账号调整，预留付费提高上限） |
 | 快照可见性 | 仅对观察过该文章的用户可见 |
 | 域名规划 | `<domain>` 主站，`snap.<domain>` 快照 |
 | VPS 架构 | amd64（M0 已确认，Ubuntu，内核 6.8） |

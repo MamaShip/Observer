@@ -10,7 +10,8 @@
   <div style="margin-top:6px"><a href="{{.Link}}" style="color:#1f6feb">查看备份</a></div>
 </div>
 {{end}}
-<p style="color:#656d76;font-size:13px">备份只对观察过该文章的用户可见，需要登录后查看。<br>
+{{if .LastThisMonth}}<p style="padding:10px 12px;background:#fff8c5;border-radius:6px">这是你本月的第 {{.MonthlyLimit}} 封通知邮件，已达到每月上限。本月之后的变化会在下月 1 日汇总成一封邮件发送；在此之前，你可以随时<a href="{{.ServiceURL}}">登录网站</a>查看最新状态。</p>
+{{end}}<p style="color:#656d76;font-size:13px">备份只对观察过该文章的用户可见，需要登录后查看。<br>
 不想收到观察期结束的邮件，可以在<a href="{{.SettingsURL}}" style="color:#656d76">设置</a>中关闭。</p>
 <p style="color:#656d76;font-size:13px">{{.ServiceName}} · <a href="{{.ServiceURL}}" style="color:#656d76">{{.ServiceURL}}</a></p>
 </body></html>

@@ -28,6 +28,9 @@ type Querier interface {
 	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
 	CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error)
+	// CountUserNotificationsSince counts the notification emails (not login
+	// codes) sent to a user since a time.
+	CountUserNotificationsSince(ctx context.Context, arg CountUserNotificationsSinceParams) (int32, error)
 	CountWatchesSince(ctx context.Context, arg CountWatchesSinceParams) (int64, error)
 	// CreateAlias reports 0 rows when the URL already belongs to an article
 	// (possibly one a concurrent submission created a moment ago).
@@ -97,6 +100,7 @@ type Querier interface {
 	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
 	// forgets the address.
 	ScrubEmailLog(ctx context.Context, arg ScrubEmailLogParams) error
+	SetMonthlyEmailLimit(ctx context.Context, arg SetMonthlyEmailLimitParams) (int64, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error)
 	SkipExpiryNotifications(ctx context.Context, now time.Time) (int64, error)
 	Stats(ctx context.Context) (StatsRow, error)

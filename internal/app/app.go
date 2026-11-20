@@ -129,10 +129,11 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, started: time.Now(), Watch: svc, Notify: notifier, Auth: authSvc}
 	apiHandler, _ := api.New(api.Deps{
 		Version: version, Health: a, StallAfter: jobs.StallAfter,
-		Auth: authSvc, Watch: svc, Queries: q, Signer: signer,
+		Auth: authSvc, Notify: notifier, Watch: svc, Queries: q, Signer: signer,
 		BaseURL: cfg.Origin(), SnapBaseURL: cfg.SnapOrigin(), TrustProxy: cfg.TrustProxyHeaders,
 		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions},
-		Site:   api.Site{ServiceName: cfg.ServiceName, RegistrationMode: cfg.RegistrationMode, WatchDays: cfg.WatchDays, MaxOpenWatches: cfg.MaxOpenWatches},
+		Site: api.Site{ServiceName: cfg.ServiceName, RegistrationMode: cfg.RegistrationMode, WatchDays: cfg.WatchDays, MaxOpenWatches: cfg.MaxOpenWatches,
+			MonthlyEmails: cfg.MonthlyEmailLimit},
 	})
 	web := webui.Handler(webui.CSP(cfg.SnapOrigin()))
 	main := siteHeaders(cfg.Production(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -54,6 +54,7 @@ dc exec app observer admin stats        # 统计
 dc exec app observer admin invite <email>
 dc exec app observer admin disable <email>      # 停用并退出所有设备
 dc exec app observer admin articles -n 20
+dc exec app observer admin email-limit <email> <n|default>  # 该账号每月通知邮件上限（0 = 不限）
 dc exec app observer mailtest [-to <email>]     # 检查 SMTP（用容器内的环境变量）
 docker stats --no-stream                # 内存
 ```

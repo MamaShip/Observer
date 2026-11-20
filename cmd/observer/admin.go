@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -32,6 +33,8 @@ const adminUsage = `Usage: observer admin <command>
   invite <email>                   let an address log in (REGISTRATION_MODE=invite)
   disable <email> | enable <email> block or unblock an account (disabling also logs it out)
   logout-all <email>               end every session of an account
+  email-limit <email> <n|default>  notification emails per month for one account
+                                   (default: MONTHLY_EMAIL_LIMIT; 0: no limit)
   session <email>                  start a session and print its token (for smoke tests;
                                    end it with logout-all)
   submit -email ADDR <url>...      watch links as that user (created if new)
@@ -85,6 +88,31 @@ func runAdmin(ctx context.Context, args []string) error {
 		return err
 	case "export":
 		return adminExport(ctx, cfg, q, rest)
+	case "email-limit":
+		if len(rest) != 2 {
+			return errors.New("usage: observer admin email-limit <email> <n|default>")
+		}
+		email, err := auth.NormalizeEmail(rest[0])
+		if err != nil {
+			return err
+		}
+		var limit *int32
+		if rest[1] != "default" {
+			n, err := strconv.Atoi(rest[1])
+			if err != nil || n < 0 {
+				return errors.New("the limit is a number of emails (0: no limit) or default")
+			}
+			v := int32(n)
+			limit = &v
+		}
+		n, err := q.SetMonthlyEmailLimit(ctx, db.SetMonthlyEmailLimitParams{Email: email, MonthlyEmailLimit: limit})
+		if err == nil && n == 0 {
+			err = errors.New("no account with that email")
+		}
+		if err == nil {
+			fmt.Printf("%s: monthly notification limit %s\n", email, rest[1])
+		}
+		return err
 	case "session":
 		if len(rest) != 1 {
 			return errors.New("usage: observer admin session <email>")

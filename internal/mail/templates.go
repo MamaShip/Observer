@@ -41,6 +41,9 @@ type DigestData struct {
 	ServiceName string
 	ServiceURL  string
 	SettingsURL string
+	// LastThisMonth: this email uses up the account's MonthlyLimit.
+	MonthlyLimit  int
+	LastThisMonth bool
 }
 
 // AlertData fills an operator alert.

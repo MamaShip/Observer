@@ -32,3 +32,10 @@ RETURNING id;
 UPDATE email_log SET status = sqlc.arg(status), provider_id = sqlc.narg(provider_id),
                      last_error = sqlc.narg(last_error), sent_at = sqlc.narg(sent_at)
 WHERE id = sqlc.arg(id);
+
+-- CountUserNotificationsSince counts the notification emails (not login
+-- codes) sent to a user since a time.
+-- name: CountUserNotificationsSince :one
+SELECT count(*)::int FROM email_log
+WHERE user_id = sqlc.arg(user_id) AND kind IN ('deleted', 'expired') AND status = 'sent'
+  AND sent_at >= sqlc.arg(since)::timestamptz;

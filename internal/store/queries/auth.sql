@@ -98,3 +98,6 @@ DELETE FROM login_requests WHERE day < sqlc.arg(before)::date;
 
 -- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions WHERE expires_at < sqlc.arg(now)::timestamptz;
+
+-- name: SetMonthlyEmailLimit :execrows
+UPDATE users SET monthly_email_limit = sqlc.narg(monthly_email_limit) WHERE email = sqlc.arg(email);

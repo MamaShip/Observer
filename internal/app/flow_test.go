@@ -137,7 +137,7 @@ func TestUserFlow(t *testing.T) {
 		DatabaseURL: storetest.EmptyDB(t), DBMaxConns: 8, BlobDir: t.TempDir(), CacheDir: t.TempDir(), CacheMaxBytes: 1 << 20,
 		WatchDays: 60, FetchMinInterval: time.Second,
 		BaseURL: "http://" + site, SnapBaseURL: "http://" + snap, SigningKey: strings.Repeat("s", 32),
-		RegistrationMode: auth.ModeOpen, ServiceName: "折光观察者", DailyEmailLimit: 100,
+		RegistrationMode: auth.ModeOpen, ServiceName: "折光观察者", DailyEmailLimit: 100, MonthlyEmailLimit: 20,
 		MaxOpenWatches: 50, MaxDailySubmissions: 30,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -160,9 +160,9 @@ func TestUserFlow(t *testing.T) {
 	// Not logged in yet.
 	alice.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
 	alice.login(mailer, "alice@example.com")
-	var me api.User
+	var me api.Me
 	alice.api(http.MethodGet, "/me", nil, 200, &me)
-	if me.Email != "alice@example.com" || me.NotifyOnExpire {
+	if me.Email != "alice@example.com" || me.NotifyOnExpire || me.EmailsThisMonth != 0 || me.MonthlyEmails != 20 {
 		t.Fatalf("me = %+v", me)
 	}
 	alice.api(http.MethodPatch, "/me", map[string]bool{"notify_on_expire": true}, 200, &me)
@@ -290,6 +290,13 @@ func TestUserFlow(t *testing.T) {
 		t.Fatalf("after deletion: %+v / %+v", w.Watch, w.Watch.Article)
 	}
 	alice.api(http.MethodPost, "/snapshots/"+snapID.String()+"/view-url", nil, 200, nil) // backup stays readable
+	// The digest counts toward her monthly notifications (logged just after sending).
+	for deadline := time.Now().Add(5 * time.Second); me.EmailsThisMonth == 0 && time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		alice.api(http.MethodGet, "/me", nil, 200, &me)
+	}
+	if me.EmailsThisMonth != 1 || me.MonthlyEmails != 20 {
+		t.Errorf("after the digest: %d of %d emails this month", me.EmailsThisMonth, me.MonthlyEmails)
+	}
 
 	// Stopping, logging out, deleting the account.
 	alice.api(http.MethodDelete, "/watches/"+uuid.NewString(), nil, http.StatusNotFound, nil)

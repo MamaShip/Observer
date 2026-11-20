@@ -153,7 +153,26 @@ func userFromDB(u db.User) User {
 	return User{ID: u.ID, Email: u.Email, Role: u.Role, NotifyOnExpire: u.NotifyOnExpire, CreatedAt: u.CreatedAt}
 }
 
-type userOutput struct{ Body User }
+// Me is the account with its notification quota for this month.
+type Me struct {
+	User
+	EmailsThisMonth int `json:"emails_this_month" doc:"Notification emails sent this month (Beijing time)"`
+	MonthlyEmails   int `json:"monthly_emails" doc:"This account's monthly limit; 0 means no limit"`
+}
+
+type userOutput struct{ Body Me }
+
+func (h *handlers) me(ctx context.Context, u db.User) (*userOutput, error) {
+	out := &userOutput{Body: Me{User: userFromDB(u)}}
+	if h.d.Notify != nil {
+		q, err := h.d.Notify.MonthlyQuota(ctx, u)
+		if err != nil {
+			return nil, err
+		}
+		out.Body.EmailsThisMonth, out.Body.MonthlyEmails = q.Sent, q.Limit
+	}
+	return out, nil
+}
 
 type patchMeInput struct {
 	Body struct {
@@ -166,7 +185,7 @@ func (h *handlers) registerMe(g huma.API) {
 		OperationID: "get-me", Method: http.MethodGet, Path: "/me",
 		Summary: "Current user", Tags: []string{"me"}, Security: loggedIn,
 	}, func(ctx context.Context, _ *struct{}) (*userOutput, error) {
-		return &userOutput{Body: userFromDB(principalFrom(ctx).User)}, nil
+		return h.me(ctx, principalFrom(ctx).User)
 	})
 
 	huma.Register(g, huma.Operation{
@@ -181,7 +200,7 @@ func (h *handlers) registerMe(g huma.API) {
 				return nil, err
 			}
 		}
-		return &userOutput{Body: userFromDB(u)}, nil
+		return h.me(ctx, u)
 	})
 
 	huma.Register(g, huma.Operation{

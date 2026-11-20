@@ -17,6 +17,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 
+	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/mail"
 	"github.com/MamaShip/Observer/internal/store/db"
 )
@@ -26,7 +27,11 @@ type Config struct {
 	ServiceName string // shown in emails
 	BaseURL     string // links in emails point here
 	DailyLimit  int    // provider's daily sending limit (Resend free tier: 100)
-	AdminEmails []string
+	// MonthlyLimit is how many notification emails one account gets per
+	// month (Beijing time) unless its own monthly_email_limit says
+	// otherwise; 0 means no limit.
+	MonthlyLimit int
+	AdminEmails  []string
 }
 
 // JobInserter is the part of the River client the notifier uses.
@@ -178,8 +183,34 @@ func (n *Notifier) Sweep(ctx context.Context) (int, error) {
 	return queued, nil
 }
 
+// MonthStart is the start of t's calendar month in Beijing time, when the
+// monthly notification count resets.
+func MonthStart(t time.Time) time.Time {
+	y, m, _ := t.In(auth.Beijing).Date()
+	return time.Date(y, m, 1, 0, 0, 0, 0, auth.Beijing)
+}
+
+// Quota is an account's notification emails this month.
+type Quota struct {
+	Sent  int
+	Limit int // 0: no limit
+}
+
+// MonthlyQuota reports how many notification emails user has had this
+// month, and their limit.
+func (n *Notifier) MonthlyQuota(ctx context.Context, user db.User) (Quota, error) {
+	q := Quota{Limit: n.cfg.MonthlyLimit}
+	if user.MonthlyEmailLimit != nil {
+		q.Limit = int(*user.MonthlyEmailLimit)
+	}
+	sent, err := n.q.CountUserNotificationsSince(ctx, db.CountUserNotificationsSinceParams{UserID: &user.ID, Since: MonthStart(n.now())})
+	q.Sent = int(sent)
+	return q, err
+}
+
 // SendDigest emails a user about all their ended watches not yet announced,
-// then marks them announced.
+// then marks them announced. Past the monthly limit it waits for next
+// month, when one digest covers everything that happened meanwhile.
 func (n *Notifier) SendDigest(ctx context.Context, userID uuid.UUID) error {
 	user, err := n.q.GetUser(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -195,8 +226,18 @@ func (n *Notifier) SendDigest(ctx context.Context, userID uuid.UUID) error {
 	if err != nil || len(rows) == 0 {
 		return err
 	}
+	quota, err := n.MonthlyQuota(ctx, user)
+	if err != nil {
+		return err
+	}
+	if quota.Limit > 0 && quota.Sent >= quota.Limit {
+		next := MonthStart(n.now()).AddDate(0, 1, 0).Add(5 * time.Minute)
+		n.log.Info("monthly notification limit reached; digest postponed", "user", userID, "until", next)
+		return &RetryAt{Time: next}
+	}
 
-	data := mail.DigestData{ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL, SettingsURL: n.cfg.BaseURL + "/settings"}
+	data := mail.DigestData{ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL, SettingsURL: n.cfg.BaseURL + "/settings",
+		MonthlyLimit: quota.Limit, LastThisMonth: quota.Limit > 0 && quota.Sent+1 == quota.Limit}
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, r := range rows {
 		item := mail.DigestItem{

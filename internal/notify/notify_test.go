@@ -212,3 +212,93 @@ func TestEightyPercentAlert(t *testing.T) {
 		t.Fatalf("%d usage alerts after reaching 8 of 10, want exactly 1", alerts)
 	}
 }
+
+func TestMonthlyLimit(t *testing.T) {
+	e := newEnv(t, 100)
+	e.n.cfg.MonthlyLimit = 3
+	u, err := e.q.CreateUser(e.ctx, "carol@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2026-11-20 12:00 Beijing.
+	now := time.Date(2026, 11, 20, 4, 0, 0, 0, time.UTC)
+	e.n.now = func() time.Time { return now }
+	// Login codes do not count toward the limit.
+	if err := e.n.SendLogin(e.ctx, u.Email, "123456", &u.ID, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	digest := func(title string) error {
+		t.Helper()
+		e.endedWatch(t, u.ID, title, "deleted")
+		return e.n.SendDigest(e.ctx, u.ID)
+	}
+	for i, title := range []string{"一", "二", "三"} {
+		if err := digest(title); err != nil {
+			t.Fatalf("digest %d: %v", i+1, err)
+		}
+		last := e.mailer.Sent()[len(e.mailer.Sent())-1]
+		if note := strings.Contains(last.Text, "已达到每月上限"); note != (i == 2) {
+			t.Errorf("digest %d has the limit note: %v", i+1, note)
+		}
+	}
+	q, err := e.n.MonthlyQuota(e.ctx, u)
+	if err != nil || q != (Quota{Sent: 3, Limit: 3}) {
+		t.Fatalf("quota = %+v, %v", q, err)
+	}
+
+	// The fourth waits for December 1st, 00:05 Beijing time.
+	sent := len(e.mailer.Sent())
+	err = digest("四")
+	var retry *RetryAt
+	if !errors.As(err, &retry) || !retry.Time.Equal(time.Date(2026, 11, 30, 16, 5, 0, 0, time.UTC)) {
+		t.Fatalf("over the limit: %v", err)
+	}
+	if len(e.mailer.Sent()) != sent {
+		t.Error("an email was sent over the limit")
+	}
+	if pending, _ := e.q.PendingNotifications(e.ctx, u.ID); len(pending) != 1 {
+		t.Errorf("%d pending notifications, want the 1 held back", len(pending))
+	}
+
+	// Next month the held-back deletion goes out, together with new ones.
+	now = time.Date(2026, 11, 30, 16, 5, 0, 0, time.UTC)
+	e.endedWatch(t, u.ID, "五", "deleted")
+	if err := e.n.SendDigest(e.ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	last := e.mailer.Sent()[len(e.mailer.Sent())-1]
+	if !strings.Contains(last.Text, "四") || !strings.Contains(last.Text, "五") || !strings.Contains(last.Subject, "2 篇") {
+		t.Errorf("next month's digest: %s\n%s", last.Subject, last.Text)
+	}
+
+	// A per-account limit overrides the default; 0 means none.
+	for _, c := range []struct {
+		limit *int32
+		want  int
+	}{{ptr(int32(0)), 0}, {ptr(int32(50)), 50}, {nil, 3}} {
+		if _, err := e.q.SetMonthlyEmailLimit(e.ctx, db.SetMonthlyEmailLimitParams{Email: u.Email, MonthlyEmailLimit: c.limit}); err != nil {
+			t.Fatal(err)
+		}
+		u, _ = e.q.GetUser(e.ctx, u.ID)
+		if q, _ := e.n.MonthlyQuota(e.ctx, u); q.Limit != c.want || q.Sent != 1 {
+			t.Errorf("limit %v: quota %+v", c.limit, q)
+		}
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestMonthStart(t *testing.T) {
+	for in, want := range map[string]string{
+		"2026-11-20T04:00:00Z": "2026-10-31T16:00:00Z",
+		"2026-11-30T15:59:59Z": "2026-10-31T16:00:00Z",
+		"2026-11-30T16:00:00Z": "2026-11-30T16:00:00Z", // Dec 1st 00:00 Beijing
+		"2027-01-01T03:00:00Z": "2026-12-31T16:00:00Z",
+	} {
+		ti, _ := time.Parse(time.RFC3339, in)
+		if got := MonthStart(ti).UTC().Format(time.RFC3339); got != want {
+			t.Errorf("MonthStart(%s) = %s, want %s", in, got, want)
+		}
+	}
+}

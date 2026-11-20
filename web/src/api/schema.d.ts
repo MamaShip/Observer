@@ -342,6 +342,26 @@ export interface components {
             items: components["schemas"]["Watch"][];
             next_cursor?: string;
         };
+        Me: {
+            /** Format: date-time */
+            created_at: string;
+            email: string;
+            /**
+             * Format: int64
+             * @description Notification emails sent this month (Beijing time)
+             */
+            emails_this_month: number;
+            id: string;
+            /**
+             * Format: int64
+             * @description This account's monthly limit; 0 means no limit
+             */
+            monthly_emails: number;
+            /** @description Email when a watch period ends (deletions are always emailed) */
+            notify_on_expire: boolean;
+            /** @enum {string} */
+            role: "user" | "admin";
+        };
         PatchMeInputBody: {
             notify_on_expire?: boolean;
         };
@@ -355,6 +375,11 @@ export interface components {
             codes_per_day: number;
             /** Format: int64 */
             max_open_watches: number;
+            /**
+             * Format: int64
+             * @description Notification emails per account per month by default; 0 means no limit
+             */
+            monthly_emails: number;
             /**
              * @description invite: only addresses an admin invited receive login codes
              * @enum {string}
@@ -572,7 +597,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/json": components["schemas"]["Me"];
                 };
             };
             /** @description Error */
@@ -633,7 +658,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/json": components["schemas"]["Me"];
                 };
             };
             /** @description Error */

@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/MamaShip/Observer/internal/auth"
+	"github.com/MamaShip/Observer/internal/notify"
 	"github.com/MamaShip/Observer/internal/snapserver"
 	"github.com/MamaShip/Observer/internal/store/db"
 	"github.com/MamaShip/Observer/internal/watch"
@@ -46,6 +47,7 @@ type Deps struct {
 	StallAfter time.Duration
 
 	Auth        *auth.Service
+	Notify      *notify.Notifier
 	Watch       *watch.Service
 	Queries     *db.Queries
 	Signer      snapserver.Signer
@@ -64,6 +66,7 @@ type Site struct {
 	CodesPerDay      int    `json:"codes_per_day" doc:"Login codes one email can request per day (Beijing time)"`
 	CodeTTLMinutes   int    `json:"code_ttl_minutes"`
 	MaxOpenWatches   int    `json:"max_open_watches"`
+	MonthlyEmails    int    `json:"monthly_emails" doc:"Notification emails per account per month by default; 0 means no limit"`
 }
 
 type siteOutput struct{ Body Site }

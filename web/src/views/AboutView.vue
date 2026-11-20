@@ -4,6 +4,7 @@ import { computed } from 'vue'
 
 const days = computed(() => session.site?.watch_days ?? 60)
 const maxOpen = computed(() => session.site?.max_open_watches ?? 50)
+const monthlyEmails = computed(() => session.site?.monthly_emails ?? 20)
 </script>
 
 <template>
@@ -25,6 +26,7 @@ const maxOpen = computed(() => session.site?.max_open_watches ?? 50)
     <h2>使用限制</h2>
     <ul>
       <li>每人最多同时观察 {{ maxOpen }} 篇文章。</li>
+      <li v-if="monthlyEmails > 0">每个账号每月最多收到 {{ monthlyEmails }} 封通知邮件；超出后，新的变化会在下月初汇总成一封发送，网站上随时可以查看。</li>
       <li>只能备份公开的公众号文章；需要付费或关注后才能阅读的内容无法备份。</li>
       <li>如果微信暂时限制访问，检查会推迟进行，期间可能无法及时发现删除。</li>
     </ul>
