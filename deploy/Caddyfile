@@ -1,8 +1,30 @@
 # The site and the snapshot origin, both served by the app, which tells them
 # apart by Host. TLS certificates are obtained automatically.
 #
-# No `log` directive: Caddy then keeps no access log, so visitors' IP
-# addresses are not recorded (promised on /privacy, plan.md §12).
+# Visitors' IP addresses are not recorded (promised on /privacy, plan.md §12):
+# there is no `log` directive in the sites, so no access log, and the filter
+# below strips the request details that Caddy adds to its own warnings and
+# errors (e.g. when a client disconnects mid-response). Signed snapshot
+# links are credentials while they last, so their signature goes too.
+{
+	log default {
+		output stderr
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip delete
+				request>remote_port delete
+				request>client_ip delete
+				request>headers delete
+				request>tls delete
+				request>uri query {
+					delete sig
+					delete exp
+				}
+			}
+		}
+	}
+}
 
 {$SITE_HOST} {
 	encode zstd gzip

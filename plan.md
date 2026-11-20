@@ -556,7 +556,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 - **隐私**：只收集提供服务所需的信息，隐私说明页（`/privacy`）逐项写明用途与保存期限，必须与实现一致：
   - 验证码记录（含请求 IP）在过期一天后删除；每个邮箱的每日计数保存 2 天；会话（含 User-Agent）过期或退出后删除；发信记录保存 90 天（`auth.Cleanup` 每天清理）。
   - 删除账号：用户、会话、观察列表级联删除；该邮箱的验证码记录删除；发信记录中的地址改为 `deleted`（保留行用于当天额度计数）；每日计数照常 2 天后过期，避免删号重注册绕过限制。集成测试检查删除后任何表里都不再有该邮箱。
-  - 服务访问日志不记录 IP 和查询参数。**M5 配置 Caddy 时也必须关闭或脱敏访问日志中的 IP**，否则隐私说明不成立。
+  - 服务访问日志不记录 IP 和查询参数。Caddy 不开访问日志，并且给所有日志加了过滤器：Caddy 自己的警告和错误（例如客户端中途断开时）会附带整个请求，过滤器删除其中的 IP、端口、请求头、TLS 信息和快照链接的签名参数。上线当天的冒烟测试就触发过这类警告，暴露了只关访问日志还不够。
 - **版权与下架**：快照默认仅对观察过该文章的用户可见；提供联系邮箱处理下架请求。
 - **HTTP 安全头**：主域设置 HSTS、`X-Content-Type-Options`、严格 CSP（Vue 构建产物不需要 `unsafe-eval`）。
 
@@ -774,13 +774,25 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **验收**：在手机浏览器与微信内置浏览器中完成全部操作；在桌面 Chrome / Safari、iOS Safari、安卓 Chrome 上打印出的 PDF 排版可用（不截断图片、分页合理）。
 
 ### M5：上线
-> **进行中（2026-11-20）**：仓库部分完成，待部署到 VPS。
+> **已部署（2026-11-20）**：`https://ob.portkey.click` 上线（邀请制），以下为过程记录。
 > - `Dockerfile`（多阶段：前端 → Go → alpine + PostgreSQL 18 客户端，约 40 MB，非 root）、`deploy/compose.yaml`（内存上限、日志轮转、健康检查）、`Caddyfile`（自动 HTTPS、无访问日志）、`.env.example`、`update.sh`、`release.yml`、`docs/runbook.md`。
 > - 每日数据库备份与恢复命令（§13.4）；`observer admin session` 为冒烟测试签发会话；`web/e2e/smoke.mjs` 支持用会话令牌登录任意部署。
 > - 去掉 Huma 在响应里加的 `$schema` 链接（在 TLS 代理后会写成 http://）。
 > - 在开发机上用 `compose.local.yaml` 按生产配置跑通：HTTPS/HTTP3、HSTS、CSP、主站与快照域分流、Caddy 与 app 日志中都没有访问者 IP；浏览器冒烟测试全部通过；容器内备份与恢复演练通过。
 >
-> **待办**：DNS（`ob`、`snap.ob` 的 A 记录）、VPS 上安装 Docker 与 journald 限额（需用户同意）、`.env`、首次部署与生产冒烟测试、生产恢复演练、GHCR 包设为公开、可选的自动部署密钥与 Healthchecks.io、真机验收（M4 遗留）。
+> - VPS：Docker 29.10、Compose v5.8；journald 上限 100 MB；`/opt/observer`（`.env` 由服务器上已有的 Wasabi 凭据、Resend 配置与新生成的数据库密码、签名密钥组装，600）；金丝雀为 M0 用过的存活文章 `q-WkvTApjcwqtgk9LY7Q-A` 与违规删除文章 `hAeOjjWPixvnkiQ58-ohRg`。
+> - 首个版本 `34dbd93` 由开发机构建、`docker save | ssh docker load` 传入（还没有发布过 `v*` 标签）。
+> - Let's Encrypt 证书两个域名一次签发成功；外部检查 HTTP/2、HTTP/3、HSTS、CSP、HTTP→HTTPS 308 均正常。
+> - 生产冒烟测试（专用测试账号，结束后经 `DELETE /me` 删除）：从香港抓取、11 秒后可看到备份，7/7 图片经快照域从 Wasabi 加载，下载与打印 PDF 正常，无控制台错误。
+> - 生产恢复演练：备份 → 恢复到 `restore_drill` → 各表计数与迁移版本一致 → 删除演练库。
+> - 冒烟测试中发现 Caddy 的警告日志带有访问者 IP，已加日志过滤器并验证（§12）。
+> - 资源（上线后）：app 41 MB、postgres 85 MB、caddy 28 MB；整机已用 611 MB，swap 31 MB；磁盘已用 5.7 GB。
+>
+> **待办**：
+> - 打第一个版本标签（如 `v0.1.0`），走通 Release workflow；GHCR 包设为公开后，服务器改用 `update.sh v0.1.0`。
+> - 可选：自动部署密钥（runbook）、Healthchecks.io（`HEALTHCHECK_URL`）。
+> - 真机验收（M4 遗留）：iOS Safari、安卓 Chrome、iOS / 安卓微信内置浏览器，各打印一次 PDF。
+> - 邀请制运行两周，观察内存、拦截率、邮件用量，再决定是否开放注册。
 
 - 生产 Compose、Caddy、swap、Postgres 调参、`.env` 模板。
 - tag 触发部署、数据库每日备份、恢复演练、Healthchecks、告警。
