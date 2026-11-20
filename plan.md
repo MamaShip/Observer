@@ -596,6 +596,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 已实现（M1）：`DATABASE_URL`（必填，URL 格式）、`DB_MAX_CONNS`（默认 10）、`HTTP_ADDR`（默认 `:8080`）、`BASE_URL`、`LOG_LEVEL`（默认 `info`）、`LOG_FORMAT`（`json` / `text`，默认 `json`）。
 
 已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
+生产环境取值：`BASE_URL=https://ob.portkey.click`、`SNAP_BASE_URL=https://snap.ob.portkey.click`、`SMTP_HOST=smtp.resend.com`、`SMTP_PORT=465`、`SMTP_USER=resend`、`SMTP_PASSWORD=<Resend API Key，只给发信权限并限定发件域名>`、`MAIL_FROM=折光观察者 <noreply@ob.portkey.click>`。env 文件按 Docker Compose `env_file` 的格式书写（值不加引号，可含空格和 `<>`），`observer mailtest -env-file <文件>` 可直接读取。
 `BASE_URL` 为 https 时视为生产环境：`SIGNING_KEY`、`SMTP_HOST` 必填，`SNAP_BASE_URL` 也必须是 https；开发环境缺少它们时，分别退化为随机签名密钥、只把邮件写进日志。
 
 已实现（M2）：`S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`（设置 `S3_BUCKET` 时使用 S3）、`BLOB_DIR`（开发用本地目录，两者至少设置一个）、`WATCH_DAYS`（默认 60）、`FETCH_MIN_INTERVAL`（默认 `3s`，最小 `1s`）、`FETCH_USER_AGENT`（预设名 `ios` / `android` / `desktop` 或完整 UA，默认 `ios`）、`CANARY_ALIVE_URL`、`CANARY_DELETED_URL`。
@@ -676,8 +677,9 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 | 层次 | 内容 | 工具 |
 |---|---|---|
 | 单元 | URL 规范化、删除检测（基于样本）、HTML 清洗、调度间隔计算、状态机转换、签名链接 | `go test`，表驱动 |
-| 集成 | store 查询、任务流程（提交 → 抓取 → 快照 → 删除 → 通知）、验证码登录与每日限制 | 真实 Postgres；blob 与 mailer 用内存实现；抓取用 `httptest` 回放样本 |
-| 对象存储 | 用一个集成测试验证 S3 读写 | 本地 MinIO 容器（只在开发/CI 中使用） |
+| 集成 | store 查询、任务流程（提交 → 抓取 → 快照 → 删除 → 通知）、验证码登录与每日限制、HTTP API 全流程（`internal/app/flow_test.go`） | 真实 Postgres；blob 用临时目录、mailer 用内存实现；微信用 `watchtest` 按样本回放 |
+| 邮件 | 模板渲染；SMTP 发送、额度拒绝识别、登录检查 | 进程内的假 SMTP 服务器；真实送达用 `observer mailtest -to` 手动验证 |
+| 对象存储 | `blob` 的读写测试用本地目录实现；S3 实现用 `TestS3` 验证 | 设置 `TEST_S3_*` 时连真实 bucket 运行（在 VPS 上对 Wasabi 跑过），否则跳过 |
 | 前端 | 类型检查；关键组件少量测试 | `vue-tsc`、Vitest |
 | 线上 | 金丝雀检测 | §6.6 |
 
@@ -721,19 +723,18 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **验收**：用 CLI 提交一组真实链接，能生成快照、按策略定时检查，对删除样本给出正确判定。
 
 ### M3：账号、API 与通知
-> **进行中（2026-11-19）**：不依赖外部账号的部分已完成。
+> **已完成（2026-11-20）**
 > - 邮箱验证码登录（每个邮箱每天 2 封、只存哈希、同步发信；2026-11-20 由魔法链接改为验证码，理由见 §6.1）、会话（Cookie 与 Bearer 两种，30 天滑动过期）、邀请制、按 IP 与按邮箱限流、配额。
-> - 全部 `/api/v1` 接口（§9）；跨站写请求按 `Origin` / `Sec-Fetch-Site` 拒绝。
+> - 全部 `/api/v1` 接口（§9），OpenAPI 文档自动生成；跨站写请求按 `Origin` / `Sec-Fetch-Site` 拒绝。
 > - 快照域服务：签名链接、沙箱 CSP、单文件下载、图片接口、本地磁盘 LRU 缓存。
-> - SMTP 发信（go-mail）与模板、摘要合并、每日额度保护、`email_log`、管理员告警、Healthchecks 心跳。
-> - `admin invite / disable / enable / logout-all` 命令。
-> - 验收集成测试 `internal/app/flow_test.go` 在真实 HTTP、River 和 Postgres 上走完：验证码登录 → 提交 → 生成快照 → 查看 → 下载 → 删除确认 → 收到删除邮件 → 权限隔离 → 退出与删除账号。
+> - SMTP 发信（go-mail）与模板、摘要合并、每日额度保护、`email_log`、管理员告警、Healthchecks 心跳；Message-ID 使用发件域名。
+> - 命令：`admin invite / disable / enable / logout-all`；`mailtest`（只登录 SMTP 验证配置，加 `-to` 发示例邮件）。
+> - 验收集成测试 `internal/app/flow_test.go` 在真实 HTTP、River 和 Postgres 上走完：验证码登录（含 60 秒重发限制与每天 2 次上限）→ 提交 → 生成快照 → 查看 → 下载 → 删除确认 → 收到删除邮件 → 权限隔离 → 退出与删除账号。各包另有单元与集成测试；任务错误到 River 结果的映射（推迟、取消、重试）有单独测试。
 > - 编译出的程序用 curl 冒烟测试通过。
->
 > - 上线地址（2026-11-20 确定）：网站 `BASE_URL=https://ob.portkey.click`，快照域 `SNAP_BASE_URL=https://snap.ob.portkey.click`，发件人 `MAIL_FROM=折光观察者 <noreply@ob.portkey.click>`。
-> - Resend 已配置（2026-11-20）：发件域名 `ob.portkey.click`（东京区域），DKIM、SPF（CNAME `rsend.ob` / `send.ob`，以及 `ob` 上的 `v=spf1 include:rsend.ob.portkey.click include:send.ob.portkey.click ~all`，供只按发件人域名查 SPF 的 QQ 邮箱使用）、DMARC（`_dmarc.ob`，`p=none`）均已生效；根域名的 Namecheap 邮件转发 MX 保持不变。`observer mailtest -env-file .env.smtp` 验证 SMTP 登录通过（加 `-to` 可发送示例邮件）。
->
-> **待办（需要用户提供）**：Resend 账号与 SMTP 凭据、发件域名的 SPF/DKIM/DMARC 记录，拿到后用真实邮箱验证送达率（QQ、163、Gmail）。
+> - Resend（免费档，东京区域）：发件域名 `ob.portkey.click`。DNS 在 Namecheap：DKIM `resend._domainkey.ob`；SPF 用 CNAME `rsend.ob` / `send.ob`，另在 `ob` 上加 `v=spf1 include:rsend.ob.portkey.click include:send.ob.portkey.click ~all`；DMARC `_dmarc.ob`（`p=none`）。根域名的 Namecheap 邮件转发 MX 保持不变，Mail Settings 不要改成 Custom MX。
+> - **送达实测**：Gmail 与 QQ 邮箱均进收件箱，显示正常；Gmail 显示 SPF、DKIM、DMARC 均为 PASS。QQ 邮箱起初提示"发件人无法验证"，原因是发件人域名 `ob.portkey.click` 本身没有 SPF 记录（QQ 不认可子域名上通过的 SPF），加上述 `ob` 的 SPF 后提示消失。QQ 仍会显示"由 …@rsend.ob.portkey.click 代发"，这是退信地址在子域名上的正常现象。163 邮箱没有测试（没有账号）。
+> - 凭据只放在不进 git 的 env 文件里（开发机为 `.env.smtp`），上线时放进服务器的 `.env`。
 
 - 验证码登录、会话、限流、配额、注册模式。
 - 观察相关 API、快照签名链接、快照域服务、单文件 HTML 下载。
@@ -772,7 +773,9 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 | 1 GB 内存不足 | OOM、服务中断 | 服务器不运行浏览器；容器内存上限；流式处理大文件；swap |
 | 用户不会用浏览器打印 PDF | PDF 体验差 | 页面内操作引导；单文件 HTML 始终可用；需求明确后再做服务端 Go 直出 PDF |
 | Resend 每日 100 封限额 | 通知延迟 | 摘要合并；优先级；Snooze 到次日；80% 用量告警；SMTP 抽象层便于更换服务商 |
-| 通知邮件被 QQ/163 判为垃圾邮件 | 用户收不到通知 | 配置 SPF/DKIM/DMARC；纯文本风格、无营销用语；引导用户添加白名单；Web 端可随时查看状态 |
+| 通知邮件被 QQ/163 判为垃圾邮件 | 用户收不到通知 | 已配置 SPF/DKIM/DMARC，Gmail、QQ 实测进收件箱；纯文本风格、无营销用语；引导用户添加白名单；Web 端可随时查看状态 |
+| 发件域名在 `.click` 顶级域名下 | `.click` 在反垃圾统计中属于滥用较多的顶级域名，部分邮箱可能更严格 | 目前实测正常；上线后关注 `email_log` 与用户反馈，进垃圾箱比例偏高时换用 `.com` 等域名专门发信（只需改 `MAIL_FROM` 与 DNS） |
+| 验证码每天 2 次的限制 | 用户输错或没收到时当天无法登录 | 会话 30 天滑动过期，平时很少需要重新登录；登录页显示剩余次数与重发倒计时；管理员可用 SQL 清除 `login_requests` 中的计数 |
 | 大陆访问香港站点慢或不稳定 | 体验差 | 前端资源体积小、长缓存；图片走本地缓存；必要时评估 CDN |
 | 滥用（邮件轰炸、批量提交） | 额度耗尽、资源耗尽 | 限流、配额、邀请制、PoW 验证（按需） |
 | 单机故障 | 数据丢失 | 每日数据库备份到 Wasabi，文件本身已在 Wasabi；恢复手册与演练 |

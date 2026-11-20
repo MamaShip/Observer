@@ -75,9 +75,11 @@ func result(err error) error {
 	case err == nil:
 		return nil
 	case errors.As(err, &snooze):
-		return river.JobSnooze(snooze.After)
+		return river.JobSnooze(max(snooze.After, 0))
 	case errors.As(err, &retry):
-		return river.JobSnooze(time.Until(retry.Time))
+		// JobSnooze panics on a negative duration; a time already past
+		// means run again now.
+		return river.JobSnooze(max(time.Until(retry.Time), 0))
 	case errors.Is(err, watch.ErrPermanent):
 		return river.JobCancel(err)
 	default:

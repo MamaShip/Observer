@@ -137,6 +137,28 @@ func TestNewSMTPValidates(t *testing.T) {
 	}
 }
 
+func TestSMTPCheck(t *testing.T) {
+	f := newFakeSMTP(t)
+	host, port, _ := net.SplitHostPort(f.ln.Addr().String())
+	p, _ := strconv.Atoi(port)
+	s, err := NewSMTP(SMTPConfig{Host: host, Port: p, From: "noreply@example.com", AllowPlaintext: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.messages) != 0 {
+		t.Error("Check sent a message")
+	}
+	f.ln.Close()
+	if err := s.Check(context.Background()); err == nil {
+		t.Error("Check succeeded with the server gone")
+	}
+}
+
 func TestRender(t *testing.T) {
 	m, err := Render("login", "u@example.com", LoginData{Code: "042917", ValidMinutes: 10, ServiceName: "折光<观察者>", ServiceURL: "https://x.example"})
 	if err != nil {

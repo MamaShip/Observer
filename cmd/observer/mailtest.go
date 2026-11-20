@@ -122,6 +122,7 @@ func loadEnvFile(path string) error {
 			return fmt.Errorf("%s:%d: not KEY=value", path, n)
 		}
 		k = strings.TrimSpace(strings.TrimPrefix(k, "export "))
+		v = strings.TrimSpace(v)
 		if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
 			v = v[1 : len(v)-1]
 		}

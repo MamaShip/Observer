@@ -238,6 +238,26 @@ func TestUserFlow(t *testing.T) {
 	bob := &client{t: t, addr: alice.addr}
 	bob.login(mailer, "bob@example.com")
 	bob.api(http.MethodPost, "/snapshots/"+snapID.String()+"/view-url", nil, http.StatusNotFound, nil)
+
+	// Bob's second code of the day (a minute later), then "try tomorrow".
+	if _, err := a.pool.Exec(ctx, `UPDATE login_requests SET last_at = last_at - interval '2 minutes' WHERE email = 'bob@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	var quota struct {
+		Remaining   int `json:"remaining"`
+		ResendAfter int `json:"resend_after"`
+	}
+	bob.api(http.MethodPost, "/auth/code", map[string]string{"email": "bob@example.com"}, http.StatusAccepted, &quota)
+	if quota.Remaining != 0 || quota.ResendAfter != 0 {
+		t.Errorf("last code of the day: %+v", quota)
+	}
+	if _, err := a.pool.Exec(ctx, `UPDATE login_requests SET last_at = last_at - interval '2 minutes' WHERE email = 'bob@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	if resp, b := bob.do(http.MethodPost, site, api.Prefix+"/auth/code", map[string]string{"email": "bob@example.com"}); resp.StatusCode != http.StatusTooManyRequests ||
+		!strings.Contains(string(b), "请明天再试") {
+		t.Errorf("third code of the day: %d %s", resp.StatusCode, b)
+	}
 	bob.api(http.MethodGet, "/watches/"+id.String(), nil, http.StatusNotFound, nil)
 
 	// The article is deleted: two checks confirm it, the sweep emails Alice.

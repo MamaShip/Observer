@@ -338,4 +338,41 @@ func TestSessionSlidingExpiry(t *testing.T) {
 	if err := s.Cleanup(ctx); err != nil {
 		t.Fatal(err)
 	}
+	var codes, reqs, sessions int
+	if err := s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM login_codes), (SELECT count(*) FROM login_requests), (SELECT count(*) FROM sessions)`).Scan(&codes, &reqs, &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if codes+reqs+sessions != 0 {
+		t.Errorf("after cleanup: %d codes, %d request counts, %d sessions", codes, reqs, sessions)
+	}
+}
+
+func TestLogoutAll(t *testing.T) {
+	ctx := context.Background()
+	s, sender, _, clk := newService(t, ModeOpen)
+	var tokens []string
+	for range 2 {
+		if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+			t.Fatal(err)
+		}
+		_, code := sender.last(t)
+		sess, err := s.Verify(ctx, "a@example.com", code, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tokens = append(tokens, sess.Token)
+		clk.advance(ResendAfter)
+	}
+	u, err := s.Authenticate(ctx, tokens[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.LogoutAll(ctx, u.ID); err != nil || n != 2 {
+		t.Fatalf("LogoutAll = %d, %v", n, err)
+	}
+	for _, tok := range tokens {
+		if _, err := s.Authenticate(ctx, tok); !errors.Is(err, ErrNoSession) {
+			t.Errorf("session survived LogoutAll: %v", err)
+		}
+	}
 }

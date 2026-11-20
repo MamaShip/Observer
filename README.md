@@ -21,14 +21,20 @@ make sqlc       # 修改 internal/store/queries 或迁移后重新生成代码
 make dev-down   # 停止本地 Postgres（保留数据）
 ```
 
+`make dev` 是开放注册模式，并且没有配置 SMTP：登录验证码只写进服务日志，从日志里复制即可。8080 端口被占用时可以换端口，例如 `HTTP_ADDR=127.0.0.1:18080 make dev`。
+
 其他子命令：
 
 ```sh
-observer migrate [up|status]   # 数据库迁移（serve 启动时也会自动执行）
-observer admin stats           # 统计
-observer probe <url>...        # 抓取诊断：看微信对某个链接返回了什么
-observer netcheck              # 测量到微信、Wasabi、SMTP 的网络路径
+observer migrate [up|status]       # 数据库迁移（serve 启动时也会自动执行）
+observer admin stats               # 统计
+observer admin invite <email>      # 邀请制下开通账号（另有 disable / enable / logout-all / submit / articles / check / export）
+observer mailtest -env-file F [-to ADDR]  # 验证 SMTP 配置；加 -to 发送示例邮件
+observer probe <url>...            # 抓取诊断：看微信对某个链接返回了什么
+observer netcheck                  # 测量到微信、Wasabi、SMTP 的网络路径
 ```
+
+API 的 OpenAPI 文档：`http://localhost:8080/api/v1/openapi.yaml`（或 `.json`）。
 
 配置全部来自环境变量，见 [plan.md §13.3](plan.md)。
 
