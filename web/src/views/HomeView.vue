@@ -68,6 +68,11 @@ const days = computed(() => session.site?.watch_days ?? 60)
   display: grid;
   gap: 12px;
 }
+/* The grid gap spaces the cards; the global .card + .card margin would
+   push the 2nd and 3rd down and make them shorter than the 1st. */
+.steps > .card {
+  margin: 0;
+}
 @media (min-width: 640px) {
   .steps {
     grid-template-columns: repeat(3, 1fr);
