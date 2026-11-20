@@ -28,6 +28,8 @@ func TestAnalyzeFixtures(t *testing.T) {
 	}{
 		{file: "alive_article.html", wantVerdict: VerdictAlive},
 		{file: "deleted_by_author.html", wantVerdict: VerdictDeleted, wantReason: ReasonAuthorDeleted, wantMessage: "该内容已被发布者删除"},
+		// The whole page as fetched on 2026-11-20 (tokens redacted), not trimmed.
+		{file: "deleted_by_author_full.html", wantVerdict: VerdictDeleted, wantReason: ReasonAuthorDeleted, wantMessage: "该内容已被发布者删除"},
 		{file: "deleted_violation.html", wantVerdict: VerdictDeleted, wantReason: ReasonViolation, wantMessage: "此内容因违规无法查看"},
 		{file: "blocked_verify.html", wantVerdict: VerdictBlocked},
 	}
@@ -169,7 +171,8 @@ func TestAnalyzeHead(t *testing.T) {
 		t.Fatalf("non-article head accepted (rule=%s)", r.Rule)
 	}
 	for file, want := range map[string]Verdict{
-		"deleted_by_author.html": VerdictDeleted, "deleted_violation.html": VerdictDeleted, "blocked_verify.html": VerdictBlocked,
+		"deleted_by_author.html": VerdictDeleted, "deleted_by_author_full.html": VerdictDeleted,
+		"deleted_violation.html": VerdictDeleted, "blocked_verify.html": VerdictBlocked,
 	} {
 		if r := AnalyzeHead(200, "", fixture(t, file)); r.Verdict != want {
 			t.Errorf("%s: %s, want %s", file, r.Verdict, want)

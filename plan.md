@@ -940,6 +940,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - 图片（`mmbiz.qpic.cn`）带与不带 Referer 都返回 200，内容一致。
 - 删除页和验证页中**没有任何 `og:type` 标签**，与 `head` 方式的前提一致（仍缺投诉、封号样本）。
 - 样本的 `pass_ticket`、`appmsg_token` 等已脱敏。
+- **2026-11-20 补充**：从线上服务器（v0.2.0）用 `observer probe` 复核了另一篇作者删除的文章，check / full / head 三种方式都判为 deleted / author_deleted（规则 `message_deleted`），传输量与上表完全相同（16.3 / 8.6 / 16.3 KB），说明作者删除页是不含文章信息的通用页面：没有标题，也没有 Open Graph 标签。这份完整页面没有精简（32 KB，令牌已脱敏），作为 `deleted_by_author_full.html` 加入样本测试。仍缺投诉、封号样本。
 
 **网络**
 
