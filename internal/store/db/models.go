@@ -38,6 +38,18 @@ type Asset struct {
 	CreatedAt   time.Time
 }
 
+type Capture struct {
+	ID         uuid.UUID
+	ArticleID  uuid.UUID
+	RawKey     string
+	Url        string
+	CapturedAt time.Time
+	Status     string
+	ErrorCode  *string
+	Error      *string
+	UpdatedAt  time.Time
+}
+
 type CheckRun struct {
 	ID          int64
 	ArticleID   uuid.UUID

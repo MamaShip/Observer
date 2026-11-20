@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import BarChart from '@/components/admin/BarChart.vue'
-import { articleStatusText, issueDetail, issueLabel, shortDay } from '@/lib/admin'
+import { articleStatusText, captureStateText, issueDetail, issueLabel, shortDay } from '@/lib/admin'
 import { formatBytes, formatPercent } from '@/lib/format'
 
 describe('format', () => {
@@ -26,11 +26,14 @@ describe('admin wording', () => {
   it('names statuses and issues', () => {
     expect(articleStatusText('dormant')).toBe('休眠')
     expect(articleStatusText('new-state')).toBe('new-state')
-    for (const code of ['no_snapshot', 'missing_images', 'short_text', 'failing_checks']) {
+    for (const code of ['backup_failed', 'no_snapshot', 'missing_images', 'short_text', 'failing_checks']) {
       expect(issueLabel(code)).not.toBe(code)
       expect(issueDetail(code)).toMatch(/。$/)
     }
     expect(shortDay('2026-11-20')).toBe('11-20')
+    expect(captureStateText('done')).toBe('已生成')
+    expect(captureStateText('failed', 'no_content')).toContain('图片或视频消息')
+    expect(captureStateText('failed', 'new-code')).toBe('失败：new-code')
   })
 })
 

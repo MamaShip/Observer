@@ -158,10 +158,9 @@ func (s *Service) resolveAlive(ctx context.Context, pending db.Article, args Res
 			return err
 		}
 		needSnapshot = true
-		_, err = s.jobs.InsertTx(ctx, tx, SnapshotArgs{
+		return s.queueSnapshot(ctx, tx, SnapshotArgs{
 			ArticleID: target.ID, SnapshotID: snapID, URL: checkURL, CapturedAt: f.at,
-		}, nil)
-		return err
+		}, rawKey)
 	})
 	if err != nil || needSnapshot {
 		return err

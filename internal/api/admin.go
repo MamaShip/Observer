@@ -312,14 +312,19 @@ type AdminArticle struct {
 	Watchers            int            `json:"watchers"`
 	Snapshots           int            `json:"snapshots"`
 	Latest              *AdminSnapshot `json:"latest,omitempty" doc:"The newest backup"`
-	Issues              []string       `json:"issues" doc:"no_snapshot, missing_images, short_text, failing_checks"`
+	Issues              []string       `json:"issues" doc:"backup_failed, no_snapshot, missing_images, short_text, failing_checks"`
 }
 
-// articleIssues flags a backup that may be incomplete.
-func articleIssues(status string, latest *AdminSnapshot, failures int) []string {
+// articleIssues flags a backup that may be incomplete. captureStatus is the
+// newest capture's (pending, done, failed or "" for none).
+func articleIssues(status string, latest *AdminSnapshot, failures int, captureStatus string) []string {
 	issues := []string{}
+	if captureStatus == "failed" {
+		issues = append(issues, "backup_failed")
+	}
 	if latest == nil {
-		if status == "alive" || status == "deleted" || status == "dormant" {
+		// backup_failed already says why there is none.
+		if captureStatus != "failed" && (status == "alive" || status == "deleted" || status == "dormant") {
 			issues = append(issues, "no_snapshot")
 		}
 	} else {
@@ -390,6 +395,17 @@ type AdminArticleDetail struct {
 	Checks        []AdminCheck    `json:"checks" doc:"Newest first, at most 50"`
 	Watchers      []AdminWatcher  `json:"watchers"`
 	CanResnapshot bool            `json:"can_resnapshot" doc:"The article is online, so a new backup can be made"`
+	Captures      []AdminCapture  `json:"captures" doc:"Pages fetched to be backed up, newest first, at most 50"`
+}
+
+// AdminCapture is a page fetched to be backed up, and what became of it.
+type AdminCapture struct {
+	ID         uuid.UUID `json:"id" doc:"Also the snapshot's id once built"`
+	CapturedAt time.Time `json:"captured_at"`
+	Status     string    `json:"status" enum:"pending,done,failed"`
+	ErrorCode  string    `json:"error_code,omitempty" doc:"no_content (no article body: picture or video posts) or error"`
+	Error      string    `json:"error,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type adminArticleOutput struct{ Body AdminArticleDetail }
@@ -571,7 +587,7 @@ func (h *handlers) registerAdmin(g huma.API) {
 				a.Latest = &AdminSnapshot{ID: r.SnapshotID, CapturedAt: r.CapturedAt, Images: int(r.AssetCount),
 					MissingImages: int(r.MissingAssets), TextRunes: intPtr(r.TextRunes)}
 			}
-			a.Issues = articleIssues(a.Status, a.Latest, a.ConsecutiveFailures)
+			a.Issues = articleIssues(a.Status, a.Latest, a.ConsecutiveFailures, r.CaptureStatus)
 			out.Body.Items = append(out.Body.Items, a)
 		}
 		return out, nil
@@ -600,7 +616,7 @@ func (h *handlers) registerAdmin(g huma.API) {
 				NextCheckAt: art.NextCheckAt,
 			},
 			Failures: int(art.ConsecutiveFailures), FirstSeenAt: art.FirstSeenAt,
-			Snapshots: []AdminSnapshot{}, Checks: []AdminCheck{}, Watchers: []AdminWatcher{},
+			Snapshots: []AdminSnapshot{}, Checks: []AdminCheck{}, Watchers: []AdminWatcher{}, Captures: []AdminCapture{},
 			CanResnapshot: (art.Status == "alive" || art.Status == "dormant") && art.CanonicalUrl != nil,
 		}
 		snaps, err := q.ListSnapshots(ctx, art.ID)
@@ -615,7 +631,19 @@ func (h *handlers) registerAdmin(g huma.API) {
 		if len(d.Snapshots) > 0 {
 			latest = &d.Snapshots[0]
 		}
-		d.Issues = articleIssues(art.Status, latest, d.Failures)
+		caps, err := q.ListCaptures(ctx, art.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range caps {
+			d.Captures = append(d.Captures, AdminCapture{ID: c.ID, CapturedAt: c.CapturedAt, Status: c.Status,
+				ErrorCode: str(c.ErrorCode), Error: str(c.Error), UpdatedAt: c.UpdatedAt})
+		}
+		captureStatus := ""
+		if len(caps) > 0 {
+			captureStatus = caps[0].Status
+		}
+		d.Issues = articleIssues(art.Status, latest, d.Failures, captureStatus)
 		checks, err := q.AdminCheckRuns(ctx, db.AdminCheckRunsParams{ArticleID: art.ID, MaxRows: 50})
 		if err != nil {
 			return nil, err
@@ -650,6 +678,25 @@ func (h *handlers) registerAdmin(g huma.API) {
 			return nil, huma.Error404NotFound("没有这篇文章。")
 		case errors.Is(err, watch.ErrNotOnline):
 			return nil, huma.Error409Conflict("文章已不在线（或从未抓取成功），无法重新备份。")
+		}
+		return nil, err
+	})
+
+	huma.Register(g, huma.Operation{
+		OperationID: "admin-rebuild-capture", Method: http.MethodPost, Path: "/admin/captures/{id}/rebuild",
+		Summary: "Build a failed backup again from its stored page", Tags: tags, Security: loggedIn,
+		DefaultStatus: http.StatusAccepted,
+		Description:   "Queued. WeChat is not contacted, so this works after the article was deleted.",
+	}, func(ctx context.Context, in *idInput) (*struct{}, error) {
+		if err := requireAdmin(ctx); err != nil {
+			return nil, err
+		}
+		err := h.d.Watch.RebuildCapture(ctx, in.ID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, huma.Error404NotFound("没有这次抓取。")
+		case errors.Is(err, watch.ErrCaptureDone):
+			return nil, huma.Error409Conflict("这次抓取已经生成了备份。")
 		}
 		return nil, err
 	})

@@ -133,7 +133,7 @@ type snapshotWorker struct {
 }
 
 func (w *snapshotWorker) Work(ctx context.Context, job *river.Job[watch.SnapshotArgs]) error {
-	return result(w.svc.Snapshot(ctx, job.Args))
+	return result(w.svc.Snapshot(ctx, job.Args, job.Attempt >= job.MaxAttempts))
 }
 
 // A snapshot downloads up to 300 images one after another.

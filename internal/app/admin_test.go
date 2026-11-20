@@ -201,10 +201,58 @@ func TestAdminConsole(t *testing.T) {
 		t.Errorf("the new backup should be complete: %+v, issues %v", d.Snapshots[0], d.Issues)
 	}
 
+	if len(d.Captures) != 2 || d.Captures[0].Status != "done" || d.Captures[0].ID != d.Snapshots[0].ID {
+		t.Fatalf("captures = %+v", d.Captures)
+	}
+	var mine api.WatchDetail
+	alice.api(http.MethodGet, "/watches/"+w.Watch.ID.String(), nil, 200, &mine)
+	if mine.BackupStatus != "ready" {
+		t.Errorf("backup status = %s", mine.BackupStatus)
+	}
+
 	if _, err := a.pool.Exec(ctx, `UPDATE articles SET status = 'deleted'`); err != nil {
 		t.Fatal(err)
 	}
 	alice.api(http.MethodPost, "/admin/articles/"+articleID.String()+"/resnapshot", nil, http.StatusConflict, nil)
+
+	// A failed build is flagged, and rebuilt from the stored page although
+	// the article is gone.
+	failed := d.Captures[0].ID
+	if _, err := a.pool.Exec(ctx, `UPDATE captures SET status = 'failed', error_code = 'error', error = 'boom' WHERE id = $1`, failed); err != nil {
+		t.Fatal(err)
+	}
+	alice.api(http.MethodGet, "/admin/articles?issues=true", nil, 200, &arts)
+	if len(arts.Items) != 1 || !strings.Contains(strings.Join(arts.Items[0].Issues, ","), "backup_failed") {
+		t.Errorf("failed backup not flagged: %+v", arts.Items)
+	}
+	alice.api(http.MethodPost, "/admin/captures/"+failed.String()+"/rebuild", nil, http.StatusAccepted, nil)
+	d.Captures[0].Status = "" // fields absent from a response keep their old values
+	for deadline := time.Now().Add(30 * time.Second); d.Captures[0].Status != "done"; {
+		if time.Now().After(deadline) {
+			t.Fatalf("not rebuilt: %+v", d.Captures[0])
+		}
+		time.Sleep(200 * time.Millisecond)
+		alice.api(http.MethodGet, "/admin/articles/"+articleID.String(), nil, 200, &d)
+	}
+	alice.api(http.MethodPost, "/admin/captures/"+failed.String()+"/rebuild", nil, http.StatusConflict, nil)
+	alice.api(http.MethodPost, "/admin/captures/"+articleID.String()+"/rebuild", nil, http.StatusNotFound, nil)
+
+	// A watch whose article could not be backed up says so, instead of
+	// "backing up" for ever.
+	var noBody api.WatchDetail
+	if err := a.pool.QueryRow(ctx, `
+		WITH art AS (INSERT INTO articles (status, title) VALUES ('alive', '图片消息') RETURNING id),
+		     cap AS (INSERT INTO captures (id, article_id, raw_key, url, captured_at, status, error_code, error)
+		             SELECT uuidv7(), id, 'x', 'https://mp.weixin.qq.com/s/p', now(), 'failed', 'no_content', 'no #js_content' FROM art)
+		INSERT INTO watches (user_id, article_id, submitted_url, status, expires_at)
+		SELECT u.id, art.id, 'https://mp.weixin.qq.com/s/p', 'active', now() + interval '60 days'
+		FROM art, users u WHERE u.email = 'alice@example.com' RETURNING id`).Scan(&noBody.Watch.ID); err != nil {
+		t.Fatal(err)
+	}
+	alice.api(http.MethodGet, "/watches/"+noBody.Watch.ID.String(), nil, 200, &noBody)
+	if noBody.BackupStatus != "failed" || noBody.BackupError != "no_content" || len(noBody.Snapshots) != 0 {
+		t.Errorf("no-body post: %s/%s", noBody.BackupStatus, noBody.BackupError)
+	}
 
 	cancel()
 	if err := <-done; err != nil {

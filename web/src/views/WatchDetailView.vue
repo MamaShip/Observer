@@ -35,7 +35,7 @@ const w = computed(() => detail.value?.watch)
 const article = computed(() => w.value?.article)
 const deleted = computed(() => w.value?.end_reason === 'deleted' || article.value?.status === 'deleted')
 const waitingForBackup = computed(
-  () => !!w.value && (w.value.status === 'resolving' || (isOpen(w.value) && !detail.value?.snapshots.length)),
+  () => !!w.value && (w.value.status === 'resolving' || detail.value?.backup_status === 'pending'),
 )
 
 async function load() {
@@ -230,6 +230,13 @@ async function stop() {
     <section class="card stack">
       <h2>备份</h2>
       <p v-if="waitingForBackup" class="muted"><span class="spinner" /> 正在备份，通常一两分钟内完成，页面会自动更新。</p>
+      <div v-else-if="detail.backup_status === 'failed'" class="notice notice-warn">
+        <p v-if="detail.backup_error === 'no_content'">
+          这篇文章是图片或视频形式的消息，没有正文区域，暂时无法生成备份。原始页面已经保存，以后支持这种格式时可以补做备份。
+        </p>
+        <p v-else>生成备份时多次出错，暂时没有备份。原始页面已经保存，管理员处理后可以重新生成。</p>
+        <p v-if="isOpen(w)">服务仍会照常检查文章是否被删除。</p>
+      </div>
       <p v-else-if="!detail.snapshots.length" class="muted">没有备份。</p>
 
       <template v-if="selected">

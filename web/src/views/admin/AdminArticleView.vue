@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ApiError, api, call, messageOf, type AdminArticleDetail, type AdminSnapshot } from '@/api/client'
 import AdminNav from '@/components/admin/AdminNav.vue'
-import { articleStatusText, issueDetail, issueLabel } from '@/lib/admin'
+import { articleStatusText, captureStateText, issueDetail, issueLabel } from '@/lib/admin'
 import { formatBytes, formatDate, formatDateTime, formatNumber, formatRelative } from '@/lib/format'
 import { deletedReasonText } from '@/lib/status'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -90,6 +90,35 @@ async function resnapshot() {
   }
 }
 onBeforeUnmount(() => clearTimeout(poll))
+
+// Rebuild a failed backup from its stored page (WeChat is not contacted).
+const rebuilding = ref('')
+async function rebuild(captureId: string) {
+  rebuilding.value = captureId
+  error.value = ''
+  try {
+    await call(api.POST('/api/v1/admin/captures/{id}/rebuild', { params: { path: { id: captureId } } }))
+    notice.value = '已排队，从保存的原始页面重新生成备份。'
+    let tries = 0
+    const tick = async () => {
+      await load()
+      const c = d.value?.captures.find((x) => x.id === captureId)
+      if (c && c.status !== 'pending') {
+        notice.value = c.status === 'done' ? '备份已重新生成。' : '重新生成仍然失败，原因见下表。'
+        rebuilding.value = ''
+      } else if (++tries < 60) {
+        poll = setTimeout(tick, 3000)
+      } else {
+        notice.value = '还在生成中，请稍后刷新。'
+        rebuilding.value = ''
+      }
+    }
+    poll = setTimeout(tick, 2000)
+  } catch (e) {
+    error.value = messageOf(e)
+    rebuilding.value = ''
+  }
+}
 </script>
 
 <template>
@@ -163,6 +192,30 @@ onBeforeUnmount(() => clearTimeout(poll))
       </template>
     </section>
 
+    <section v-if="d.captures.length" class="card stack">
+      <h2>抓取记录（{{ d.captures.length }}）</h2>
+      <p class="muted small">每次为备份抓取的原始页面及其处理结果。失败的可以在修复原因后从原始页面重建，不需要再访问微信，文章已删除也可以。</p>
+      <div class="table-wrap">
+        <table class="small">
+          <thead>
+            <tr><th>抓取时间</th><th>结果</th><th>详情</th><th /></tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in d.captures" :key="c.id">
+              <td>{{ formatDateTime(c.captured_at) }}</td>
+              <td :class="{ warn: c.status === 'failed' }">{{ captureStateText(c.status, c.error_code) }}</td>
+              <td class="muted detail" :title="c.error">{{ c.error || (c.status === 'pending' ? `更新于 ${formatRelative(c.updated_at)}` : '—') }}</td>
+              <td>
+                <button v-if="c.status !== 'done'" type="button" class="btn-link" :disabled="!!rebuilding" @click="rebuild(c.id)">
+                  <span v-if="rebuilding === c.id" class="spinner" aria-hidden="true" /> 重建
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card stack">
       <h2>观察者（{{ d.watchers.length }}）</h2>
       <ul class="watchers small">
@@ -198,6 +251,11 @@ onBeforeUnmount(() => clearTimeout(poll))
 </template>
 
 <style scoped>
+.detail {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .back {
   margin: 0 0 12px;
   font-size: 0.9rem;

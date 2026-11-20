@@ -58,6 +58,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/captures/{id}/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build a failed backup again from its stored page
+         * @description Queued. WeChat is not contacted, so this works after the article was deleted.
+         */
+        post: operations["admin-rebuild-capture"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/overview": {
         parameters: {
             query?: never;
@@ -385,7 +405,7 @@ export interface components {
             /** Format: date-time */
             first_seen_at: string;
             id: string;
-            /** @description no_snapshot, missing_images, short_text, failing_checks */
+            /** @description backup_failed, no_snapshot, missing_images, short_text, failing_checks */
             issues: string[];
             /** Format: date-time */
             last_checked_at?: string;
@@ -403,6 +423,8 @@ export interface components {
             article: components["schemas"]["Article"];
             /** @description The article is online, so a new backup can be made */
             can_resnapshot: boolean;
+            /** @description Pages fetched to be backed up, newest first, at most 50 */
+            captures: components["schemas"]["AdminCapture"][];
             /** @description Newest first, at most 50 */
             checks: components["schemas"]["AdminCheck"][];
             /** Format: int64 */
@@ -417,6 +439,19 @@ export interface components {
         AdminArticlesOutputBody: {
             items: components["schemas"]["AdminArticle"][];
             next_cursor?: string;
+        };
+        AdminCapture: {
+            /** Format: date-time */
+            captured_at: string;
+            error?: string;
+            /** @description no_content (no article body: picture or video posts) or error */
+            error_code?: string;
+            /** @description Also the snapshot's id once built */
+            id: string;
+            /** @enum {string} */
+            status: "pending" | "done" | "failed";
+            /** Format: date-time */
+            updated_at: string;
         };
         AdminCheck: {
             /** Format: date-time */
@@ -923,6 +958,13 @@ export interface components {
             submitted_url: string;
         };
         WatchDetail: {
+            /** @description With failed: no_content (picture or video post, no article body) or error */
+            backup_error?: string;
+            /**
+             * @description ready: there is a backup; pending: one is being made; failed: none could be made from the latest page; none: no page fetched yet (or the article was gone when submitted)
+             * @enum {string}
+             */
+            backup_status: "none" | "pending" | "ready" | "failed";
             /** @description Most recent first, at most 20 */
             checks: components["schemas"]["Check"][];
             /** @description Empty while the backup is being made */
@@ -1007,6 +1049,35 @@ export interface operations {
         };
     };
     "admin-resnapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-rebuild-capture": {
         parameters: {
             query?: never;
             header?: never;

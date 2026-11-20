@@ -10,6 +10,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/MamaShip/Observer/internal/blob"
+	"github.com/MamaShip/Observer/internal/store/db"
 	"github.com/MamaShip/Observer/internal/wechat"
 )
 
@@ -77,12 +78,43 @@ func (s *Service) Resnapshot(ctx context.Context, args ResnapshotArgs) error {
 	if err != nil {
 		return err
 	}
-	if err := s.putGzip(ctx, blob.SnapshotKey(snapID.String(), "raw.html.gz"), f.page.Body); err != nil {
+	rawKey := blob.SnapshotKey(snapID.String(), "raw.html.gz")
+	if err := s.putGzip(ctx, rawKey, f.page.Body); err != nil {
 		return fmt.Errorf("store raw page: %w", err)
 	}
-	_, err = s.jobs.Insert(ctx, SnapshotArgs{ArticleID: art.ID, SnapshotID: snapID, URL: url, CapturedAt: f.at}, nil)
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return s.queueSnapshot(ctx, tx, SnapshotArgs{ArticleID: art.ID, SnapshotID: snapID, URL: url, CapturedAt: f.at}, rawKey)
+	})
 	if err == nil {
 		s.log.Info("new snapshot queued", "article", art.ID, "snapshot", snapID)
 	}
 	return err
+}
+
+// ErrCaptureDone means the capture already has its snapshot.
+var ErrCaptureDone = errors.New("this capture already has its snapshot")
+
+// RebuildCapture queues the build of a capture's snapshot again, from the
+// raw page stored when it was fetched. WeChat is not contacted, so this works
+// after the article was deleted; use it once the cause of the failure is
+// fixed. It returns pgx.ErrNoRows for an unknown capture.
+func (s *Service) RebuildCapture(ctx context.Context, captureID uuid.UUID) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		c, err := q.GetCaptureForUpdate(ctx, captureID)
+		if err != nil {
+			return err
+		}
+		if c.Status == "done" {
+			return ErrCaptureDone
+		}
+		if err := q.RetryCapture(ctx, db.RetryCaptureParams{ID: c.ID, Now: s.now()}); err != nil {
+			return err
+		}
+		_, err = s.jobs.InsertTx(ctx, tx, SnapshotArgs{ArticleID: c.ArticleID, SnapshotID: c.ID, URL: c.Url, CapturedAt: c.CapturedAt}, nil)
+		if err == nil {
+			s.log.Info("snapshot rebuild queued", "article", c.ArticleID, "capture", c.ID)
+		}
+		return err
+	})
 }

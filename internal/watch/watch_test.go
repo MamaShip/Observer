@@ -41,9 +41,16 @@ func fixture(t *testing.T, name string) []byte {
 
 // fakeWeb serves pages by URL; every image URL returns a distinct PNG.
 type fakeWeb struct {
-	mu     sync.Mutex
-	pages  map[string][]byte
-	assets int
+	mu       sync.Mutex
+	pages    map[string][]byte
+	assets   int
+	pageGets int
+}
+
+func (w *fakeWeb) pageFetches() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.pageGets
 }
 
 func (w *fakeWeb) set(url string, body []byte) {
@@ -57,6 +64,7 @@ type fakeSession struct{ w *fakeWeb }
 func (s fakeSession) FetchPage(_ context.Context, url string, _ wechat.FetchMode) (*wechat.Page, error) {
 	s.w.mu.Lock()
 	defer s.w.mu.Unlock()
+	s.w.pageGets++
 	body, ok := s.w.pages[url]
 	if !ok {
 		return nil, errors.New("connection refused: " + url)
@@ -202,7 +210,7 @@ func (e *env) aliveArticle(user uuid.UUID) (db.Watch, db.Article) {
 		e.t.Fatal(err)
 	}
 	for _, s := range take[SnapshotArgs](e.jobs) {
-		if err := e.svc.Snapshot(e.ctx, s); err != nil {
+		if err := e.svc.Snapshot(e.ctx, s, false); err != nil {
 			e.t.Fatal(err)
 		}
 	}
@@ -251,7 +259,7 @@ func TestSubmitResolveSnapshot(t *testing.T) {
 		t.Fatalf("snapshot jobs = %+v", snaps)
 	}
 	for range 2 { // idempotent
-		if err := e.svc.Snapshot(e.ctx, snaps[0]); err != nil {
+		if err := e.svc.Snapshot(e.ctx, snaps[0], false); err != nil {
 			t.Fatal(err)
 		}
 	}

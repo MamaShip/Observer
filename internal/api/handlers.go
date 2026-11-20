@@ -264,9 +264,11 @@ type Check struct {
 
 // WatchDetail is a watch with its article's backups and recent checks.
 type WatchDetail struct {
-	Watch     Watch      `json:"watch"`
-	Snapshots []Snapshot `json:"snapshots" doc:"Empty while the backup is being made"`
-	Checks    []Check    `json:"checks" doc:"Most recent first, at most 20"`
+	Watch        Watch      `json:"watch"`
+	BackupStatus string     `json:"backup_status" enum:"none,pending,ready,failed" doc:"ready: there is a backup; pending: one is being made; failed: none could be made from the latest page; none: no page fetched yet (or the article was gone when submitted)"`
+	BackupError  string     `json:"backup_error,omitempty" doc:"With failed: no_content (picture or video post, no article body) or error"`
+	Snapshots    []Snapshot `json:"snapshots" doc:"Empty while the backup is being made"`
+	Checks       []Check    `json:"checks" doc:"Most recent first, at most 20"`
 }
 
 func str(p *string) string {
@@ -479,10 +481,20 @@ func (h *handlers) detail(ctx context.Context, userID, watchID uuid.UUID) (*Watc
 	d := &WatchDetail{
 		Watch: Watch{ID: w.ID, Status: w.Status, EndReason: str(w.EndReason), SubmittedURL: w.SubmittedUrl,
 			CreatedAt: w.CreatedAt, ExpiresAt: w.ExpiresAt, EndedAt: w.EndedAt},
-		Snapshots: []Snapshot{}, Checks: []Check{},
+		Snapshots: []Snapshot{}, Checks: []Check{}, BackupStatus: "none",
 	}
 	if w.ArticleID == nil {
 		return d, nil
+	}
+	state, err := h.d.Queries.BackupState(ctx, *w.ArticleID)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case state.Snapshots > 0:
+		d.BackupStatus = "ready"
+	case state.LatestStatus == "pending" || state.LatestStatus == "failed":
+		d.BackupStatus, d.BackupError = state.LatestStatus, state.LatestError
 	}
 	d.Watch.Article = &Article{
 		ID: *w.ArticleID, Status: str(r.ArticleStatus), Title: str(r.Title), AccountName: str(r.AccountName),

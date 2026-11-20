@@ -34,6 +34,9 @@ type Querier interface {
 	// AttemptLoginCode counts one guess against the address's latest code and
 	// returns it, unless that code expired, was used or has no guesses left.
 	AttemptLoginCode(ctx context.Context, arg AttemptLoginCodeParams) (AttemptLoginCodeRow, error)
+	// BackupState is the newest capture's state, and how many snapshots an
+	// article has.
+	BackupState(ctx context.Context, articleID uuid.UUID) (BackupStateRow, error)
 	// ClaimLoginRequest counts one code for (email, day). It returns no row,
 	// counting nothing, when the day's limit is reached or the last code was
 	// requested after resend_before.
@@ -51,6 +54,7 @@ type Querier interface {
 	// (possibly one a concurrent submission created a moment ago).
 	CreateAlias(ctx context.Context, arg CreateAliasParams) (int64, error)
 	CreateArticle(ctx context.Context) (Article, error)
+	CreateCapture(ctx context.Context, arg CreateCaptureParams) error
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
@@ -72,7 +76,9 @@ type Querier interface {
 	EndActiveWatchesDeleted(ctx context.Context, arg EndActiveWatchesDeletedParams) ([]EndActiveWatchesDeletedRow, error)
 	// Expiry is never emailed, so the watch is announced as it ends.
 	ExpireWatches(ctx context.Context, now time.Time) ([]ExpireWatchesRow, error)
+	FailCapture(ctx context.Context, arg FailCaptureParams) error
 	FailResolvingWatches(ctx context.Context, arg FailResolvingWatchesParams) (int64, error)
+	FinishCapture(ctx context.Context, arg FinishCaptureParams) error
 	FinishEmailLog(ctx context.Context, arg FinishEmailLogParams) error
 	// ForgetInvites runs when an account is deleted: rows carrying its address
 	// go, and so do the rows it sent that created no account.
@@ -82,6 +88,8 @@ type Querier interface {
 	GetArticleByKeyForUpdate(ctx context.Context, canonicalKey *string) (Article, error)
 	GetArticleForUpdate(ctx context.Context, id uuid.UUID) (Article, error)
 	GetAsset(ctx context.Context, sha256 []byte) (Asset, error)
+	GetCapture(ctx context.Context, id uuid.UUID) (Capture, error)
+	GetCaptureForUpdate(ctx context.Context, id uuid.UUID) (Capture, error)
 	GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (Invite, error)
 	GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error)
 	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
@@ -98,6 +106,7 @@ type Querier interface {
 	// InsertUser creates an account, or returns no row if the address has one.
 	InsertUser(ctx context.Context, email string) (User, error)
 	ListArticles(ctx context.Context, maxRows int32) ([]ListArticlesRow, error)
+	ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capture, error)
 	ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID) ([]Invite, error)
 	ListRecentCheckRuns(ctx context.Context, arg ListRecentCheckRunsParams) ([]ListRecentCheckRunsRow, error)
 	ListSnapshots(ctx context.Context, articleID uuid.UUID) ([]Snapshot, error)
@@ -127,6 +136,7 @@ type Querier interface {
 	// extended, an expired or stopped one is watched again.
 	RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, error)
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
+	RetryCapture(ctx context.Context, arg RetryCaptureParams) error
 	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
 	// forgets the address.
 	ScrubEmailLog(ctx context.Context, arg ScrubEmailLogParams) error

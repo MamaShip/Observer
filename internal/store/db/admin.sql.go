@@ -171,18 +171,24 @@ SELECT a.id, a.status, a.title, a.account_name, a.first_seen_at, a.last_checked_
   coalesce(ls.captured_at, a.first_seen_at)::timestamptz AS captured_at,
   coalesce(ls.asset_count, 0)::int AS asset_count,
   coalesce(ls.missing_assets, 0)::int AS missing_assets,
-  ls.text_runes
+  ls.text_runes,
+  coalesce(lc.status, '')::text AS capture_status
 FROM articles a
 LEFT JOIN (
   SELECT DISTINCT ON (s.article_id) s.article_id, s.id, s.captured_at, s.asset_count, s.missing_assets, s.text_runes
   FROM snapshots s ORDER BY s.article_id, s.captured_at DESC
 ) ls ON ls.article_id = a.id
+LEFT JOIN (
+  SELECT DISTINCT ON (c.article_id) c.article_id, c.status
+  FROM captures c ORDER BY c.article_id, c.captured_at DESC, c.id DESC
+) lc ON lc.article_id = a.id
 WHERE ($1::text IS NULL OR a.status = $1::text)
   AND (NOT $2::bool OR
        (ls.id IS NULL AND a.status IN ('alive', 'deleted', 'dormant'))
        OR ls.missing_assets > 0
        OR ls.text_runes < 100
-       OR a.consecutive_failures >= 3)
+       OR a.consecutive_failures >= 3
+       OR lc.status = 'failed')
   AND ($3::text IS NULL OR a.title ILIKE '%' || $3::text || '%'
        OR a.account_name ILIKE '%' || $3::text || '%')
   AND ($4::uuid IS NULL OR a.id < $4::uuid)
@@ -216,6 +222,7 @@ type AdminListArticlesRow struct {
 	AssetCount          int32
 	MissingAssets       int32
 	TextRunes           *int32
+	CaptureStatus       string
 }
 
 // AdminListArticles lists articles with their latest snapshot. With
@@ -255,6 +262,7 @@ func (q *Queries) AdminListArticles(ctx context.Context, arg AdminListArticlesPa
 			&i.AssetCount,
 			&i.MissingAssets,
 			&i.TextRunes,
+			&i.CaptureStatus,
 		); err != nil {
 			return nil, err
 		}
