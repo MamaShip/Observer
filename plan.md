@@ -575,21 +575,21 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 
 - 常态总占用约 400–600 MB，1 GB 内存有余量。仍建议配置 1 GB swap，防止偶发峰值导致 OOM。
 - **M0 实测提醒**：VPS 实际可见内存 913 MB，部署前已用 494 MB、可用约 420 MB，且没有 swap。
-- **与 xray / x-ui 共存**（用户自用代理，2026-11-19 核实）：x-ui 约 84 MB、xray 约 25 MB；其余为系统服务，其中 journald 约 55 MB、fail2ban 约 39 MB、multipathd 约 27 MB、udisks2 约 10 MB、ModemManager 约 9 MB。
+- **x-ui / xray 已停止**（2026-11-20）：原先约占 110 MB，现已腾出。其余为系统服务，其中 journald 约 55 MB、fail2ban 约 39 MB、multipathd 约 27 MB、udisks2 约 10 MB、ModemManager 约 9 MB。2026-11-20 实测已用 392 MB、可用约 520 MB（含缓存）。
   - 停用 VPS 上用不到的 multipathd、udisks2、ModemManager，并限制 journald 日志大小，可省约 50–100 MB。
   - 配置 **2 GB swap**（`vm.swappiness=10`）。
   - 加上 dockerd/containerd（约 70 MB）后，上表各容器合计 220–380 MB，物理内存仍然偏紧。M5 上线后按实测调整：必要时把 Postgres 的 `shared_buffers` 降到 64–96 MB，容器上限降到 256 MB。
 
-### 13.1.1 端口规划（与 xray / x-ui 共存）
+### 13.1.1 端口规划
+
+2026-11-20：用户已停掉 x-ui（xray 随之停止），并确定**这台服务器优先保障 Observer**，部署时不再为 x-ui / xray 让路（它们的文件保留，只是不运行）。
 
 | 端口 | 占用者 | 说明 |
 |---|---|---|
 | 22/tcp | sshd | 不变 |
-| 80/tcp | **caddy** | ACME HTTP-01 与跳转 HTTPS（当前空闲） |
-| 443/tcp | **caddy** | 主站与 `snap.` 子域。原来由 xray 占用，**部署前需把 xray 入站移到其他端口** |
-| 443/udp | caddy（可选） | HTTP/3，当前空闲 |
-| 52154/tcp、2096/tcp | x-ui | 面板与订阅服务，不变；建议面板只监听 127.0.0.1，通过 SSH 隧道访问 |
-| 127.0.0.1:62789 | xray API | 仅本机，不冲突 |
+| 80/tcp | **caddy** | ACME HTTP-01 与跳转 HTTPS |
+| 443/tcp | **caddy** | 主站与 `snap.` 子域 |
+| 443/udp | caddy（可选） | HTTP/3 |
 
 app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口。
 - app 设置 `GOMEMLIMIT=200MiB`；图片下载按流处理，不在内存中整体缓存大文件；单文件 HTML 也以流式输出。
