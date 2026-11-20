@@ -78,9 +78,11 @@ jobs:
 
       - run: npm ci
 
+      # From the repository root: web/ has its own go.mod (it keeps Go
+      # tooling out of node_modules), so `go run ../cmd/...` fails from here.
       - name: API types are up to date
         run: |
-          go run ../cmd/observer openapi > openapi.json
+          (cd .. && go run ./cmd/observer openapi) > openapi.json
           npm run openapi
           git diff --exit-code src/api/schema.d.ts
 
