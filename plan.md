@@ -220,10 +220,10 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 ### 5.6 通知策略
 
 - **文章被删除**：周期任务每 5 分钟扫描一次"已结束但未通知"的观察，按用户合并成一封摘要邮件（同一用户这段时间内的多篇删除只发一封）。用扫描而不是每次删除单独入队，任务失败或并发时都不会漏发。
-- **观察期满**：默认不发邮件（用户可在设置中打开）。
+- **观察期满**：不发邮件（2026-11-20 确定：只在文章被删除时发邮件）。观察到期时直接标记为已通知；网站上照常显示"已到期"，备份保留。原先的"到期也发邮件"开关已删除（迁移 00005 删除 `users.notify_on_expire`）。
 - 邮件只包含标题、状态、删除原因和**查看链接**，不带附件。
 - **每日发送上限保护**：Resend 免费档每日 100 封。通知类邮件只用到额度的 90%，剩下 10% 留给登录邮件。发送遇到限额（本地计数或服务商返回）时，摘要任务顺延到次日 UTC 零点之后。当日发送量达到 80% 时给管理员发告警。
-- **每个账号每月最多 20 封通知邮件**（2026-11-20 加入，`MONTHLY_EMAIL_LIMIT`，按北京时间自然月计）：只计"已删除 / 观察期结束"的摘要邮件，验证码与管理员告警不计。达到上限后摘要任务顺延到下月 1 日 00:05，届时把这期间的全部变化合并成一封；第 20 封邮件里会说明已达上限。每个账号可单独设置上限（`users.monthly_email_limit`，空值用默认值，0 表示不限），为以后付费提高上限预留：`observer admin email-limit <email> <n|default>`。设置页显示"本月已收到 X / 20 封"。
+- **每个账号每月最多 20 封通知邮件**（2026-11-20 加入，`MONTHLY_EMAIL_LIMIT`，按北京时间自然月计）：只计删除通知邮件，验证码与管理员告警不计。达到上限后摘要任务顺延到下月 1 日 00:05，届时把这期间的全部变化合并成一封；第 20 封邮件里会说明已达上限。每个账号可单独设置上限（`users.monthly_email_limit`，空值用默认值，0 表示不限），为以后付费提高上限预留：`observer admin email-limit <email> <n|default>`。设置页显示"本月已收到 X / 20 封"。
 - **登录邮件同步发送，不进任务队列**：任务参数以明文存在 `river_job` 表里，验证码不能明文落库。额度用完时，登录接口直接返回 503"今天的邮件发送额度已用完"。
 - **管理员告警**（`ADMIN_EMAILS`）：金丝雀失败、熔断打开、单篇文章连续 6 次检查无结论、邮件用量达到 80%。同类告警 6 小时内只发一次，并且都会写入错误日志。
 
@@ -298,7 +298,6 @@ CREATE TABLE users (
   email            citext NOT NULL UNIQUE,
   role             text NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
   status           text NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
-  notify_on_expire boolean NOT NULL DEFAULT false,
   created_at       timestamptz NOT NULL DEFAULT now(),
   last_login_at    timestamptz
 );
@@ -475,7 +474,6 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | GET | `/admin/articles`、`/admin/articles/{id}` | 文章列表（含完整性标记）/ 详情 |
 | POST | `/admin/articles/{id}/resnapshot` | 重新抓取并生成新备份 |
 | GET | `/me` | 当前用户信息与设置，含本月通知邮件数与上限（`emails_this_month`、`monthly_emails`） |
-| PATCH | `/me` | 修改设置（`notify_on_expire`） |
 | DELETE | `/me` | 删除账号（同时从验证码记录和发信记录中抹去邮箱） |
 | POST | `/watches` | `{url}` → 201（已备份）/ 202（解析中） |
 | GET | `/watches` | 列表，支持 `status` 过滤，游标分页 |
@@ -507,7 +505,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | `/login` | 登录 | 输入邮箱 → 获取验证码（60 秒重发倒计时、当天剩余次数）→ 同一页面输入验证码，输满 6 位自动提交；步骤存在 `sessionStorage`，切到邮件 App 后页面被重新加载也能继续 |
 | `/watches` | 我的观察 | 顶部提交框（从粘贴的整段分享文字里提取链接）；状态筛选（全部 / 观察中 / 已结束 / 失败）；状态徽章（备份中 / 观察中 / 已删除 / 已到期 / 已停止 / 提交失败）；游标分页；有"备份中"的条目时每 5 秒刷新 |
 | `/watches/:id` | 观察详情 | 文章信息、删除原因与微信原文提示、检查时间、检查记录；备份在 iframe 中预览，可在新窗口阅读、下载单文件 HTML、打印 / 保存为 PDF（按 iOS / 安卓 / 桌面给出操作步骤）；微信内置浏览器中提示改用系统浏览器；备份生成前自动轮询（前 1 分钟每 3 秒，之后每 10 秒，最多 10 分钟）；停止观察（二次确认） |
-| `/settings` | 设置 | 邮箱、退出登录、到期通知开关、删除账号（输入"删除"确认） |
+| `/settings` | 设置 | 邮箱、退出登录、本月通知邮件数与上限、删除账号（输入"删除"确认） |
 | `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载） |
 
 - 技术：Vue 3 + vue-router + TypeScript，原生 CSS（浅色 / 深色跟随系统），不引入组件库；API 类型由 `observer openapi` → `openapi-typescript` 生成，请求用 `openapi-fetch`。生产包约 50 KB（gzip）。
@@ -655,6 +653,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 - **tag `v*`**（`.github/workflows/release.yml`）：构建 amd64 镜像并推送 `ghcr.io/mamaship/observer:vX.Y.Z` 与 `latest`；配置了部署密钥时，SSH 到 VPS 运行 `/opt/observer/update.sh vX.Y.Z`。部署密钥在服务器上用 `command=` 限定只能运行 `update.sh`，且只接受版本号格式的标签。`update.sh` 先只更新 app 并等健康检查，失败自动回滚到原镜像。迁移在 app 启动时自动执行。
 - 没有发布版本时：开发机 `make image`，`docker save | ssh ... docker load`，`update.sh observer:local`。
 - Dependabot（`.github/dependabot.yml`）每月为 Go、npm、GitHub Actions、Dockerfile 与 compose 镜像各开一个汇总 PR；镜像不自动升级大版本（Postgres 18 → 19 需要数据迁移，且 app 镜像里的 `pg_dump` 版本要一起换）。安全更新由 GitHub 随时单独提出。
+- Dependabot 不提 TypeScript 与 `@types/node` 的大版本（TypeScript 7 是原生重写版，`openapi-typescript` 要求 ^5、`vue-tsc` 也还不支持；`@types/node` 跟构建用的 Node 22）。2026-11-20 的 #106 因此关闭。Release 只在正式版本标签上更新 `latest`，预发布标签（`v1.2.3-rc.1`）不动它。
 - 2026-11-20 处理 Dependabot 安全警告：`minimatch`（<11.0.1）与 `glob`（9.0.0–14.0.1）只经 `@vue/test-utils` → `js-beautify` 进入开发依赖，不进生产构建；在 `web/package.json` 的 `overrides` 里只对 `js-beautify` 这一支升级到 `minimatch@^11.0.9`、`glob@^14.0.6`，`npm audit` 为 0。
 
 ---
@@ -863,7 +862,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 | 事项 | 默认值 |
 |---|---|
 | 观察期 | 60 天 |
-| 观察期满是否发邮件 | 默认不发，用户可开启 |
+| 观察期满是否发邮件 | 不发；只在文章被删除时发邮件 |
 | 注册模式 | 邀请制软启动 |
 | 每用户活跃观察上限 / 每日提交上限 | 50 / 30 |
 | 每账号每月通知邮件 | 20 封（可按账号调整，预留付费提高上限） |

@@ -3,7 +3,7 @@
 <p>你好，</p>
 {{range .Items}}
 <div style="margin:16px 0;padding:12px 14px;border:1px solid #d0d7de;border-radius:6px">
-  <div style="font-size:13px;color:{{if .Deleted}}#cf222e{{else}}#656d76{{end}}">{{if .Deleted}}已删除{{else}}观察期结束{{end}}</div>
+  <div style="font-size:13px;color:#cf222e">已删除</div>
   <div style="font-weight:600;margin:4px 0">{{.Title}}</div>
   {{if .AccountName}}<div style="font-size:13px;color:#656d76">{{.AccountName}}</div>{{end}}
   {{if .Reason}}<div style="font-size:13px;color:#656d76">微信提示：{{.Reason}}</div>{{end}}
@@ -11,7 +11,6 @@
 </div>
 {{end}}
 {{if .LastThisMonth}}<p style="padding:10px 12px;background:#fff8c5;border-radius:6px">这是你本月的第 {{.MonthlyLimit}} 封通知邮件，已达到每月上限。本月之后的变化会在下月 1 日汇总成一封邮件发送；在此之前，你可以随时<a href="{{.ServiceURL}}">登录网站</a>查看最新状态。</p>
-{{end}}<p style="color:#656d76;font-size:13px">备份只对观察过该文章的用户可见，需要登录后查看。<br>
-不想收到观察期结束的邮件，可以在<a href="{{.SettingsURL}}" style="color:#656d76">设置</a>中关闭。</p>
+{{end}}<p style="color:#656d76;font-size:13px">备份只对观察过该文章的用户可见，需要登录后查看。</p>
 <p style="color:#656d76;font-size:13px">{{.ServiceName}} · <a href="{{.ServiceURL}}" style="color:#656d76">{{.ServiceURL}}</a></p>
 </body></html>

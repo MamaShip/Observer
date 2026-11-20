@@ -225,8 +225,7 @@ export interface paths {
         delete: operations["delete-me"];
         options?: never;
         head?: never;
-        /** Change settings */
-        patch: operations["update-me"];
+        patch?: never;
         trace?: never;
     };
     "/api/v1/site": {
@@ -746,13 +745,8 @@ export interface components {
              * @description This account's monthly limit; 0 means no limit
              */
             monthly_emails: number;
-            /** @description Email when a watch period ends (deletions are always emailed) */
-            notify_on_expire: boolean;
             /** @enum {string} */
             role: "user" | "admin";
-        };
-        PatchMeInputBody: {
-            notify_on_expire?: boolean;
         };
         SessionOutputBody: {
             /** @description Absent when not logged in */
@@ -803,8 +797,6 @@ export interface components {
             created_at: string;
             email: string;
             id: string;
-            /** @description Email when a watch period ends (deletions are always emailed) */
-            notify_on_expire: boolean;
             /** @enum {string} */
             role: "user" | "admin";
         };
@@ -1277,39 +1269,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    "update-me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchMeInputBody"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Me"];
-                };
             };
             /** @description Error */
             default: {

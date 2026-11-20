@@ -493,8 +493,8 @@ func TestExpireAndReactivate(t *testing.T) {
 	if err := e.svc.Expire(e.ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.watch(w.ID); got.Status != "ended" || deref(got.EndReason) != "expired" {
-		t.Errorf("watch = %s/%s", got.Status, deref(got.EndReason))
+	if got := e.watch(w.ID); got.Status != "ended" || deref(got.EndReason) != "expired" || got.NotifiedAt == nil {
+		t.Errorf("watch = %s/%s notified %v (expiries are announced as they end: never emailed)", got.Status, deref(got.EndReason), got.NotifiedAt)
 	}
 	if a := e.article(art.ID); a.Status != "dormant" || a.NextCheckAt != nil {
 		t.Errorf("article = %s next=%v, want dormant", a.Status, a.NextCheckAt)

@@ -236,30 +236,22 @@ func (n *Notifier) SendDigest(ctx context.Context, userID uuid.UUID) error {
 		return &RetryAt{Time: next}
 	}
 
-	data := mail.DigestData{ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL, SettingsURL: n.cfg.BaseURL + "/settings",
+	data := mail.DigestData{ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL,
 		MonthlyLimit: quota.Limit, LastThisMonth: quota.Limit > 0 && quota.Sent+1 == quota.Limit}
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, r := range rows {
 		item := mail.DigestItem{
-			Title: deref(r.Title), AccountName: deref(r.AccountName),
-			Deleted: deref(r.EndReason) == "deleted", Link: n.cfg.BaseURL + "/watches/" + r.ID.String(),
+			Title: deref(r.Title), AccountName: deref(r.AccountName), Reason: deref(r.DeletedReasonText),
+			Link: n.cfg.BaseURL + "/watches/" + r.ID.String(),
 		}
 		if item.Title == "" {
 			item.Title = r.SubmittedUrl
 		}
-		if item.Deleted {
-			item.Reason = deref(r.DeletedReasonText)
-			data.Deleted++
-		} else {
-			data.Expired++
-		}
 		data.Items = append(data.Items, item)
 		ids = append(ids, r.ID)
 	}
-	kind := "expired"
-	if data.Deleted > 0 {
-		kind = "deleted"
-	}
+	data.Deleted = len(data.Items)
+	const kind = "deleted" // the only notification: expiries are not emailed
 	m, err := mail.Render("digest", user.Email, data)
 	if err != nil {
 		return err

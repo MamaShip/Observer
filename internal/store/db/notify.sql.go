@@ -111,7 +111,7 @@ const pendingNotifications = `-- name: PendingNotifications :many
 SELECT w.id, w.end_reason, w.ended_at, w.submitted_url, a.title, a.account_name,
        a.deleted_reason_code, a.deleted_reason_text
 FROM watches w JOIN articles a ON a.id = w.article_id
-WHERE w.user_id = $1 AND w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason IN ('deleted', 'expired')
+WHERE w.user_id = $1 AND w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason = 'deleted'
 ORDER BY w.ended_at
 `
 
@@ -155,28 +155,14 @@ func (q *Queries) PendingNotifications(ctx context.Context, userID uuid.UUID) ([
 	return items, nil
 }
 
-const skipExpiryNotifications = `-- name: SkipExpiryNotifications :execrows
-UPDATE watches w SET notified_at = $1::timestamptz
-FROM users u
-WHERE u.id = w.user_id AND w.end_reason = 'expired' AND w.notified_at IS NULL AND NOT u.notify_on_expire
-`
-
-func (q *Queries) SkipExpiryNotifications(ctx context.Context, now time.Time) (int64, error) {
-	result, err := q.db.Exec(ctx, skipExpiryNotifications, now)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const usersWithPendingNotifications = `-- name: UsersWithPendingNotifications :many
 SELECT DISTINCT w.user_id FROM watches w JOIN users u ON u.id = w.user_id
-WHERE w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason IN ('deleted', 'expired')
+WHERE w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason = 'deleted'
   AND u.status = 'active'
 `
 
-// Watches that ended and still owe the user an email: every deletion, and
-// expiries for users who asked for them. Expire marks the others notified.
+// Watches that ended because the article was deleted and still owe the
+// user an email. (Only deletions are emailed; Expire marks expiries done.)
 func (q *Queries) UsersWithPendingNotifications(ctx context.Context) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, usersWithPendingNotifications)
 	if err != nil {

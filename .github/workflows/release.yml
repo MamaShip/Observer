@@ -31,7 +31,8 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/observer
           tags: |
             type=semver,pattern=v{{version}}
-            type=raw,value=latest
+            # Only releases move latest; a pre-release tag (v1.2.3-rc.1) does not.
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - uses: docker/build-push-action@v6
         with:

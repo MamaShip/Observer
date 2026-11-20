@@ -29,7 +29,7 @@ beforeAll(async () => {
   LoginView = (await import('@/views/LoginView.vue')).default
 })
 
-const user = { id: 'u1', email: 'a@example.com', role: 'user', notify_on_expire: false, created_at: '2026-11-20T00:00:00Z' }
+const user = { id: 'u1', email: 'a@example.com', role: 'user', created_at: '2026-11-20T00:00:00Z' }
 const site = { service_name: '折光观察者', registration_mode: 'invite', watch_days: 60, codes_per_day: 2, code_ttl_minutes: 10, max_open_watches: 50 }
 
 function baseRoutes() {

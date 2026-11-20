@@ -85,10 +85,7 @@ func TestDigest(t *testing.T) {
 	}
 	w1 := e.endedWatch(t, u.ID, "文章一", "deleted")
 	e.endedWatch(t, u.ID, "文章二", "deleted")
-	e.endedWatch(t, u.ID, "已到期文章", "expired")                                 // alice did not ask for expiry mail…
-	if _, err := e.q.SkipExpiryNotifications(e.ctx, time.Now()); err != nil { // …so Expire marks it done
-		t.Fatal(err)
-	}
+	e.endedWatch(t, u.ID, "已到期文章", "expired") // expiries are never emailed, even if left unannounced
 
 	if n, err := e.n.Sweep(e.ctx); err != nil || n != 1 {
 		t.Fatalf("Sweep = %d, %v", n, err)
@@ -118,24 +115,6 @@ func TestDigest(t *testing.T) {
 	}
 	if err := e.n.SendDigest(e.ctx, u.ID); err != nil || len(e.mailer.Sent()) != 1 {
 		t.Errorf("second digest sent mail (err %v)", err)
-	}
-}
-
-func TestExpiryOptIn(t *testing.T) {
-	e := newEnv(t, 100)
-	u, _ := e.q.CreateUser(e.ctx, "bob@example.com")
-	if _, err := e.q.UpdateUserSettings(e.ctx, db.UpdateUserSettingsParams{ID: u.ID, NotifyOnExpire: true}); err != nil {
-		t.Fatal(err)
-	}
-	e.endedWatch(t, u.ID, "到期文章", "expired")
-	if n, _ := e.q.SkipExpiryNotifications(e.ctx, time.Now()); n != 0 {
-		t.Fatalf("skipped %d expiry notices of a user who wants them", n)
-	}
-	if err := e.n.SendDigest(e.ctx, u.ID); err != nil {
-		t.Fatal(err)
-	}
-	if s := e.mailer.Sent(); len(s) != 1 || s[0].Subject != "1 篇文章的观察期已结束" {
-		t.Fatalf("sent = %+v", s)
 	}
 }
 

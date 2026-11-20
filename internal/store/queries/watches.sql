@@ -45,8 +45,10 @@ UPDATE watches SET status = 'ended', end_reason = 'deleted', ended_at = sqlc.arg
 WHERE article_id = sqlc.arg(article_id)::uuid AND status = 'active'
 RETURNING id, user_id;
 
+-- Expiry is never emailed, so the watch is announced as it ends.
 -- name: ExpireWatches :many
-UPDATE watches SET status = 'ended', end_reason = 'expired', ended_at = sqlc.arg(now)::timestamptz
+UPDATE watches SET status = 'ended', end_reason = 'expired', ended_at = sqlc.arg(now)::timestamptz,
+                   notified_at = sqlc.arg(now)::timestamptz
 WHERE status = 'active' AND expires_at <= sqlc.arg(now)::timestamptz
 RETURNING id, user_id, article_id;
 

@@ -1,24 +1,20 @@
--- Watches that ended and still owe the user an email: every deletion, and
--- expiries for users who asked for them. Expire marks the others notified.
+-- Watches that ended because the article was deleted and still owe the
+-- user an email. (Only deletions are emailed; Expire marks expiries done.)
 -- name: UsersWithPendingNotifications :many
 SELECT DISTINCT w.user_id FROM watches w JOIN users u ON u.id = w.user_id
-WHERE w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason IN ('deleted', 'expired')
+WHERE w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason = 'deleted'
   AND u.status = 'active';
 
 -- name: PendingNotifications :many
 SELECT w.id, w.end_reason, w.ended_at, w.submitted_url, a.title, a.account_name,
        a.deleted_reason_code, a.deleted_reason_text
 FROM watches w JOIN articles a ON a.id = w.article_id
-WHERE w.user_id = $1 AND w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason IN ('deleted', 'expired')
+WHERE w.user_id = $1 AND w.status = 'ended' AND w.notified_at IS NULL AND w.end_reason = 'deleted'
 ORDER BY w.ended_at;
 
 -- name: MarkWatchesNotified :exec
 UPDATE watches SET notified_at = sqlc.arg(now)::timestamptz WHERE id = ANY(sqlc.arg(ids)::uuid[]);
 
--- name: SkipExpiryNotifications :execrows
-UPDATE watches w SET notified_at = sqlc.arg(now)::timestamptz
-FROM users u
-WHERE u.id = w.user_id AND w.end_reason = 'expired' AND w.notified_at IS NULL AND NOT u.notify_on_expire;
 
 -- name: CountEmailsSince :one
 SELECT count(*)::bigint FROM email_log WHERE status = 'sent' AND sent_at >= sqlc.arg(since)::timestamptz;

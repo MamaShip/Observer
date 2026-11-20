@@ -50,10 +50,6 @@ func (s *Service) Expire(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Users who did not ask for expiry emails: mark them as notified now.
-	if _, err := s.q.SkipExpiryNotifications(ctx, s.now()); err != nil {
-		return err
-	}
 	dormant, err := s.q.MarkUnwatchedArticlesDormant(ctx)
 	if err != nil {
 		return err

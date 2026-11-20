@@ -1,7 +1,7 @@
-Subject: {{if .Deleted}}你观察的 {{.Deleted}} 篇文章已被删除{{else}}{{.Expired}} 篇文章的观察期已结束{{end}}
+Subject: 你观察的 {{.Deleted}} 篇文章已被删除
 你好，
 {{range .Items}}
-{{if .Deleted}}【已删除】{{else}}【观察期结束】{{end}}{{.Title}}{{if .AccountName}}（{{.AccountName}}）{{end}}
+【已删除】{{.Title}}{{if .AccountName}}（{{.AccountName}}）{{end}}
 {{- if .Reason}}
 微信提示：{{.Reason}}{{end}}
 查看备份：{{.Link}}
@@ -10,7 +10,5 @@ Subject: {{if .Deleted}}你观察的 {{.Deleted}} 篇文章已被删除{{else}}{
 {{if .LastThisMonth}}
 这是你本月的第 {{.MonthlyLimit}} 封通知邮件，已达到每月上限。本月之后的变化会在下月 1 日汇总成一封邮件发送；在此之前，你可以随时登录网站查看最新状态。
 {{end}}
-不想收到观察期结束的邮件，可以在设置中关闭：{{.SettingsURL}}
-
 {{.ServiceName}}
 {{.ServiceURL}}

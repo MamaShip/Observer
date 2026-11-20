@@ -51,10 +51,6 @@ UPDATE users SET last_login_at = sqlc.arg(now)::timestamptz WHERE id = sqlc.arg(
 -- name: SetUserStatus :execrows
 UPDATE users SET status = sqlc.arg(status) WHERE email = sqlc.arg(email);
 
--- name: UpdateUserSettings :one
-UPDATE users SET notify_on_expire = sqlc.arg(notify_on_expire) WHERE id = sqlc.arg(id)
-RETURNING *;
-
 -- Sessions and watches go with the user (ON DELETE CASCADE).
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1;

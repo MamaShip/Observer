@@ -164,15 +164,14 @@ func (h *handlers) registerAuth(g huma.API) {
 
 // User is the account as its owner sees it.
 type User struct {
-	ID             uuid.UUID `json:"id"`
-	Email          string    `json:"email"`
-	Role           string    `json:"role" enum:"user,admin"`
-	NotifyOnExpire bool      `json:"notify_on_expire" doc:"Email when a watch period ends (deletions are always emailed)"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role" enum:"user,admin"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func userFromDB(u db.User) User {
-	return User{ID: u.ID, Email: u.Email, Role: u.Role, NotifyOnExpire: u.NotifyOnExpire, CreatedAt: u.CreatedAt}
+	return User{ID: u.ID, Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt}
 }
 
 // Me is the account with its notification quota for this month.
@@ -196,33 +195,12 @@ func (h *handlers) me(ctx context.Context, u db.User) (*userOutput, error) {
 	return out, nil
 }
 
-type patchMeInput struct {
-	Body struct {
-		NotifyOnExpire *bool `json:"notify_on_expire,omitempty"`
-	}
-}
-
 func (h *handlers) registerMe(g huma.API) {
 	huma.Register(g, huma.Operation{
 		OperationID: "get-me", Method: http.MethodGet, Path: "/me",
 		Summary: "Current user", Tags: []string{"me"}, Security: loggedIn,
 	}, func(ctx context.Context, _ *struct{}) (*userOutput, error) {
 		return h.me(ctx, principalFrom(ctx).User)
-	})
-
-	huma.Register(g, huma.Operation{
-		OperationID: "update-me", Method: http.MethodPatch, Path: "/me",
-		Summary: "Change settings", Tags: []string{"me"}, Security: loggedIn,
-	}, func(ctx context.Context, in *patchMeInput) (*userOutput, error) {
-		u := principalFrom(ctx).User
-		if in.Body.NotifyOnExpire != nil {
-			var err error
-			u, err = h.d.Queries.UpdateUserSettings(ctx, db.UpdateUserSettingsParams{ID: u.ID, NotifyOnExpire: *in.Body.NotifyOnExpire})
-			if err != nil {
-				return nil, err
-			}
-		}
-		return h.me(ctx, u)
 	})
 
 	huma.Register(g, huma.Operation{

@@ -139,7 +139,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email) VALUES ($1)
 ON CONFLICT (email) DO UPDATE SET email = users.email
-RETURNING id, email, role, status, notify_on_expire, created_at, last_login_at, monthly_email_limit
+RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit
 `
 
 func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
@@ -150,7 +150,6 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 		&i.Email,
 		&i.Role,
 		&i.Status,
-		&i.NotifyOnExpire,
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
@@ -268,7 +267,7 @@ func (q *Queries) GetLoginRequest(ctx context.Context, arg GetLoginRequestParams
 }
 
 const getSession = `-- name: GetSession :one
-SELECT s.id, s.user_id, s.token_hash, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, u.id, u.email, u.role, u.status, u.notify_on_expire, u.created_at, u.last_login_at, u.monthly_email_limit
+SELECT s.id, s.user_id, s.token_hash, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly_email_limit
 FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = $1 AND s.expires_at > $2::timestamptz
 `
@@ -298,7 +297,6 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSess
 		&i.User.Email,
 		&i.User.Role,
 		&i.User.Status,
-		&i.User.NotifyOnExpire,
 		&i.User.CreatedAt,
 		&i.User.LastLoginAt,
 		&i.User.MonthlyEmailLimit,
@@ -307,7 +305,7 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSess
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, role, status, notify_on_expire, created_at, last_login_at, monthly_email_limit FROM users WHERE id = $1
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -318,7 +316,6 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Email,
 		&i.Role,
 		&i.Status,
-		&i.NotifyOnExpire,
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
@@ -327,7 +324,7 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, role, status, notify_on_expire, created_at, last_login_at, monthly_email_limit FROM users WHERE email = $1
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -338,7 +335,6 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Email,
 		&i.Role,
 		&i.Status,
-		&i.NotifyOnExpire,
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
@@ -441,30 +437,4 @@ type TouchUserLoginParams struct {
 func (q *Queries) TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) error {
 	_, err := q.db.Exec(ctx, touchUserLogin, arg.Now, arg.ID)
 	return err
-}
-
-const updateUserSettings = `-- name: UpdateUserSettings :one
-UPDATE users SET notify_on_expire = $1 WHERE id = $2
-RETURNING id, email, role, status, notify_on_expire, created_at, last_login_at, monthly_email_limit
-`
-
-type UpdateUserSettingsParams struct {
-	NotifyOnExpire bool
-	ID             uuid.UUID
-}
-
-func (q *Queries) UpdateUserSettings(ctx context.Context, arg UpdateUserSettingsParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUserSettings, arg.NotifyOnExpire, arg.ID)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Role,
-		&i.Status,
-		&i.NotifyOnExpire,
-		&i.CreatedAt,
-		&i.LastLoginAt,
-		&i.MonthlyEmailLimit,
-	)
-	return i, err
 }

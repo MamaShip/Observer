@@ -152,7 +152,8 @@ func (q *Queries) EndActiveWatchesDeleted(ctx context.Context, arg EndActiveWatc
 }
 
 const expireWatches = `-- name: ExpireWatches :many
-UPDATE watches SET status = 'ended', end_reason = 'expired', ended_at = $1::timestamptz
+UPDATE watches SET status = 'ended', end_reason = 'expired', ended_at = $1::timestamptz,
+                   notified_at = $1::timestamptz
 WHERE status = 'active' AND expires_at <= $1::timestamptz
 RETURNING id, user_id, article_id
 `
@@ -163,6 +164,7 @@ type ExpireWatchesRow struct {
 	ArticleID *uuid.UUID
 }
 
+// Expiry is never emailed, so the watch is announced as it ends.
 func (q *Queries) ExpireWatches(ctx context.Context, now time.Time) ([]ExpireWatchesRow, error) {
 	rows, err := q.db.Query(ctx, expireWatches, now)
 	if err != nil {
@@ -498,7 +500,7 @@ func (q *Queries) StopWatch(ctx context.Context, arg StopWatchParams) (int64, er
 const upsertUserByEmail = `-- name: UpsertUserByEmail :one
 INSERT INTO users (email) VALUES ($1)
 ON CONFLICT (email) DO UPDATE SET email = users.email
-RETURNING id, email, role, status, notify_on_expire, created_at, last_login_at, monthly_email_limit
+RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit
 `
 
 func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, error) {
@@ -509,7 +511,6 @@ func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, er
 		&i.Email,
 		&i.Role,
 		&i.Status,
-		&i.NotifyOnExpire,
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,

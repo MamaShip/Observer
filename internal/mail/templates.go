@@ -24,12 +24,11 @@ type LoginData struct {
 	ServiceURL   string
 }
 
-// DigestItem is one ended watch in a notification digest.
+// DigestItem is one deleted article in a notification digest.
 type DigestItem struct {
 	Title       string
 	AccountName string
-	Deleted     bool   // false: the watch period ended
-	Reason      string // WeChat's own wording, for deletions
+	Reason      string // WeChat's own wording
 	Link        string // where to read the backup
 }
 
@@ -37,10 +36,8 @@ type DigestItem struct {
 type DigestData struct {
 	Items       []DigestItem
 	Deleted     int
-	Expired     int
 	ServiceName string
 	ServiceURL  string
-	SettingsURL string
 	// LastThisMonth: this email uses up the account's MonthlyLimit.
 	MonthlyLimit  int
 	LastThisMonth bool

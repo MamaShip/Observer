@@ -68,6 +68,7 @@ type Querier interface {
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) (int64, error)
 	DueArticles(ctx context.Context, arg DueArticlesParams) ([]uuid.UUID, error)
 	EndActiveWatchesDeleted(ctx context.Context, arg EndActiveWatchesDeletedParams) ([]EndActiveWatchesDeletedRow, error)
+	// Expiry is never emailed, so the watch is announced as it ends.
 	ExpireWatches(ctx context.Context, now time.Time) ([]ExpireWatchesRow, error)
 	FailResolvingWatches(ctx context.Context, arg FailResolvingWatchesParams) (int64, error)
 	FinishEmailLog(ctx context.Context, arg FinishEmailLogParams) error
@@ -117,18 +118,16 @@ type Querier interface {
 	SetMonthlyEmailLimit(ctx context.Context, arg SetMonthlyEmailLimitParams) (int64, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (int64, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error)
-	SkipExpiryNotifications(ctx context.Context, now time.Time) (int64, error)
 	Stats(ctx context.Context) (StatsRow, error)
 	StopWatch(ctx context.Context, arg StopWatchParams) (int64, error)
 	SuspectArticleDeleted(ctx context.Context, arg SuspectArticleDeletedParams) error
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) error
-	UpdateUserSettings(ctx context.Context, arg UpdateUserSettingsParams) (User, error)
 	UpsertUserByEmail(ctx context.Context, email string) (User, error)
 	// A user may see an article's snapshots if they ever watched it.
 	UserCanViewSnapshot(ctx context.Context, arg UserCanViewSnapshotParams) (bool, error)
-	// Watches that ended and still owe the user an email: every deletion, and
-	// expiries for users who asked for them. Expire marks the others notified.
+	// Watches that ended because the article was deleted and still owe the
+	// user an email. (Only deletions are emailed; Expire marks expiries done.)
 	UsersWithPendingNotifications(ctx context.Context) ([]uuid.UUID, error)
 }
 

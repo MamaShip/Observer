@@ -170,19 +170,19 @@ func TestRender(t *testing.T) {
 	}
 
 	d, err := Render("digest", "u@example.com", DigestData{
-		Deleted: 1, Expired: 1, ServiceName: "折光观察者", ServiceURL: "https://x.example", SettingsURL: "https://x.example/settings",
+		Deleted: 2, ServiceName: "折光观察者", ServiceURL: "https://x.example",
 		Items: []DigestItem{
-			{Title: "<script>文章一</script>", AccountName: "某公众号", Deleted: true, Reason: "该内容已被发布者删除", Link: "https://x.example/watches/1"},
+			{Title: "<script>文章一</script>", AccountName: "某公众号", Reason: "该内容已被发布者删除", Link: "https://x.example/watches/1"},
 			{Title: "文章二", Link: "https://x.example/watches/2"},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Subject != "你观察的 1 篇文章已被删除" {
+	if d.Subject != "你观察的 2 篇文章已被删除" || strings.Contains(d.Text, "观察期") || strings.Contains(d.HTML, "观察期") {
 		t.Errorf("subject = %q", d.Subject)
 	}
-	for _, want := range []string{"【已删除】<script>文章一</script>（某公众号）", "微信提示：该内容已被发布者删除", "【观察期结束】文章二", "https://x.example/watches/2"} {
+	for _, want := range []string{"【已删除】<script>文章一</script>（某公众号）", "微信提示：该内容已被发布者删除", "【已删除】文章二", "https://x.example/watches/2"} {
 		if !strings.Contains(d.Text, want) {
 			t.Errorf("digest text lacks %q:\n%s", want, d.Text)
 		}

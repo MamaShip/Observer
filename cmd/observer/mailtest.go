@@ -75,10 +75,10 @@ func runMailtest(ctx context.Context, args []string) error {
 		return err
 	}
 	digest, err := mail.Render("digest", addr, mail.DigestData{
-		Deleted: 1, Expired: 1, ServiceName: *name, ServiceURL: site, SettingsURL: site + "/settings",
+		Deleted: 2, ServiceName: *name, ServiceURL: site,
 		Items: []mail.DigestItem{
-			{Title: "（测试）一篇被删除的文章", AccountName: "测试公众号", Deleted: true, Reason: "此内容因违规无法查看", Link: site + "/watches/test"},
-			{Title: "（测试）一篇观察期结束的文章", AccountName: "测试公众号", Link: site + "/watches/test"},
+			{Title: "（测试）一篇被删除的文章", AccountName: "测试公众号", Reason: "此内容因违规无法查看", Link: site + "/watches/test"},
+			{Title: "（测试）另一篇被删除的文章", AccountName: "测试公众号", Reason: "该内容已被发布者删除", Link: site + "/watches/test"},
 		},
 	})
 	if err != nil {

@@ -125,7 +125,6 @@ type User struct {
 	Email             string
 	Role              string
 	Status            string
-	NotifyOnExpire    bool
 	CreatedAt         time.Time
 	LastLoginAt       *time.Time
 	MonthlyEmailLimit *int32

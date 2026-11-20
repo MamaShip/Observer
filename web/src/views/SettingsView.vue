@@ -17,31 +17,11 @@ onMounted(async () => {
     // The page works without the count.
   }
 })
-const saving = ref(false)
-const saved = ref(false)
 const error = ref('')
 const loggingOut = ref(false)
 const confirmDelete = ref(false)
 const deleteWord = ref('')
 const deleting = ref(false)
-
-async function setNotifyOnExpire(e: Event) {
-  const checked = (e.target as HTMLInputElement).checked
-  saving.value = true
-  saved.value = false
-  error.value = ''
-  try {
-    const me = await call(api.PATCH('/api/v1/me', { body: { notify_on_expire: checked } }))
-    setUser(me)
-    quota.value = me
-    saved.value = true
-  } catch (err) {
-    error.value = messageOf(err)
-    ;(e.target as HTMLInputElement).checked = !checked
-  } finally {
-    saving.value = false
-  }
-}
 
 async function logout() {
   loggingOut.value = true
@@ -84,19 +64,15 @@ async function deleteAccount() {
 
     <section class="card stack">
       <h2>邮件通知</h2>
-      <p class="muted small">文章被删除时总会发邮件通知你。几篇文章的通知会合并成一封。</p>
+      <p class="muted small">
+        文章被删除时会发邮件通知你，几篇文章的通知合并成一封。观察期结束时不发邮件，随时可以在「我的观察」里查看状态。
+      </p>
       <p v-if="quota" class="small quota">
         <template v-if="quota.monthly_emails > 0">
           本月已收到 <strong>{{ quota.emails_this_month }}</strong> / {{ quota.monthly_emails }} 封通知邮件（每月 1 日重置）。达到上限后，新的变化会在下月初汇总成一封发送，网站上随时可以查看。
         </template>
         <template v-else>本月已收到 {{ quota.emails_this_month }} 封通知邮件。</template>
       </p>
-      <label class="toggle">
-        <input type="checkbox" :checked="session.user.notify_on_expire" :disabled="saving" @change="setNotifyOnExpire">
-        <span>观察期结束、文章没有被删除时，也发邮件告诉我</span>
-      </label>
-      <p v-if="saved" class="small ok" role="status">已保存</p>
-      <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
     </section>
 
     <section class="card stack danger-zone">
@@ -114,29 +90,13 @@ async function deleteAccount() {
           <button type="submit" class="btn btn-danger solid" :disabled="deleteWord.trim() !== '删除' || deleting">永久删除账号</button>
           <button type="button" class="btn" @click="confirmDelete = false; deleteWord = ''">取消</button>
         </div>
+        <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
       </form>
     </section>
   </template>
 </template>
 
 <style scoped>
-.toggle {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  cursor: pointer;
-}
-.toggle input {
-  width: 20px;
-  height: 20px;
-  margin-top: 3px;
-  flex: none;
-  accent-color: var(--accent);
-}
-.ok {
-  color: var(--ok);
-  margin: 0;
-}
 .quota {
   margin: 0;
 }

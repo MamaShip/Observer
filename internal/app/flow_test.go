@@ -173,12 +173,8 @@ func TestUserFlow(t *testing.T) {
 	}
 	var me api.Me
 	alice.api(http.MethodGet, "/me", nil, 200, &me)
-	if me.Email != "alice@example.com" || me.NotifyOnExpire || me.EmailsThisMonth != 0 || me.MonthlyEmails != 20 {
+	if me.Email != "alice@example.com" || me.EmailsThisMonth != 0 || me.MonthlyEmails != 20 {
 		t.Fatalf("me = %+v", me)
-	}
-	alice.api(http.MethodPatch, "/me", map[string]bool{"notify_on_expire": true}, 200, &me)
-	if !me.NotifyOnExpire {
-		t.Error("setting not saved")
 	}
 
 	// Writes from another site are refused even with the cookie.

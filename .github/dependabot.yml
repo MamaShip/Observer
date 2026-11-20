@@ -20,6 +20,14 @@ updates:
     groups:
       web:
         patterns: ["*"]
+    ignore:
+      # TypeScript 7 (the native rewrite) is not supported yet by
+      # openapi-typescript (needs ^5) or vue-tsc; upgrade by hand when it is.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Types for the Node.js major we build with (22, see Dockerfile and CI).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps(web)
 
