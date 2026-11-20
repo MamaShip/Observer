@@ -244,8 +244,8 @@ func TestSubmitResolveSnapshot(t *testing.T) {
 	if deref(art.AccountName) != "健康成都官微" || art.PublishedAt == nil || art.PublishedAt.Unix() != 1590541039 {
 		t.Errorf("metadata: account=%q published=%v", deref(art.AccountName), art.PublishedAt)
 	}
-	if d := time.Until(*art.NextCheckAt); d < 40*time.Minute || d > 80*time.Minute {
-		t.Errorf("next check in %s, want about an hour", d)
+	if d := art.NextCheckAt.Sub(*art.LastCheckedAt); d < 144*time.Minute || d > 216*time.Minute {
+		t.Errorf("next check in %s, want 3 hours ±20%%", d)
 	}
 	if got := e.watch(w.ID).Status; got != "active" {
 		t.Errorf("watch status after resolve = %s", got)

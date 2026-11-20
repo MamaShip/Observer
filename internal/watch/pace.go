@@ -17,16 +17,15 @@ const (
 	alertAfterFailures   = 6
 )
 
-// checkInterval is the gap between checks for an article first seen age ago:
-// hourly on day one, every 3 hours in the first week, then every 8 hours.
+// checkInterval is the base delay between checks for an article first seen age ago.
 func checkInterval(age time.Duration) time.Duration {
 	switch {
 	case age < 24*time.Hour:
-		return time.Hour
-	case age < 7*24*time.Hour:
 		return 3 * time.Hour
-	default:
+	case age < 7*24*time.Hour:
 		return 8 * time.Hour
+	default:
+		return 24 * time.Hour
 	}
 }
 

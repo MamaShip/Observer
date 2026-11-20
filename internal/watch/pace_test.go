@@ -10,12 +10,12 @@ import (
 
 func TestCheckInterval(t *testing.T) {
 	for age, want := range map[time.Duration]time.Duration{
-		0:                   time.Hour,
-		23 * time.Hour:      time.Hour,
-		24 * time.Hour:      3 * time.Hour,
-		6 * 24 * time.Hour:  3 * time.Hour,
-		7 * 24 * time.Hour:  8 * time.Hour,
-		59 * 24 * time.Hour: 8 * time.Hour,
+		0:                                3 * time.Hour,
+		24*time.Hour - time.Nanosecond:   3 * time.Hour,
+		24 * time.Hour:                   8 * time.Hour,
+		7*24*time.Hour - time.Nanosecond: 8 * time.Hour,
+		7 * 24 * time.Hour:               24 * time.Hour,
+		59 * 24 * time.Hour:              24 * time.Hour,
 	} {
 		if got := checkInterval(age); got != want {
 			t.Errorf("checkInterval(%s) = %s, want %s", age, got, want)
