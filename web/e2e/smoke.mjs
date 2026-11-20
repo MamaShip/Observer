@@ -88,6 +88,7 @@ try {
 
   await page.fill('textarea[name=url]', `看看这篇 ${article} 来自微信`)
   await page.click('form.submit button[type=submit]')
+  await page.getByRole('link', { name: '查看', exact: true }).click()
   await page.waitForURL((u) => u.pathname.startsWith('/watches/'))
   const detailURL = page.url()
   await shot('04-detail-new')
@@ -106,8 +107,13 @@ try {
 
   await page.click('text=打印 / 保存为 PDF')
   await shot('06-print-help')
-  const viewURL = await page.getAttribute('a:has-text("在新窗口阅读")', 'href')
-  const [download] = await Promise.all([page.waitForEvent('download'), page.click('text=下载 HTML')])
+  const readerURL = await page.getAttribute('a:has-text("在新窗口阅读")', 'href')
+  const reader = await ctx.newPage()
+  await reader.goto(new URL(readerURL, base).href)
+  await reader.locator('iframe[title="文章备份正文"]').waitFor()
+  await reader.close()
+  const viewURL = await page.getAttribute('.print-help a', 'href')
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '下载 HTML', exact: true }).last().click()])
   step(`download: ${download.suggestedFilename()}`)
   const snap = await ctx.newPage()
   await snap.goto(viewURL)

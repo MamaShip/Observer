@@ -1,0 +1,66 @@
+/* 折光观察者 tokens as CSS variables, generated from ds/zheguang/tokens.json. Light is the default; data-theme="dark" switches. */
+@font-face { font-family: "Smiley Sans"; src: url("../assets/fonts/SmileySans-Oblique.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("../assets/fonts/JetBrainsMono-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("../assets/fonts/JetBrainsMono-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+
+:root {
+  --glass-ink: #182a55; --glass-deep: #1f4f88; --glass-strong: #2b67a1; --glass-mid: #5b91c9; --glass-soft: #6fa5d8; --glass-pale: #c4e0f2; --glass-cyan: #7ccbdf;
+  --ember-core: #ff7a24; --ember-glow: #ffbe7a; --ember-haze: #ffe6c4;
+
+  --font-display: "Smiley Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --radius-0: 0; --radius-1: 2px; --radius-2: 4px;
+  --chamfer-s: 6px; --chamfer-m: 12px; --chamfer-l: 20px;
+  --border-hair: 1px; --border-strong: 2px;
+  --size-reading: 680px; --size-list: 760px; --size-page: 1120px; --size-sidebar: 224px; --size-header: 56px; --size-control: 44px;
+}
+
+:root, [data-theme="light"] {
+  --surface-000: #f2f5f8; --surface-100: #ffffff; --surface-200: #e7ecf2; --surface-inverse: #121b2b;
+  --line-100: #d6dee8; --line-200: #7c8ea4;
+  --ink-100: #0f1a2e; --ink-200: #44556b; --ink-300: #5b6b80; --ink-inverse: #e6edf5;
+  --brand: #1f4f88; --brand-hover: #183f6e; --on-brand: #ffffff; --link: #1d5c9b;
+  --ember: #d9590f; --ember-ink: #a3410c; --ember-soft: #fff1e4; --focus-ring: var(--ember);
+  --status-watching: #1d5c9b; --status-watching-soft: #e3edf8;
+  --status-expiring: #3b3f8c; --status-expiring-soft: #e7e8f7;
+  --status-ended: #55667b; --status-ended-soft: #e9edf2;
+  --status-deleted: var(--ember-ink); --status-deleted-soft: var(--ember-soft);
+  --status-unreachable: var(--status-ended); --status-unreachable-soft: var(--status-ended-soft);
+  --status-archived: #0f6575; --status-archived-soft: #dcf1f5;
+  --status-partial: #7a5a00; --status-partial-soft: #f8f0d8;
+  --danger: #b3261e; --on-danger: #ffffff; --danger-soft: #fbe9e7;
+  --status-failed: var(--danger); --status-failed-soft: var(--danger-soft);
+  --chart-1: #2b67a1; --chart-2: #0a9cb8; --chart-deleted: #d9590f; --chart-grid: var(--line-100); --chart-label: var(--ink-300);
+  --shadow-lift: 0 1px 2px rgba(15,26,46,0.06), 0 8px 24px rgba(15,26,46,0.06);
+  --shadow-ember: 0 6px 28px rgba(255,122,36,0.22);
+}
+
+[data-theme="dark"] {
+  --surface-000: #0b1220; --surface-100: #121b2b; --surface-200: #070c16; --surface-inverse: #e6edf5;
+  --line-100: #223049; --line-200: #5c7090;
+  --ink-100: #e6edf5; --ink-200: #a9b7c8; --ink-300: #8797ab; --ink-inverse: #0f1a2e;
+  --brand: #6fa5d8; --brand-hover: #8cbbe6; --on-brand: #0b1220; --link: #8cbbe6;
+  --ember: #ff8a3d; --ember-ink: #ffae70; --ember-soft: #2a1a10; --focus-ring: var(--ember);
+  --status-watching: #8cbbe6; --status-watching-soft: #13243b;
+  --status-expiring: #b4b9f2; --status-expiring-soft: #1c1f3d;
+  --status-ended: #9aa9bb; --status-ended-soft: #1a2333;
+  --status-deleted: var(--ember-ink); --status-deleted-soft: var(--ember-soft);
+  --status-unreachable: var(--status-ended); --status-unreachable-soft: var(--status-ended-soft);
+  --status-archived: #7ccbdf; --status-archived-soft: #0e2a31;
+  --status-partial: #e8c25a; --status-partial-soft: #2b2410;
+  --danger: #ff8a80; --on-danger: #0b1220; --danger-soft: #2e1514;
+  --status-failed: var(--danger); --status-failed-soft: var(--danger-soft);
+  --chart-1: #407bc5; --chart-2: #18a7a1; --chart-deleted: #d76821; --chart-grid: var(--line-100); --chart-label: var(--ink-300);
+  --shadow-lift: 0 1px 0 rgba(0,0,0,0.4), 0 12px 32px rgba(0,0,0,0.45);
+  --shadow-ember: 0 6px 32px rgba(255,138,61,0.20);
+}
+
+/* Page root for each artboard */
+.zg-page { min-height: 100vh; background: var(--surface-000); color: var(--ink-100); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+.zg-page > main { flex: 1 0 auto; }
+.zg-brandmark { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink-100); }
+.zg-brandmark span { font: 400 20px/1 var(--font-display); letter-spacing: .01em; }
+.zg-page a.zg-btn { box-sizing: border-box; }

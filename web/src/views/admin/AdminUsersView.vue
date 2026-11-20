@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { api, call, messageOf, type AdminUser } from '@/api/client'
-import AdminNav from '@/components/admin/AdminNav.vue'
 import { formatDate, formatRelative } from '@/lib/format'
 import { session } from '@/session'
-import { onMounted, ref } from 'vue'
+import { useAdminPages } from '@/lib/adminPages'
+import ResultPager from '@/components/admin/ResultPager.vue'
+import { computed, ref, watch } from 'vue'
 
-const items = ref<AdminUser[]>([])
-const next = ref<string | undefined>()
 const search = ref('')
 const invitedBy = ref<AdminUser | null>(null) // show only the accounts this user's invitations created
-const loading = ref(false)
-const error = ref('')
+const filter = ref('all')
+const appliedSearch = ref('')
+const inviteOpen = ref(false)
 const notice = ref('')
 const inviteEmail = ref('')
 const inviting = ref(false)
@@ -18,41 +18,28 @@ const open = ref<string | null>(null) // the row whose actions are shown
 const limitInput = ref<number | null>(null)
 const busy = ref(false)
 
-async function load(more = false) {
-  loading.value = true
-  error.value = ''
-  try {
-    const page = await call(
-      api.GET('/api/v1/admin/users', {
-        params: {
-          query: {
-            search: search.value.trim() || undefined,
-            invited_by: invitedBy.value?.id,
-            cursor: more ? next.value : undefined,
-            limit: 50,
-          },
-        },
-      }),
-    )
-    items.value = more ? [...items.value, ...page.items] : page.items
-    next.value = page.next_cursor
-  } catch (e) {
-    error.value = messageOf(e)
-  } finally {
-    loading.value = false
-  }
+const { items, loading, error, page, hasNext, go, reset, replace, matchCount } = useAdminPages<AdminUser>(
+  cursor => call(api.GET('/api/v1/admin/users', { params: { query: {
+    search: appliedSearch.value || undefined, invited_by: invitedBy.value?.id, cursor, limit: 50,
+  } } })),
+  u => filter.value === 'all' || u.status === filter.value || (filter.value === 'admin' && u.role === 'admin'),
+)
+const selected = computed(() => items.value.find(u => u.id === open.value))
+function load() {
+  appliedSearch.value = search.value.trim()
+  open.value = null
+  return reset()
 }
-onMounted(() => load())
+watch(filter, load, { immediate: true })
 
 async function invite() {
   inviting.value = true
   error.value = ''
   notice.value = ''
   try {
-    const req = api.POST('/api/v1/admin/users', { body: { email: inviteEmail.value.trim() } })
-    const u = await call(req) // throws with the server's message on failure
-    const created = (await req).response.status === 201
-    notice.value = created ? `已邀请 ${u.email}，对方现在可以用验证码登录。` : `${u.email} 已经有账户。`
+    await call(api.POST('/api/v1/admin/users', { body: { email: inviteEmail.value.trim() } }))
+    notice.value = '邀请已处理。请告知对方用邮箱验证码登录。'
+    inviteOpen.value = false
     inviteEmail.value = ''
     await load()
   } catch (e) {
@@ -90,8 +77,8 @@ async function patch(u: AdminUser, body: Patch, done: string) {
   notice.value = ''
   try {
     const updated = await call(api.PATCH('/api/v1/admin/users/{id}', { params: { path: { id: u.id } }, body }))
-    items.value = items.value.map((x) => (x.id === u.id ? updated : x))
-    limitInput.value = updated.monthly_emails
+    replace(x => x.id === u.id, updated)
+    if (open.value === u.id) limitInput.value = updated.monthly_emails
     notice.value = `${u.email}：${done}`
   } catch (e) {
     error.value = messageOf(e)
@@ -113,184 +100,72 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
 </script>
 
 <template>
-  <AdminNav />
-
-  <div class="toolbar">
-    <form class="row" role="search" @submit.prevent="load()">
-      <input v-model="search" type="text" placeholder="按邮箱搜索" aria-label="按邮箱搜索">
-      <button type="submit" class="btn">搜索</button>
-    </form>
-    <form class="row" @submit.prevent="invite">
-      <input v-model="inviteEmail" type="email" placeholder="邀请邮箱" aria-label="邀请邮箱" required>
-      <button type="submit" class="btn btn-primary" :disabled="inviting || !inviteEmail.trim()">邀请</button>
-    </form>
-  </div>
-
-  <p v-if="invitedBy" class="notice notice-info filter">
-    只看 <strong>{{ invitedBy.email }}</strong> 邀请注册的账户。
-    <button type="button" class="btn-link" @click="showInvitees(null)">显示全部</button>
-  </p>
+  <header class="zg-pagehead"><div><h1 class="zg-pagehead__title">账户管理</h1>
+    <div v-if="session.site" class="zg-pagehead__meta">{{ session.site.registration_mode === 'invite' ? '邀请制已开启' : '开放注册' }}</div></div>
+    <button class="zg-shard zg-btn" :aria-expanded="inviteOpen" @click="inviteOpen = !inviteOpen">邀请用户</button>
+  </header>
+  <form v-if="inviteOpen" class="zg-toolbar" @submit.prevent="invite">
+    <label class="zg-shard zg-input zg-input--text"><input v-model="inviteEmail" type="email" placeholder="邀请邮箱" aria-label="邀请邮箱" required></label>
+    <button class="zg-shard zg-btn zg-btn--sm" type="submit" :disabled="inviting || !inviteEmail.trim()">确认邀请</button>
+  </form>
   <p v-if="notice" class="notice notice-ok" role="status">{{ notice }}</p>
-  <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
-
-  <div class="table-wrap">
-    <table class="small">
-      <thead>
-        <tr>
-          <th>账户</th>
-          <th class="num">观察中 / 累计</th>
-          <th class="num">本月提交</th>
-          <th class="num">本月通知</th>
-          <th>邀请人</th>
-          <th class="num" title="邀请注册的账户数（本月发出的邀请数）">邀请</th>
-          <th>最近登录</th>
-          <th>注册</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        <template v-for="u in items" :key="u.id">
-          <tr :class="{ disabled: u.status === 'disabled' }">
-            <td>
-              <span class="email">{{ u.email }}</span>
-              <span v-if="u.role === 'admin'" class="tag">管理员</span>
-              <span v-if="u.status === 'disabled'" class="tag danger">已停用</span>
-            </td>
-            <td class="num">{{ u.open_watches }} / {{ u.total_watches }}</td>
-            <td class="num">{{ u.watches_this_month }}</td>
-            <td class="num" :title="u.custom_email_limit ? '为该账户单独设置的上限' : '默认上限'">
-              {{ u.emails_this_month }} / {{ u.monthly_emails || '不限' }}<span v-if="u.custom_email_limit">*</span>
-            </td>
-            <td>
-              <button v-if="u.invited_by" type="button" class="btn-link" :title="`查看 ${u.invited_by}`" @click="showInviter(u)">
-                {{ u.invited_by }}
-              </button>
-              <span v-else-if="u.invited" class="muted">已注销的账户</span>
-              <span v-else class="muted">—</span>
-            </td>
-            <td class="num" :title="`本月发出 ${u.invites_this_month} 个邀请`">
-              <button v-if="u.invitees" type="button" class="btn-link" @click="showInvitees(u)">{{ u.invitees }}</button>
-              <template v-else>0</template>
-              <span v-if="u.invites_this_month" class="muted">（{{ u.invites_this_month }}）</span>
-            </td>
-            <td>{{ u.last_login_at ? formatRelative(u.last_login_at) : '从未' }}</td>
-            <td>{{ formatDate(u.created_at) }}</td>
-            <td><button type="button" class="btn-link" :aria-expanded="open === u.id" @click="toggle(u)">管理</button></td>
-          </tr>
-          <tr v-if="open === u.id" class="actions-row">
-            <td colspan="9">
-              <div class="actions">
-                <form class="row" @submit.prevent="saveLimit(u)">
-                  <label class="row">每月通知邮件上限
-                    <input v-model.number="limitInput" type="number" min="0" step="1" class="limit">
-                  </label>
-                  <button type="submit" class="btn" :disabled="busy">保存</button>
-                  <button v-if="u.custom_email_limit" type="button" class="btn" :disabled="busy"
-                    @click="patch(u, { default_email_limit: true }, '恢复默认上限')">恢复默认</button>
-                </form>
-                <div class="row">
-                  <template v-if="!isSelf(u)">
-                    <button v-if="u.status === 'active'" type="button" class="btn btn-danger" :disabled="busy"
-                      @click="patch(u, { status: 'disabled' }, '已停用，并退出了所有设备')">停用账户</button>
-                    <button v-else type="button" class="btn" :disabled="busy" @click="patch(u, { status: 'active' }, '已启用')">启用账户</button>
-                    <button v-if="u.role === 'admin'" type="button" class="btn" :disabled="busy"
-                      @click="patch(u, { role: 'user' }, '已取消管理员')">取消管理员</button>
-                    <button v-else type="button" class="btn" :disabled="busy" @click="patch(u, { role: 'admin' }, '已设为管理员')">设为管理员</button>
-                  </template>
-                  <span v-else class="muted">这是你自己的账户。</span>
-                </div>
-              </div>
-            </td>
-          </tr>
-        </template>
-        <tr v-if="!items.length && !loading">
-          <td colspan="9" class="muted center">没有账户。</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <p class="muted small">
-    * 为该账户单独设置的上限。「邀请」是该账户邀请注册的账户数，括号里是本月发出的邀请数（包括邀请已有账户的邮箱）。「—」表示由命令行创建，或在记录邀请关系之前注册。本月数字按北京时间自然月统计。
-  </p>
-  <div v-if="next" class="center">
-    <button type="button" class="btn" :disabled="loading" @click="load(true)">加载更多</button>
+  <p v-if="error" class="notice notice-danger" role="alert">{{ error }} <button class="btn-link" @click="load">刷新列表</button></p>
+  <p v-if="invitedBy" class="notice notice-info">只看 {{ invitedBy.email }} 邀请注册的账户。 <button class="btn-link" @click="showInvitees(null)">显示全部</button></p>
+  <div class="zg-detail">
+    <section>
+      <form class="zg-toolbar" role="search" @submit.prevent="load">
+        <label class="zg-shard zg-input zg-input--search"><input v-model="search" type="search" placeholder="搜索邮箱" aria-label="搜索邮箱"></label>
+        <button class="zg-shard zg-btn zg-btn--secondary zg-btn--sm">搜索</button>
+        <label class="zg-shard zg-select zg-select--sm"><select v-model="filter" aria-label="账号状态"><option value="all">全部状态</option><option value="active">启用</option><option value="disabled">停用</option><option value="admin">管理员</option></select>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </label>
+        <span v-if="matchCount !== undefined" class="zg-toolbar__count">匹配 {{ matchCount }} 个</span>
+      </form>
+      <p v-if="loading" class="muted" role="status">加载中…</p>
+      <div class="zg-shard zg-tablewrap"><table class="zg-table">
+        <thead><tr><th>邮箱</th><th>状态</th><th class="is-num">观察中</th><th class="is-num">本月通知</th><th>注册</th></tr></thead>
+        <tbody><tr v-for="u in items" :key="u.id" :class="{ chosen: open === u.id }" @click="toggle(u)">
+          <td><button class="btn-link mono" :aria-expanded="open === u.id" @click.stop="toggle(u)">{{ u.email }}</button><span v-if="u.role === 'admin'" class="zg-table__sub">管理员</span></td>
+          <td><span class="zg-shard zg-tag" :class="u.status === 'active' ? 'zg-tag--archived' : 'zg-tag--ended'"><i class="zg-tag__glyph" />{{ u.status === 'active' ? '启用' : '停用' }}</span></td>
+          <td class="is-num">{{ u.open_watches }}</td><td class="is-num">{{ u.emails_this_month }} / {{ u.monthly_emails || '不限' }}{{ u.custom_email_limit ? '*' : '' }}</td><td class="is-mono">{{ formatDate(u.created_at) }}</td>
+        </tr><tr v-if="!items.length && !loading && !error"><td colspan="5">没有符合条件的账户。</td></tr></tbody>
+      </table></div>
+      <ResultPager :page="page" :has-next="hasNext" :loading="loading" @go="go" />
+    </section>
+    <aside class="zg-shard zg-panel">
+      <h2 class="zg-panel__title">{{ selected?.email || '账户详情' }}</h2>
+      <p v-if="!selected" class="muted small">选择列表中的邮箱，查看邀请关系、用量和权限。</p>
+      <template v-else>
+        <dl class="zg-facts">
+          <dt>邀请人</dt><dd><button v-if="selected.invited_by" class="btn-link" @click="showInviter(selected)">{{ selected.invited_by }}</button><template v-else>{{ selected.invited ? '已注销的账户' : '—' }}</template></dd>
+          <dt>邀请注册</dt><dd><button v-if="selected.invitees" class="btn-link" @click="showInvitees(selected)">{{ selected.invitees }} 人</button><template v-else>0 人</template></dd>
+          <dt>本月邀请</dt><dd>{{ selected.invites_this_month }} 人</dd><dt>累计观察</dt><dd>{{ selected.total_watches }} 篇</dd>
+          <dt>本月提交</dt><dd>{{ selected.watches_this_month }} 篇</dd><dt>最近登录</dt><dd>{{ selected.last_login_at ? formatRelative(selected.last_login_at) : '从未' }}</dd>
+        </dl>
+        <div>
+          <label class="zg-setrow zg-switch">启用账户
+            <input type="checkbox" :checked="selected.status === 'active'" :disabled="busy || isSelf(selected)" @click.prevent="patch(selected, { status: selected.status === 'active' ? 'disabled' : 'active' }, '账户状态已更新')"><span class="zg-switch__track" />
+          </label>
+          <label class="zg-setrow zg-switch">管理员权限
+            <input type="checkbox" :checked="selected.role === 'admin'" :disabled="busy || isSelf(selected)" @click.prevent="patch(selected, { role: selected.role === 'admin' ? 'user' : 'admin' }, '账户权限已更新')"><span class="zg-switch__track" />
+          </label>
+          <span v-if="isSelf(selected)" class="zg-field__hint">这是你自己的账户。</span>
+        </div>
+        <form class="zg-field" @submit.prevent="saveLimit(selected)">
+          <label for="monthly-limit" class="zg-field__label">每月通知邮件上限</label>
+          <div class="zg-shard zg-input"><input id="monthly-limit" v-model.number="limitInput" type="number" min="0" step="1"></div>
+          <span class="zg-field__hint">{{ selected.custom_email_limit ? '该账户使用单独设置的上限。' : '该账户使用默认上限。' }}0 表示不限。</span>
+          <div class="row"><button class="zg-shard zg-btn zg-btn--sm" :disabled="busy">保存</button>
+            <button v-if="selected.custom_email_limit" type="button" class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :disabled="busy" @click="patch(selected, { default_email_limit: true }, '恢复默认上限')">恢复默认</button>
+          </div>
+        </form>
+      </template>
+    </aside>
   </div>
 </template>
-
 <style scoped>
-.filter {
-  margin-bottom: 12px;
-}
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.toolbar input {
-  width: 240px;
-  max-width: 100%;
-}
-.toolbar form {
-  flex-wrap: nowrap;
-}
-.table-wrap {
-  overflow-x: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-th,
-td {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  white-space: nowrap;
-}
-th {
-  color: var(--muted);
-  font-weight: 600;
-}
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-tr.disabled td {
-  color: var(--muted);
-}
-.email {
-  font-weight: 600;
-}
-.tag {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.tag.danger {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.actions-row td {
-  background: var(--bg);
-  white-space: normal;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  justify-content: space-between;
-}
-.limit {
-  width: 90px;
-  padding: 6px 8px;
-}
+.zg-table { min-width: 565px; }
+.zg-table tbody tr { cursor: pointer; }
+.chosen { background: var(--status-watching-soft); }
+@media (min-width: 768px) { .zg-detail { grid-template-columns: minmax(0, 1fr) 300px; } }
 </style>

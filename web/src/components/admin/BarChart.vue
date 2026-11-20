@@ -54,7 +54,7 @@ const tipLeft = computed(() => (active.value === null ? 0 : (bars.value[active.v
 </script>
 
 <template>
-  <figure class="chart">
+  <figure class="chart zg-shard zg-chart">
     <figcaption>
       <span class="title">{{ title }}</span>
       <span class="sum">共 {{ formatNumber(total) }}</span>
@@ -66,7 +66,7 @@ const tipLeft = computed(() => (active.value === null ? 0 : (bars.value[active.v
         :aria-label="`${title}，近 ${values.length} 天共 ${total}，单日最高 ${peak}。用左右方向键逐日查看。`"
         tabindex="0"
         @keydown="onKey"
-        @focus="active ??= values.length - 1"
+        @focus="active = values.length ? (active ?? values.length - 1) : null"
         @blur="active = null"
         @pointerleave="active = null"
       >
@@ -101,9 +101,7 @@ const tipLeft = computed(() => (active.value === null ? 0 : (bars.value[active.v
 <style scoped>
 .chart {
   margin: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+
   padding: 12px 14px 8px;
   min-width: 0;
 }
@@ -138,7 +136,7 @@ svg:focus-visible {
   outline-offset: 4px;
 }
 .bar {
-  fill: var(--accent);
+  fill: var(--bar-color, var(--chart-1));
   transition: opacity 0.1s;
 }
 .bar.dim {

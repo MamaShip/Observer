@@ -18,4 +18,11 @@ api.use({
   },
 })
 
+const theme = window.matchMedia('(prefers-color-scheme: dark)')
+function syncTheme() {
+  document.documentElement.dataset.theme = theme.matches ? 'dark' : 'light'
+}
+syncTheme()
+theme.addEventListener('change', syncTheme)
+
 createApp(App).use(router).mount('#app')

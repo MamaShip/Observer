@@ -27,6 +27,7 @@ export const router = createRouter({
     { path: '/login', name: 'login', component: LoginView, meta: { title: '登录', guest: true } },
     { path: '/watches', name: 'watches', component: WatchListView, meta: { title: '我的观察', auth: true } },
     { path: '/watches/:id', name: 'watch', component: WatchDetailView, meta: { title: '观察详情', auth: true } },
+    { path: '/watches/:id/backup/:version', name: 'reader', component: () => import('./views/ReaderView.vue'), meta: { title: '文章备份', auth: true } },
     { path: '/settings', name: 'settings', component: SettingsView, meta: { title: '设置', auth: true } },
     {
       path: '/admin',
@@ -57,8 +58,8 @@ export const router = createRouter({
     { path: '/terms', name: 'terms', component: () => import('./views/TermsView.vue'), meta: { title: '服务条款' } },
     { path: '/:rest(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue'), meta: { title: '页面不存在' } },
   ],
-  scrollBehavior(_to, _from, saved) {
-    return saved ?? { top: 0 }
+  scrollBehavior(to, _from, saved) {
+    return saved ?? (to.hash ? { el: to.hash, top: 80 } : { top: 0 })
   },
 })
 

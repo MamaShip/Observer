@@ -1,31 +1,17 @@
+<script setup lang="ts">
+import { serviceName } from '@/session'
+import { useRoute } from 'vue-router'
+const route = useRoute()
+</script>
+
 <template>
-  <nav class="admin-nav" aria-label="管理后台">
-    <RouterLink :to="{ name: 'admin' }" exact-active-class="active">概览</RouterLink>
-    <RouterLink :to="{ name: 'admin-users' }" active-class="active">账户</RouterLink>
-    <RouterLink :to="{ name: 'admin-articles' }" active-class="active">文章</RouterLink>
+  <nav class="zg-side" aria-label="管理后台">
+    <div class="zg-side__brand"><img src="/favicon.svg" alt="">{{ serviceName() }}<small>ADMIN</small></div>
+    <span class="zg-side__label">运营</span>
+    <RouterLink to="/admin">概览</RouterLink>
+    <RouterLink to="/admin/users">账户管理</RouterLink>
+    <RouterLink to="/admin/articles" :class="{ 'is-current': route.name === 'admin-article' }">文章管理</RouterLink>
+    <span class="zg-side__label">其他</span>
+    <RouterLink to="/watches">返回我的观察</RouterLink>
   </nav>
 </template>
-
-<style scoped>
-.admin-nav {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
-}
-.admin-nav a {
-  padding: 8px 14px;
-  color: var(--muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-.admin-nav a:hover {
-  text-decoration: none;
-  color: var(--fg);
-}
-.admin-nav a.active {
-  color: var(--fg);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
-}
-</style>

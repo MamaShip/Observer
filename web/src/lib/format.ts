@@ -7,7 +7,7 @@ const dateTimeFmt = new Intl.DateTimeFormat('zh-CN', {
   minute: '2-digit',
   hour12: false,
 })
-const shortFmt = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' })
+const two = (n: number) => String(n).padStart(2, '0')
 
 function parse(v: string | Date | undefined | null): Date | null {
   if (!v) return null
@@ -27,11 +27,14 @@ export function formatDateTime(v: string | Date | undefined | null): string {
   return d ? dateTimeFmt.format(d) : ''
 }
 
-/** 11/20, this year's dates without the year */
+/** Local time today, month/day and time this year, otherwise an ISO date. */
 export function formatShort(v: string | Date | undefined | null, now = new Date()): string {
   const d = parse(v)
   if (!d) return ''
-  return d.getFullYear() === now.getFullYear() ? shortFmt.format(d) : dateFmt.format(d)
+  const date = `${two(d.getMonth() + 1)}-${two(d.getDate())}`
+  if (d.getFullYear() !== now.getFullYear()) return `${d.getFullYear()}-${date}`
+  const time = `${two(d.getHours())}:${two(d.getMinutes())}`
+  return d.toDateString() === now.toDateString() ? time : `${date} ${time}`
 }
 
 /** "3 分钟前", "2 小时后" … for times within a few days, else the date. */

@@ -1,69 +1,60 @@
 <script setup lang="ts">
 import { serviceName, session } from '@/session'
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
+const menuOpen = ref(false)
+const menuButton = ref<HTMLButtonElement>()
+watch(() => route.fullPath, () => { menuOpen.value = false })
+
+function closeMenu() {
+  if (menuOpen.value) {
+    menuOpen.value = false
+    menuButton.value?.focus()
+  }
+}
 </script>
 
 <template>
-  <header class="header">
-    <div class="inner" :class="{ wide: route.meta.wide }">
-      <RouterLink to="/" class="brand">
-        <img src="/favicon.svg" alt="" width="24" height="24">
-        <span>{{ serviceName() }}</span>
-      </RouterLink>
-      <nav class="nav" aria-label="主导航">
-        <template v-if="session.user">
-          <RouterLink to="/watches">我的观察</RouterLink>
-          <RouterLink to="/settings">设置</RouterLink>
-          <RouterLink v-if="session.user.role === 'admin'" to="/admin">管理</RouterLink>
+  <header class="zg-header" @keydown.esc="closeMenu">
+    <div class="zg-container zg-header__inner">
+      <RouterLink to="/" class="zg-header__brand" :aria-label="serviceName() + ' 首页'">
+        <template v-if="serviceName() === '折光观察者'">
+          <img class="zg-only-light" src="@/assets/logo/zheguang-lockup-light-bg.svg" alt="">
+          <img class="zg-only-dark" src="@/assets/logo/zheguang-lockup-dark-bg.svg" alt="">
         </template>
-        <RouterLink v-else-if="session.loaded" to="/login">登录</RouterLink>
+        <template v-else><img src="/favicon.svg" alt="">{{ serviceName() }}</template>
+      </RouterLink>
+      <nav id="main-nav" class="zg-nav" :class="{ 'menu-open': menuOpen }" aria-label="主导航" @click="menuOpen = false">
+        <template v-if="session.user">
+          <RouterLink to="/watches" :class="{ 'is-current': route.name === 'watch' }">我的观察</RouterLink>
+          <RouterLink to="/settings">设置</RouterLink>
+        </template>
+        <RouterLink v-else to="/">首页</RouterLink>
+        <RouterLink to="/about">关于</RouterLink>
       </nav>
+      <div class="zg-header__actions">
+        <RouterLink v-if="session.user?.role === 'admin'" class="zg-link small" to="/admin">管理后台</RouterLink>
+        <RouterLink v-if="session.user" class="zg-account" to="/settings">{{ session.user.email }}</RouterLink>
+        <RouterLink v-else-if="session.loaded && route.name !== 'login'" class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" to="/login">登录</RouterLink>
+        <button ref="menuButton" type="button" class="menu-toggle zg-shard zg-btn zg-btn--secondary zg-btn--sm"
+          aria-controls="main-nav" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">菜单</button>
+      </div>
     </div>
   </header>
 </template>
 
 <style scoped>
-.header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding-top: env(safe-area-inset-top);
-}
-.inner {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 0 16px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.inner.wide {
-  max-width: 1120px;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--fg);
-  font-weight: 700;
-  white-space: nowrap;
-}
-.brand:hover {
-  text-decoration: none;
-}
-.nav {
-  display: flex;
-  gap: 18px;
-}
-.nav a {
-  color: var(--muted);
-  white-space: nowrap;
-}
-.nav a.router-link-active {
-  color: var(--fg);
-  font-weight: 600;
+.zg-header { padding-top: env(safe-area-inset-top); }
+.zg-header__actions { margin-left: auto; }
+.zg-header__brand { gap: 8px; color: var(--ink-100); font-family: var(--font-display); }
+.zg-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.menu-toggle { display: none; }
+@media (max-width: 767px) {
+  .menu-toggle { display: inline-flex; }
+  .zg-header__inner { gap: var(--space-2); }
+  .menu-open { position: absolute; top: 100%; left: 0; right: 0; display: flex; height: auto; flex-wrap: wrap; background: var(--surface-100); border-bottom: 1px solid var(--line-100); padding: 0 var(--space-4); }
+  .menu-open a { min-height: 44px; }
 }
 </style>

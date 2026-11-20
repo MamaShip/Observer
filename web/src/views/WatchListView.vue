@@ -3,236 +3,175 @@ import { api, call, messageOf, type Watch, type WatchDetail } from '@/api/client
 import StatusBadge from '@/components/StatusBadge.vue'
 import SubmitBox from '@/components/SubmitBox.vue'
 import { formatShort } from '@/lib/format'
-import { daysLeft, deletedReasonText, endingSoonDays } from '@/lib/status'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { daysLeft, endingSoonDays, isOpen } from '@/lib/status'
+import { session } from '@/session'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-type Filter = 'all' | 'active' | 'ended' | 'failed'
-const filters: { key: Filter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'active', label: '观察中' },
-  { key: 'ended', label: '已结束' },
-  { key: 'failed', label: '失败' },
-]
-
+const filters = [
+  { key: 'all', label: '全部' }, { key: 'active', label: '观察中' }, { key: 'soon', label: '即将到期' },
+  { key: 'deleted', label: '已删除' }, { key: 'ended', label: '已结束' }, { key: 'failed', label: '提交失败' },
+] as const
+type Filter = typeof filters[number]['key']
+type Sort = 'recent' | 'expiry'
 const route = useRoute()
 const router = useRouter()
-
-const filter = computed<Filter>(() => {
-  const f = route.query.status
-  return filters.some((x) => x.key === f) ? (f as Filter) : 'all'
-})
+const filter = computed(() => filters.find(f => f.key === route.query.status)?.key ?? 'all')
+const sort = ref<Sort>('recent')
 const items = ref<Watch[]>([])
-const next = ref<string | undefined>()
+const cursor = ref<string>()
+const visibleCount = ref(20)
+const complete = ref(false)
 const loading = ref(false)
-const loadingMore = ref(false)
 const error = ref('')
-const notice = ref(typeof route.query.notice === 'string' ? route.query.notice : '')
+const submitted = ref<WatchDetail>()
+const notice = computed(() => typeof route.query.notice === 'string' ? route.query.notice : '')
+const openCount = computed(() => items.value.filter(isOpen).length)
 
-async function fetchPage(cursor?: string) {
-  const status = filter.value === 'all' ? undefined : filter.value
-  return call(api.GET('/api/v1/watches', { params: { query: { status, cursor, limit: 20 } } }))
+function matches(w: Watch, key: Filter) {
+  switch (key) {
+    case 'all': return true
+    case 'active': return isOpen(w)
+    case 'soon': return w.status === 'active' && daysLeft(w) <= endingSoonDays
+    case 'deleted': return w.end_reason === 'deleted'
+    case 'ended': return w.status === 'ended' && w.end_reason !== 'deleted'
+    case 'failed': return w.status === 'failed'
+  }
 }
+const counts = computed(() => filters.map(f => items.value.filter(w => matches(w, f.key)).length))
+const results = computed(() => {
+  const rows = items.value.filter(w => matches(w, filter.value))
+  if (sort.value === 'expiry') rows.sort((a, b) => {
+    if (isOpen(a) !== isOpen(b)) return isOpen(a) ? -1 : 1
+    return isOpen(a) ? a.expires_at.localeCompare(b.expires_at) : 0
+  })
+  return rows
+})
 
-async function load() {
+let generation = 0
+let poll: ReturnType<typeof setTimeout> | undefined
+// The API returns a cursor, not totals. Read additional pages on demand;
+// global sorting and derived filters need the full collection.
+async function load(reset = false, keepVisible = false) {
+  const run = ++generation
+  const target = keepVisible ? items.value.length : 0
   loading.value = true
   error.value = ''
+  let after = reset ? undefined : cursor.value
+  const collected = after ? [...items.value] : []
+  const seen = new Set(collected.map(w => w.id))
   try {
-    const page = await fetchPage()
-    items.value = page.items
-    next.value = page.next_cursor
+    do {
+      const page = await call(api.GET('/api/v1/watches', { params: { query: { cursor: after, limit: 20 } } }))
+      if (run !== generation) return
+      for (const w of page.items) {
+        if (!seen.has(w.id)) collected.push(w)
+        seen.add(w.id)
+      }
+      after = page.next_cursor
+    } while (after && (filter.value !== 'all' || sort.value !== 'recent' || collected.length < target))
+    items.value = collected
+    cursor.value = after
+    complete.value = !after
+    if (reset && !keepVisible) visibleCount.value = 20
   } catch (e) {
-    error.value = messageOf(e)
+    if (run === generation) error.value = messageOf(e)
   } finally {
-    loading.value = false
+    if (run === generation) loading.value = false
   }
 }
 
-async function loadMore() {
-  if (!next.value) return
-  loadingMore.value = true
-  try {
-    const page = await fetchPage(next.value)
-    items.value.push(...page.items)
-    next.value = page.next_cursor
-  } catch (e) {
-    error.value = messageOf(e)
-  } finally {
-    loadingMore.value = false
-  }
-}
+watch([filter, sort], () => {
+  visibleCount.value = 20
+  if (!complete.value) void load()
+}, { immediate: true })
 
-// Watches still being backed up change on their own; refresh while any are.
-let poll: ReturnType<typeof setTimeout> | undefined
+// Refetch the loaded range: a resolving link may have merged into an older watch.
 function schedulePoll() {
   clearTimeout(poll)
-  if (items.value.some((w) => w.status === 'resolving')) {
-    poll = setTimeout(async () => {
-      if (document.visibilityState === 'visible') {
-        try {
-          const page = await fetchPage()
-          // Replace only the first page; keep what "load more" added.
-          const rest = items.value.slice(page.items.length)
-          items.value = [...page.items, ...rest.filter((w) => !page.items.some((p) => p.id === w.id))]
-        } catch {
-          // try again next time
-        }
-      }
-      schedulePoll()
-    }, 5000)
-  }
+  if (!items.value.some(w => w.status === 'resolving')) return
+  poll = setTimeout(async () => {
+    if (document.visibilityState === 'visible' && !loading.value) await load(true, true)
+    if (!disposed) schedulePoll()
+  }, 5000)
 }
+let disposed = false
 watch(items, schedulePoll)
-onBeforeUnmount(() => clearTimeout(poll))
+onBeforeUnmount(() => { disposed = true; generation++; clearTimeout(poll) })
 
-watch(filter, load)
-onMounted(load)
-
-function setFilter(f: Filter) {
-  void router.replace({ query: f === 'all' ? {} : { status: f } })
+function more() {
+  visibleCount.value += 20
+  if (results.value.length < visibleCount.value && !complete.value) void load()
 }
-
 function onSubmitted(d: WatchDetail) {
-  void router.push({ name: 'watch', params: { id: d.watch.id } })
-}
-
-function title(w: Watch): string {
-  return w.article?.title || (w.status === 'resolving' ? '正在获取文章…' : w.submitted_url)
-}
-
-function meta(w: Watch): string {
-  const parts: string[] = []
-  if (w.article?.account_name) parts.push(w.article.account_name)
-  if (w.status === 'active') {
-    const left = daysLeft(w)
-    parts.push(left <= endingSoonDays ? `还剩 ${left} 天到期` : `观察至 ${formatShort(w.expires_at)}`)
-  }
-  else if (w.end_reason === 'deleted') parts.push(deletedReasonText(w.article?.deleted_reason))
-  else if (w.ended_at) parts.push(`结束于 ${formatShort(w.ended_at)}`)
-  else parts.push(`提交于 ${formatShort(w.created_at)}`)
-  return parts.join(' · ')
+  submitted.value = d
+  void load(true)
 }
 </script>
 
 <template>
-  <SubmitBox @submitted="onSubmitted" />
-
-  <section class="section">
-    <div class="list-head">
-      <h1>我的观察</h1>
-      <div class="filters" role="tablist" aria-label="按状态筛选">
-        <button
-          v-for="f in filters"
-          :key="f.key"
-          type="button"
-          role="tab"
-          class="chip"
-          :aria-selected="filter === f.key"
-          @click="setFilter(f.key)"
-        >
-          {{ f.label }}
-        </button>
+    <div class="list-page">
+      <header class="zg-pagehead">
+        <div>
+          <h1 class="zg-pagehead__title">我的观察</h1>
+          <div v-if="complete" class="zg-pagehead__meta">正在观察 {{ openCount }} 篇文章 <span v-if="session.site" class="zg-meta">{{ openCount }} /
+            {{ session.site.max_open_watches }}</span></div>
+        </div>
+      </header>
+      <SubmitBox @submitted="onSubmitted">
+        <div v-if="submitted" class="zg-shard zg-msg zg-msg--success" role="status">
+          <i class="zg-msg__glyph" />已提交{{ submitted.watch.article?.title ? '「' + submitted.watch.article.title + '」' : '文章链接' }}。
+          <RouterLink class="zg-link zg-msg__action" :to="{ name: 'watch', params: { id: submitted.watch.id } }">查看</RouterLink>
+        </div>
+      </SubmitBox>
+      <div class="list-toolbar">
+        <div class="zg-tabs" role="group" aria-label="按状态筛选">
+          <button v-for="(f, i) in filters" :key="f.key" type="button" :aria-pressed="filter === f.key"
+            :class="{ 'is-selected': filter === f.key }"
+            @click="router.replace({ query: { ...route.query, status: f.key === 'all' ? undefined : f.key } })">
+            {{ f.label }}<span v-if="complete" class="zg-tabs__count">{{ counts[i] }}</span>
+          </button>
+        </div>
+        <label class="zg-shard zg-select zg-select--sm">
+          <select v-model="sort" aria-label="排序">
+            <option value="recent">最近提交</option>
+            <option value="expiry">最快到期</option>
+          </select>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </label>
       </div>
-    </div>
-
-    <p v-if="notice" class="notice notice-info">{{ notice }}</p>
-    <p v-if="error" class="notice notice-danger" role="alert">
-      {{ error }} <button type="button" class="btn-link" @click="load">重试</button>
-    </p>
-
-    <p v-if="loading && !items.length" class="muted center"><span class="spinner" /> 加载中…</p>
-    <div v-else-if="!items.length && !error" class="empty card center muted">
-      <template v-if="filter === 'all'">还没有观察任何文章。把文章链接粘贴到上面的输入框就可以开始。</template>
-      <template v-else>没有这个状态的观察。</template>
-    </div>
-
-    <ul v-else class="items">
-      <li v-for="w in items" :key="w.id">
-        <RouterLink :to="{ name: 'watch', params: { id: w.id } }" class="item card">
-          <div class="item-main">
-            <div class="item-title">{{ title(w) }}</div>
-            <div class="muted small">{{ meta(w) }}</div>
+      <p v-if="notice" class="notice notice-info">{{ notice }}</p>
+      <p v-if="error" class="notice notice-danger" role="alert">{{ error }} <button class="btn-link" @click="load()">重试</button></p>
+      <p v-if="loading" class="muted" role="status"><span class="spinner" /> 加载中…</p>
+      <p v-else-if="!results.length && !error" class="zg-empty__body">{{ filter === 'all' ? '还没有观察任何文章。粘贴上面的链接就可以开始。' : '没有符合这个状态的观察。' }}</p>
+      <div class="watch-list">
+        <RouterLink v-for="w in results.slice(0, visibleCount)" :key="w.id" :to="{ name: 'watch', params: { id: w.id } }"
+          class="item zg-shard zg-watch" :class="{ 'is-deleted': w.end_reason === 'deleted' }">
+          <div class="zg-watch__top">
+            <StatusBadge :watch="w" />
+            <span class="zg-meta" v-if="w.status === 'active'">还剩 {{ daysLeft(w) }} 天</span>
+            <span class="zg-meta" v-else-if="w.ended_at">{{ w.end_reason === 'deleted' ? '确认删除' : '结束于' }}
+            {{ formatShort(w.ended_at) }}</span>
           </div>
-          <StatusBadge :watch="w" />
+          <h2 class="zg-watch__title">{{ w.article?.title || (w.status === 'resolving' ? '正在获取文章…' : w.submitted_url) }}</h2>
+          <div v-if="w.article?.account_name" class="zg-watch__source">来自公众号「{{ w.article.account_name }}」</div>
+          <div class="zg-watch__foot">
+            <span class="zg-meta">提交于 {{ formatShort(w.created_at) }}</span>
+            <span class="zg-link small">查看详情</span>
+          </div>
         </RouterLink>
-      </li>
-    </ul>
-
-    <div v-if="next" class="center more">
-      <button type="button" class="btn" :disabled="loadingMore" @click="loadMore">
-        <span v-if="loadingMore" class="spinner" aria-hidden="true" />
-        加载更多
-      </button>
+      </div>
+      <button v-if="cursor || results.length > visibleCount" type="button" class="zg-shard zg-btn zg-btn--secondary more" :disabled="loading"
+        @click="more">加载更多</button>
     </div>
-  </section>
 </template>
 
 <style scoped>
-.list-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin: 24px 0 12px;
-}
-.list-head h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-.filters {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.chip {
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 2px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-}
-.chip[aria-selected='true'] {
-  background: var(--fg);
-  border-color: var(--fg);
-  color: var(--bg);
-}
-.items {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 8px;
-}
-.item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
-  color: inherit;
-}
-.item:hover {
-  text-decoration: none;
-  border-color: var(--accent);
-}
-.item-main {
-  flex: 1;
-  min-width: 0;
-}
-.item-title {
-  font-weight: 600;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.empty {
-  padding: 32px 16px;
-}
-.more {
-  margin-top: 16px;
-}
+.list-toolbar { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-6) 0 var(--space-4); }
+.zg-tabs { flex: 1 1 auto; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.zg-select { margin-bottom: var(--space-2); }
+.watch-list { display: grid; gap: var(--space-3); }
+.zg-watch { max-width: none; text-decoration: none; }
+.zg-watch:hover { --_edge: var(--line-200); }
+.more { margin-top: var(--space-4); }
 </style>

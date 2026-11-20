@@ -2,7 +2,7 @@
 import { ApiError, api, call, messageOf } from '@/api/client'
 import * as storage from '@/lib/storage'
 import { safeNext } from '@/router'
-import { serviceName, session, setUser } from '@/session'
+import { session, setUser } from '@/session'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -45,7 +45,7 @@ onMounted(() => {
     resendAt.value = saved.resendAt
     remaining.value = saved.remaining
     step.value = 'code'
-    info.value = `验证码已发送到 ${saved.email}。`
+    info.value = '如果该邮箱可以登录，几分钟内会收到验证码。'
   }
 })
 onBeforeUnmount(() => clearInterval(timer))
@@ -98,7 +98,9 @@ async function requestCode() {
 }
 
 function onCodeInput(e: Event) {
-  const digits = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(0, 6)
+  const input = e.target as HTMLInputElement
+  const digits = input.value.replace(/\D/g, '').slice(0, 6)
+  input.value = digits
   code.value = digits
   if (digits.length === 6 && !verifying.value) void verify()
 }
@@ -118,9 +120,12 @@ async function verify() {
   } catch (e) {
     error.value = messageOf(e)
     code.value = ''
-    codeInput.value?.focus()
   } finally {
     verifying.value = false
+    if (error.value) {
+      await nextTick()
+      codeInput.value?.focus()
+    }
   }
 }
 
@@ -135,33 +140,34 @@ function changeEmail() {
 </script>
 
 <template>
-  <div class="login card">
-    <h1>登录{{ serviceName() }}</h1>
+  <div class="login-layout">
+  <section class="zg-auth">
+    <h1 class="zg-auth__title">邮箱登录</h1>
 
-    <form v-if="step === 'email'" class="stack" novalidate @submit.prevent="requestCode">
-      <p class="muted">输入邮箱，我们会发送一个 6 位数字验证码。第一次使用会自动创建账号。</p>
-      <p v-if="session.site?.registration_mode === 'invite'" class="notice notice-info">
-        目前处于邀请测试阶段，只有受邀的邮箱能收到验证码。已经在用的朋友可以在「设置」里邀请你。
-      </p>
-      <label class="field">
-        <span>邮箱</span>
-        <input v-model="email" type="email" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required autofocus>
+    <form v-if="step === 'email'" class="zg-stack" novalidate @submit.prevent="requestCode">
+      <p class="zg-auth__lede">输入邮箱，我们会发送一个 6 位数字验证码。第一次使用会自动创建账号。</p>
+
+      <label class="zg-field">
+        <span class="zg-field__label">邮箱</span>
+        <span class="zg-shard zg-input zg-input--text"><input v-model="email" type="email" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required autofocus></span>
       </label>
       <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
-      <button class="btn btn-primary btn-block" type="submit" :disabled="sending">
+      <button class="zg-shard zg-btn zg-btn--block" type="submit" :disabled="sending">
         <span v-if="sending" class="spinner" aria-hidden="true" />
         获取验证码
       </button>
       <p class="muted small">
         每个邮箱每天最多获取 {{ perDay }} 次验证码。
-        <button v-if="emailLooksValid" type="button" class="btn-link small" @click="toCodeStep">已经收到验证码？</button>
+        <button v-if="emailLooksValid" type="button" class="btn-link" @click="toCodeStep">已经收到验证码？</button>
       </p>
     </form>
 
-    <form v-else class="stack" novalidate @submit.prevent="verify">
+    <form v-else class="zg-stack" novalidate @submit.prevent="verify">
       <p v-if="info" class="notice notice-ok">{{ info }}</p>
-      <label class="field">
-        <span>验证码</span>
+      <label class="zg-field">
+        <span class="zg-field__label">验证码</span>
+        <span class="zg-code" :class="{ 'is-invalid': error }">
+          <span v-for="n in 6" :key="n" aria-hidden="true" class="zg-shard zg-code__cell" :class="{ current: n === Math.min(code.length + 1, 6) }">{{ code[n - 1] }}</span>
         <input
           ref="codeInput"
           class="code"
@@ -170,18 +176,18 @@ function changeEmail() {
           inputmode="numeric"
           autocomplete="one-time-code"
           pattern="[0-9]*"
-          maxlength="6"
+          :aria-invalid="!!error"
           placeholder="6 位数字"
           :value="code"
           :disabled="verifying"
           @input="onCodeInput"
-        >
+        ></span>
       </label>
       <p class="muted small">
         发送到 <strong>{{ email.trim() }}</strong>，{{ ttlMinutes }} 分钟内有效。没收到的话，看看垃圾邮件箱。
       </p>
       <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
-      <button class="btn btn-primary btn-block" type="submit" :disabled="verifying || code.length !== 6">
+      <button class="zg-shard zg-btn zg-btn--block" type="submit" :disabled="verifying || code.length !== 6">
         <span v-if="verifying" class="spinner" aria-hidden="true" />
         登录
       </button>
@@ -194,32 +200,36 @@ function changeEmail() {
       </div>
       <p v-if="remaining !== null && remaining > 0" class="muted small">今天这个邮箱还可以获取 {{ remaining }} 次验证码。</p>
     </form>
+    <p class="zg-auth__fine">登录即表示你同意<RouterLink to="/terms">服务条款</RouterLink>和<RouterLink to="/privacy">隐私说明</RouterLink>。</p>
+  </section>
+  <aside class="next-steps zg-stack" aria-label="登录后的使用步骤">
+    <span class="zg-hero__kicker">WHAT HAPPENS NEXT</span>
+    <ol>
+      <li v-for="(step, i) in ['进入「我的观察」，粘贴公众号文章链接。', '我们保存当前版本，并开始定期检查。', '确认原文被删除后，提醒会发到这个邮箱。']" :key="step" class="zg-shard zg-step">
+        <span class="zg-step__n">0{{ i + 1 }}</span>{{ step }}
+      </li>
+    </ol>
+      <p v-if="session.site?.registration_mode === 'invite'" class="notice notice-info">
+        目前处于邀请测试阶段，只有受邀的邮箱能收到验证码。已经在用的朋友可以在「设置」里邀请你。
+      </p>
+  </aside>
   </div>
 </template>
 
 <style scoped>
-.login {
-  max-width: 420px;
-  margin: 12px auto 0;
-  padding: 24px 20px;
-}
-.code {
-  font-family: var(--mono);
-  font-size: 1.5rem !important;
-  letter-spacing: 0.4em;
-  text-align: center;
-}
-.code::placeholder {
-  letter-spacing: normal;
-  font-family: var(--font);
-  font-size: 1rem;
-}
-.between {
-  justify-content: space-between;
-}
-.btn-link:disabled {
-  color: var(--muted);
-  cursor: default;
-  text-decoration: none;
+.login-layout { display: grid; gap: var(--space-8); grid-template-columns: 1fr 1fr; align-items: start; }
+.next-steps { max-width: 420px; padding: var(--space-8) 0; }
+.next-steps ol { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-3); }
+.next-steps li { padding: var(--space-4); font: 400 14px/22px var(--font-sans); color: var(--ink-200); }
+.next-steps > * { margin: 0; }
+.between { justify-content: space-between; }
+.zg-code { position: relative; }
+.zg-code__cell { min-width: 0; flex-shrink: 1; }
+.zg-code input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: text; }
+.zg-code:focus-within .current { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 767px) {
+  .login-layout { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
+  .zg-auth { padding: var(--space-6) 0 0; }
+  .next-steps { padding: var(--space-4) 0; }
 }
 </style>

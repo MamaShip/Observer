@@ -1,225 +1,61 @@
 <script setup lang="ts">
-import { api, call, messageOf, type AdminArticle } from '@/api/client'
-import AdminNav from '@/components/admin/AdminNav.vue'
+import { api, call, type AdminArticle } from '@/api/client'
+import ResultPager from '@/components/admin/ResultPager.vue'
 import { articleStatusText, issueDetail, issueLabel } from '@/lib/admin'
-import { formatNumber, formatRelative, formatShort } from '@/lib/format'
+import { useAdminPages } from '@/lib/adminPages'
+import { formatShort } from '@/lib/format'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-type Filter = 'all' | 'issues' | 'alive' | 'deleted' | 'dormant' | 'invalid' | 'pending'
-const filters: { key: Filter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'issues', label: '有问题' },
-  { key: 'alive', label: '在线' },
-  { key: 'deleted', label: '已删除' },
-  { key: 'dormant', label: '休眠' },
-  { key: 'invalid', label: '无效' },
-  { key: 'pending', label: '解析中' },
-]
-
+const filters = [
+  ['all', '全部'], ['alive', '在线'], ['deleted', '已删除'], ['dormant', '休眠'], ['issues', '有问题'],
+  ['backup_failed', '备份失败'], ['missing_images', '图片缺失'], ['failing_checks', '检查异常'], ['invalid', '无效'], ['pending', '解析中'],
+] as const
 const route = useRoute()
 const router = useRouter()
-const filter = computed<Filter>(() => {
-  const f = route.query.filter
-  return filters.some((x) => x.key === f) ? (f as Filter) : 'all'
-})
-const search = ref(typeof route.query.q === 'string' ? route.query.q : '')
-const items = ref<AdminArticle[]>([])
-const next = ref<string | undefined>()
-const loading = ref(false)
-const error = ref('')
-
-async function load(more = false) {
-  loading.value = true
-  error.value = ''
+const filter = computed(() => filters.find(([key]) => key === route.query.filter)?.[0] ?? 'all')
+const query = computed(() => typeof route.query.q === 'string' ? route.query.q : '')
+const search = ref(query.value)
+const issue = computed(() => ['backup_failed', 'missing_images', 'failing_checks'].includes(filter.value))
+const { items, page, loading, error, hasNext, go, reset, matchCount } = useAdminPages<AdminArticle>(cursor => {
   const f = filter.value
-  try {
-    const page = await call(
-      api.GET('/api/v1/admin/articles', {
-        params: {
-          query: {
-            issues: f === 'issues' || undefined,
-            status: f === 'all' || f === 'issues' ? undefined : f,
-            search: search.value.trim() || undefined,
-            cursor: more ? next.value : undefined,
-            limit: 50,
-          },
-        },
-      }),
-    )
-    items.value = more ? [...items.value, ...page.items] : page.items
-    next.value = page.next_cursor
-  } catch (e) {
-    error.value = messageOf(e)
-  } finally {
-    loading.value = false
-  }
-}
-watch(() => route.query, () => load(), { immediate: true })
-
-function setFilter(f: Filter) {
-  void router.replace({ query: { ...route.query, filter: f === 'all' ? undefined : f } })
-}
-function doSearch() {
-  void router.replace({ query: { ...route.query, q: search.value.trim() || undefined } })
-}
+  const status = f === 'alive' || f === 'deleted' || f === 'dormant' || f === 'invalid' || f === 'pending' ? f : undefined
+  return call(api.GET('/api/v1/admin/articles', { params: { query: {
+    status, issues: f === 'issues' || issue.value || undefined, search: query.value || undefined, cursor, limit: 50,
+  } } }))
+}, a => !issue.value || a.issues.includes(filter.value))
+watch([filter, query], () => { search.value = query.value; void reset() }, { immediate: true })
+const tones = { alive: 'watching', deleted: 'deleted', dormant: 'ended', invalid: 'unreachable', pending: 'archiving' }
 </script>
-
 <template>
-  <AdminNav />
-
-  <div class="toolbar">
-    <div class="filters" role="tablist" aria-label="筛选">
-      <button v-for="f in filters" :key="f.key" type="button" role="tab" class="chip" :aria-selected="filter === f.key" @click="setFilter(f.key)">
-        {{ f.label }}
-      </button>
-    </div>
-    <form class="row" role="search" @submit.prevent="doSearch">
-      <input v-model="search" type="text" placeholder="标题或公众号" aria-label="按标题或公众号搜索">
-      <button type="submit" class="btn">搜索</button>
-    </form>
+  <header class="zg-pagehead"><h1 class="zg-pagehead__title">文章管理</h1></header>
+  <div class="zg-tabs admin-tabs" role="group" aria-label="筛选文章">
+    <button v-for="[key, label] in filters" :key="key" :aria-pressed="filter === key" :class="{ 'is-selected': filter === key }"
+      @click="router.replace({ query: { ...route.query, filter: key === 'all' ? undefined : key } })">{{ label }}</button>
   </div>
-
-  <p v-if="filter === 'issues'" class="muted small">
-    "有问题"包括：抓取成功却没有备份、有图片没存下来、正文不到 100 字、检查连续失败。可以进入详情查看备份，文章仍在线时可以重新备份。
-  </p>
-  <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
-  <p v-if="loading && !items.length" class="muted"><span class="spinner" /> 加载中…</p>
-  <p v-else-if="!items.length && !error" class="card muted center">没有符合条件的文章。</p>
-
-  <ul class="items">
-    <li v-for="a in items" :key="a.id">
-      <RouterLink :to="{ name: 'admin-article', params: { id: a.id } }" class="item card">
-        <div class="main">
-          <div class="title">{{ a.title || '（无标题）' }}</div>
-          <div class="muted small">
-            {{ a.account_name || '—' }} · 首次提交 {{ formatShort(a.first_seen_at) }}
-            <template v-if="a.last_checked_at"> · 检查于 {{ formatRelative(a.last_checked_at) }}</template>
-          </div>
-          <div class="facts small">
-            <span>{{ a.watchers }} 人观察</span>
-            <span>{{ a.snapshots }} 份备份</span>
-            <template v-if="a.latest">
-              <span>图片 {{ a.latest.images }}<template v-if="a.latest.missing_images">（缺 {{ a.latest.missing_images }}）</template></span>
-              <span v-if="a.latest.text_runes != null">正文 {{ formatNumber(a.latest.text_runes) }} 字</span>
-            </template>
-          </div>
-          <div v-if="a.issues.length" class="issues">
-            <span v-for="i in a.issues" :key="i" class="issue" :title="issueDetail(i)">{{ issueLabel(i) }}</span>
-          </div>
-        </div>
-        <span class="status" :class="`s-${a.status}`">{{ articleStatusText(a.status) }}</span>
-      </RouterLink>
-    </li>
-  </ul>
-  <div v-if="next" class="center more">
-    <button type="button" class="btn" :disabled="loading" @click="load(true)">加载更多</button>
-  </div>
+  <form class="zg-toolbar" role="search" @submit.prevent="router.replace({ query: { ...route.query, q: search.trim() || undefined } })">
+    <label class="zg-shard zg-input zg-input--search"><input v-model="search" type="search" placeholder="搜索标题或公众号" aria-label="搜索标题或公众号"></label>
+    <button class="zg-shard zg-btn zg-btn--secondary zg-btn--sm">搜索</button>
+    <span v-if="matchCount !== undefined" class="zg-toolbar__count">匹配 {{ matchCount }} 篇</span>
+  </form>
+  <p v-if="error" class="notice notice-danger" role="alert">{{ error }} <button class="btn-link" @click="reset">重试</button></p>
+  <p v-if="loading" class="muted" role="status">加载中…</p>
+  <div class="zg-shard zg-tablewrap"><table class="zg-table">
+    <thead><tr><th>标题 / 公众号</th><th>状态</th><th>备份</th><th class="is-num">观察者</th><th>最近检查</th></tr></thead>
+    <tbody><tr v-for="a in items" :key="a.id">
+      <td><RouterLink class="zg-table__title" :to="{ name: 'admin-article', params: { id: a.id } }">{{ a.title || '（无标题）' }}</RouterLink>
+        <span class="zg-table__sub">{{ a.account_name || '—' }} · 收录于 {{ formatShort(a.first_seen_at) }}</span>
+      </td>
+      <td><span class="zg-shard zg-tag" :class="'zg-tag--' + tones[a.status]"><i class="zg-tag__glyph" />{{ articleStatusText(a.status) }}</span></td>
+      <td>{{ a.snapshots }} 份 <span v-if="a.latest" class="zg-table__sub">{{ a.latest.images }} 张图片<template v-if="a.latest.missing_images">，缺 {{ a.latest.missing_images }} 张</template><template v-if="a.latest.text_runes != null"> · {{ a.latest.text_runes }} 字</template></span>
+        <span v-for="i in a.issues" :key="i" class="issue" :title="issueDetail(i)">{{ issueLabel(i) }}</span>
+      </td><td class="is-num">{{ a.watchers }}</td><td class="is-mono">{{ formatShort(a.last_checked_at) || '—' }}</td>
+    </tr><tr v-if="!items.length && !loading && !error"><td colspan="5">没有符合条件的文章。</td></tr></tbody>
+  </table></div>
+  <ResultPager :page="page" :has-next="hasNext" :loading="loading" @go="go" />
 </template>
-
 <style scoped>
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.toolbar input {
-  width: 220px;
-  max-width: 100%;
-}
-.toolbar form {
-  flex-wrap: nowrap;
-}
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.chip {
-  font: inherit;
-  font-size: 0.875rem;
-  padding: 2px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-}
-.chip[aria-selected='true'] {
-  background: var(--fg);
-  border-color: var(--fg);
-  color: var(--bg);
-}
-.items {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 8px;
-}
-.item {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  color: inherit;
-  padding: 12px 14px;
-}
-.item:hover {
-  text-decoration: none;
-  border-color: var(--accent);
-}
-.main {
-  flex: 1;
-  min-width: 0;
-}
-.title {
-  font-weight: 600;
-}
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 14px;
-  margin-top: 2px;
-  font-variant-numeric: tabular-nums;
-}
-.issues {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-.issue {
-  font-size: 0.75rem;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--warn-soft);
-  color: var(--warn);
-  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
-}
-.status {
-  flex: none;
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--muted-soft);
-  color: var(--muted);
-}
-.s-alive {
-  background: var(--ok-soft);
-  color: var(--ok);
-}
-.s-deleted {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.s-pending {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.more {
-  margin-top: 14px;
-}
+.admin-tabs { flex-wrap: wrap; margin-bottom: var(--space-4); gap: var(--space-2) var(--space-4); }
+.issue { display: inline-block; font-size: 12px; background: var(--status-partial-soft); color: var(--status-partial); margin-right: 4px; padding: 0 4px; }
+.zg-table__title { max-width: 30em; white-space: normal; min-width: 10em; }
 </style>
