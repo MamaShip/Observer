@@ -23,6 +23,18 @@ case "$ref" in
 esac
 
 previous=$(sed -n 's/^OBSERVER_IMAGE=//p' .env)
+log() { echo "$(date -u +%FT%TZ) $*" >> deploy.log; }
+
+# Migrations run when the new version starts, and some cannot be undone:
+# back up first, and stop here if that fails. (Backups need S3; without it
+# the command says so and fails, so skip it then.)
+if [ -n "$(docker compose ps -q app 2>/dev/null)" ] && grep -q '^S3_BUCKET=.' .env; then
+  if ! docker compose exec -T app observer admin backup; then
+    echo "backup failed; not updating" >&2
+    log "update to $image refused: backup failed"
+    exit 1
+  fi
+fi
 sed -i "s|^OBSERVER_IMAGE=.*|OBSERVER_IMAGE=$image|" .env
 grep -q '^OBSERVER_IMAGE=' .env || echo "OBSERVER_IMAGE=$image" >> .env
 
@@ -31,8 +43,10 @@ if ! docker compose up -d --wait app; then
   echo "app did not become healthy; rolling back to $previous" >&2
   sed -i "s|^OBSERVER_IMAGE=.*|OBSERVER_IMAGE=$previous|" .env
   docker compose up -d --wait app
+  log "update to $image failed; rolled back to $previous"
   exit 1
 fi
 docker compose up -d
 docker image prune -f >/dev/null
+log "updated $previous -> $image"
 echo "running $image"

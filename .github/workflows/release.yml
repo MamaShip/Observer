@@ -50,6 +50,11 @@ jobs:
     # DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS to enable.
     if: vars.DEPLOY_HOST != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One deployment at a time; a second tag waits for the first.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     steps:
       - name: Switch the server to this version
         env:
@@ -62,4 +67,4 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           # The key's forced command on the server runs update.sh with $TAG.
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$HOST" "$TAG"
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "root@$HOST" "$TAG"

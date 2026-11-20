@@ -77,16 +77,21 @@ cd web && BASE=https://ob.portkey.click SESSION=$TOKEN ARTICLE=https://mp.weixin
 
 `update.sh` 先只更新 app 并等待健康检查，失败时自动回滚到之前的镜像。数据库迁移在 app 启动时自动执行；迁移只能向前，回滚到旧版本前先确认没有新迁移（`git diff v旧..v新 -- internal/store/migrations`）。
 
-**自动部署的配置**（可选）：
+**自动部署的配置**（可选）：打 `v*` 标签后，Release workflow 构建镜像，再用一把专用钥匙 SSH 到服务器运行 `update.sh <标签>`。
 
-```sh
-ssh-keygen -t ed25519 -N '' -f deploy_key -C github-deploy
-# 服务器 /root/.ssh/authorized_keys 加一行，限制这把钥匙只能运行 update.sh：
-command="/opt/observer/update.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... github-deploy
-ssh-keyscan <服务器 IP>   # 输出作为 DEPLOY_KNOWN_HOSTS
-```
+1. 在开发机上生成钥匙（不要设密码）：`ssh-keygen -t ed25519 -N '' -f deploy_key -C github-deploy-observer`
+2. 服务器 `/root/.ssh/authorized_keys` 末尾加一行，限制这把钥匙只能运行 `update.sh`（`restrict` 禁止终端和各种转发）：
+   ```
+   command="/opt/observer/update.sh",restrict ssh-ed25519 AAAA...（deploy_key.pub 的内容） github-deploy-observer
+   ```
+3. 服务器的主机公钥，作为 `DEPLOY_KNOWN_HOSTS`（直接从服务器读取，比 `ssh-keyscan` 可靠）：
+   ```sh
+   ssh root@<服务器 IP> 'for f in /etc/ssh/ssh_host_*_key.pub; do echo "<服务器 IP> $(cut -d" " -f1,2 $f)"; done'
+   ```
+4. GitHub 仓库 Settings → Secrets and variables → Actions：Secret `DEPLOY_SSH_KEY`（`deploy_key` 私钥全文）、`DEPLOY_KNOWN_HOSTS`（第 3 步的输出）；Variables 标签页里加 `DEPLOY_HOST`（服务器 IP）。
+5. 验证：`ssh -i deploy_key root@<服务器 IP> <当前版本号>` 会重新部署当前版本（无变化）；`ssh -i deploy_key root@<服务器 IP> ls` 应被拒绝（打印 usage）。然后删除开发机上的 `deploy_key`。
 
-GitHub 仓库 Settings → Secrets and variables → Actions：Secret `DEPLOY_SSH_KEY`（`deploy_key` 私钥内容）、`DEPLOY_KNOWN_HOSTS`；Variable `DEPLOY_HOST`（服务器 IP）。
+`update.sh` 在切换前先备份数据库（失败则不升级），每次升级、回滚记录在 `/opt/observer/deploy.log`。它只换 app 镜像；`compose.yaml`、`Caddyfile` 有改动的版本需要先手动复制到服务器。撤销自动部署：删掉 `authorized_keys` 里那一行，或删掉 `DEPLOY_HOST` 变量。
 
 ## 备份与恢复
 
