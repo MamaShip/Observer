@@ -5,11 +5,12 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
 	"os"
-	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -180,31 +181,82 @@ func TestCleanStyle(t *testing.T) {
 	}
 }
 
-func TestInline(t *testing.T) {
+func TestSingleFile(t *testing.T) {
 	sha := sha256.Sum256([]byte("img"))
 	h := hex.EncodeToString(sha[:])
-	page := []byte(`<img src="/a/` + h + `"><p style="background: url('/a/` + h + `')">`)
-	calls := 0
-	out, err := Inline(page, func(s string) ([]byte, string, error) {
-		calls++
-		if s != h {
-			t.Fatalf("asked for %s", s)
-		}
-		return []byte("PNG"), "image/png", nil
-	})
+	page := []byte(`<img src="/a/` + h + `"><p style="background: url('/a/` + h + `')">end`)
+	types, opens := 0, 0
+	f, err := NewSingleFile(page,
+		func(s string) (string, error) {
+			types++
+			if s != h {
+				t.Fatalf("asked for %s", s)
+			}
+			return "image/png", nil
+		},
+		func(string) (io.ReadCloser, error) {
+			opens++
+			return io.NopCloser(strings.NewReader("PNG")), nil
+		})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 {
-		t.Errorf("fetched %d times, want 1 (cached)", calls)
+	var out bytes.Buffer
+	n, err := f.WriteTo(&out)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if n := regexp.MustCompile(`data:image/png;base64,UE5H`).FindAllIndex(out, -1); len(n) != 2 {
-		t.Fatalf("inlined %d references: %s", len(n), out)
+	want := `<img src="data:image/png;base64,UE5H"><p style="background: url('data:image/png;base64,UE5H')">end`
+	if out.String() != want || n != int64(len(want)) {
+		t.Fatalf("got %d bytes %q", n, out.String())
 	}
-	_, err = Inline(page, func(string) ([]byte, string, error) { return nil, "", errors.New("gone") })
-	if err == nil {
+	if types != 1 || opens != 2 {
+		t.Errorf("looked up %d types (want 1), opened %d times (want 2)", types, opens)
+	}
+
+	// A missing image fails before anything is written.
+	if _, err := NewSingleFile(page, func(string) (string, error) { return "", errors.New("gone") }, nil); err == nil {
 		t.Fatal("missing asset not reported")
 	}
+	// One that cannot be read fails the write.
+	f, _ = NewSingleFile(page, func(string) (string, error) { return "image/png", nil },
+		func(string) (io.ReadCloser, error) { return nil, errors.New("unreadable") })
+	if _, err := f.WriteTo(io.Discard); err == nil {
+		t.Fatal("unreadable asset not reported")
+	}
+}
+
+// A large image passes through without being held in memory.
+func TestSingleFileStreams(t *testing.T) {
+	const size = 8 << 20
+	sha := sha256.Sum256([]byte("big"))
+	page := []byte(`<img src="/a/` + hex.EncodeToString(sha[:]) + `">`)
+	f, err := NewSingleFile(page, func(string) (string, error) { return "image/jpeg", nil },
+		func(string) (io.ReadCloser, error) { return io.NopCloser(io.LimitReader(zeros{}, size)), nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	n, err := f.WriteTo(io.Discard)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(len(page)-len("/a/")-64+len("data:image/jpeg;base64,")) + int64(base64.StdEncoding.EncodedLen(size)); n != want {
+		t.Errorf("wrote %d bytes, want %d", n, want)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+		t.Errorf("allocated %d bytes for an %d-byte image", alloc, size)
+	}
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 // TestBuildFile builds a snapshot from a saved page, for eyeballing:

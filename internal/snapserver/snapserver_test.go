@@ -139,6 +139,18 @@ func TestServer(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "data:image/png;base64,") || strings.Contains(rec.Body.String(), "/a/") {
 		t.Fatalf("download: %d %s", rec.Code, rec.Body)
 	}
+	// While two downloads run, a third waits, then is turned away.
+	downloadQueueing = 50 * time.Millisecond
+	srv.downloads <- struct{}{}
+	srv.downloads <- struct{}{}
+	if busy := get(path(dl)); busy.Code != http.StatusServiceUnavailable || busy.Header().Get("Retry-After") == "" {
+		t.Errorf("third download: %d %v", busy.Code, busy.Header())
+	}
+	<-srv.downloads
+	if again := get(path(dl)); again.Code != 200 {
+		t.Errorf("download once a slot is free: %d", again.Code)
+	}
+	<-srv.downloads
 	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") ||
 		!strings.Contains(cd, "filename*=UTF-8''"+url.PathEscape("标题_带_特殊_字符-20261119.html")) {
 		t.Errorf("Content-Disposition = %s", cd)

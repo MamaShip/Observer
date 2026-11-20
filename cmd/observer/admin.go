@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,7 +21,7 @@ import (
 	"github.com/MamaShip/Observer/internal/blob"
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/jobs"
-	"github.com/MamaShip/Observer/internal/snapshot"
+	"github.com/MamaShip/Observer/internal/snapserver"
 	"github.com/MamaShip/Observer/internal/store"
 	"github.com/MamaShip/Observer/internal/store/db"
 )
@@ -297,26 +296,23 @@ func adminExport(ctx context.Context, cfg config.Config, q *db.Queries, args []s
 	if err != nil {
 		return err
 	}
-	single, err := snapshot.Inline(page, func(sha string) ([]byte, string, error) {
-		raw, err := hex.DecodeString(sha)
-		if err != nil || len(raw) != 32 {
-			return nil, "", fmt.Errorf("bad hash %q", sha)
-		}
-		asset, err := q.GetAsset(ctx, raw)
-		if err != nil {
-			return nil, "", err
-		}
-		data, err := readAll(ctx, bs, blob.AssetKey([32]byte(raw)))
-		return data, asset.ContentType, err
-	})
+	file, err := snapserver.SingleFile(ctx, q, bs, page)
 	if err != nil {
 		return err
 	}
 	if *out == "" {
-		_, err = os.Stdout.Write(single)
+		_, err = file.WriteTo(os.Stdout)
 		return err
 	}
-	return os.WriteFile(*out, single, 0o644)
+	f, err := os.Create(*out)
+	if err != nil {
+		return err
+	}
+	if _, err := file.WriteTo(f); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func readAll(ctx context.Context, s blob.Store, key string) ([]byte, error) {

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -354,35 +355,81 @@ func formatTime(t time.Time) string {
 	return t.In(cst).Format("2006-01-02 15:04")
 }
 
-// Inline replaces /a/<sha256> references with data URIs, making a single
-// file that opens offline. get returns an image's bytes and content type.
-func Inline(page []byte, get func(sha string) ([]byte, string, error)) ([]byte, error) {
-	var firstErr error
-	cache := map[string]string{}
-	out := assetRef.ReplaceAllFunc(page, func(m []byte) []byte {
-		sha := string(m[3:])
-		if uri, ok := cache[sha]; ok {
-			return []byte(uri)
+// SingleFile is a reading page to be written out as one self-contained file,
+// its /a/<sha256> image references replaced with data URIs.
+type SingleFile struct {
+	page  []byte
+	refs  [][]int           // positions of the references in page
+	types map[string]string // content type per sha256
+	open  func(sha string) (io.ReadCloser, error)
+}
+
+// NewSingleFile prepares page for WriteTo. It looks up every image's
+// content type first, so a missing image fails before anything is written.
+func NewSingleFile(page []byte, contentType func(sha string) (string, error), open func(sha string) (io.ReadCloser, error)) (*SingleFile, error) {
+	f := &SingleFile{page: page, refs: assetRef.FindAllIndex(page, -1), types: map[string]string{}, open: open}
+	for _, r := range f.refs {
+		sha := string(page[r[0]+3 : r[1]])
+		if _, ok := f.types[sha]; ok {
+			continue
 		}
-		data, ctype, err := get(sha)
+		ct, err := contentType(sha)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("asset %s: %w", sha, err)
-			}
-			return m
+			return nil, fmt.Errorf("asset %s: %w", sha, err)
 		}
-		uri := dataURI(ctype, data)
-		cache[sha] = uri
-		return []byte(uri)
-	})
-	return out, firstErr
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		f.types[sha] = ct
+	}
+	return f, nil
+}
+
+// WriteTo writes the file, base64-encoding each image while it is read, so
+// memory use does not grow with the images' size. An image used twice is
+// read twice.
+func (f *SingleFile) WriteTo(w io.Writer) (int64, error) {
+	cw := &countingWriter{w: w}
+	last := 0
+	for _, r := range f.refs {
+		sha := string(f.page[r[0]+3 : r[1]])
+		if _, err := cw.Write(f.page[last:r[0]]); err != nil {
+			return cw.n, err
+		}
+		if _, err := io.WriteString(cw, "data:"+f.types[sha]+";base64,"); err != nil {
+			return cw.n, err
+		}
+		if err := f.writeImage(cw, sha); err != nil {
+			return cw.n, err
+		}
+		last = r[1]
+	}
+	_, err := cw.Write(f.page[last:])
+	return cw.n, err
+}
+
+func (f *SingleFile) writeImage(w io.Writer, sha string) error {
+	rc, err := f.open(sha)
+	if err != nil {
+		return fmt.Errorf("asset %s: %w", sha, err)
+	}
+	defer rc.Close()
+	enc := base64.NewEncoder(base64.StdEncoding, w)
+	if _, err := io.Copy(enc, rc); err != nil {
+		return fmt.Errorf("asset %s: %w", sha, err)
+	}
+	return enc.Close()
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 var assetRef = regexp.MustCompile(`/a/[0-9a-f]{64}`)
-
-func dataURI(contentType string, data []byte) string {
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data)
-}

@@ -4,6 +4,8 @@
 package snapserver
 
 import (
+	"bufio"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -79,12 +81,21 @@ type Server struct {
 	mainOrigin string // allowed to embed snapshot pages
 	log        *slog.Logger
 	now        func() time.Time
+	downloads  chan struct{} // single-file downloads in progress
 }
+
+// Single-file downloads are written as they are read, so each takes little
+// memory, but every one reads all the article's images: only a few run at
+// once, and others wait briefly before being turned away.
+const maxDownloads = 2
+
+var downloadQueueing = 15 * time.Second // a variable for tests
 
 // New builds the server. mainOrigin is the main site's origin, e.g.
 // https://observer.example, the only page allowed to frame snapshots.
 func New(q *db.Queries, store blob.Store, signer Signer, mainOrigin string, log *slog.Logger) *Server {
-	return &Server{q: q, blob: store, signer: signer, mainOrigin: mainOrigin, log: log.With("component", "snapserver"), now: time.Now}
+	return &Server{q: q, blob: store, signer: signer, mainOrigin: mainOrigin, log: log.With("component", "snapserver"), now: time.Now,
+		downloads: make(chan struct{}, maxDownloads)}
 }
 
 // Handler routes the snapshot origin.
@@ -162,23 +173,24 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	timer := time.NewTimer(downloadQueueing)
+	defer timer.Stop()
+	select {
+	case s.downloads <- struct{}{}:
+		defer func() { <-s.downloads }()
+	case <-timer.C:
+		w.Header().Set("Retry-After", "30")
+		http.Error(w, "下载的人较多，请稍后再试。", http.StatusServiceUnavailable)
+		return
+	case <-r.Context().Done():
+		return
+	}
 	page, err := s.read(r, snap.HtmlKey)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	single, err := snapshot.Inline(page, func(sha string) ([]byte, string, error) {
-		raw, err := hex.DecodeString(sha)
-		if err != nil || len(raw) != 32 {
-			return nil, "", fmt.Errorf("bad hash %q", sha)
-		}
-		a, err := s.q.GetAsset(r.Context(), raw)
-		if err != nil {
-			return nil, "", err
-		}
-		data, err := s.read(r, blob.AssetKey([32]byte(raw)))
-		return data, a.ContentType, err
-	})
+	file, err := SingleFile(r.Context(), s.q, s.blob, page)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -188,7 +200,44 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Security-Policy", s.pageCSP())
 	h.Set("Content-Disposition", attachment(deref(snap.Title), snap.CapturedAt))
 	h.Set("Cache-Control", "private, no-store")
-	_, _ = w.Write(single)
+	bw := bufio.NewWriterSize(w, 64<<10)
+	if _, err := file.WriteTo(bw); err == nil {
+		err = bw.Flush()
+	}
+	if err != nil {
+		// Part of the file is already sent: cut the connection so the
+		// browser reports a failed download instead of saving half a page.
+		s.log.Warn("single-file download interrupted", "snapshot", snap.ID, "err", err)
+		panic(http.ErrAbortHandler)
+	}
+}
+
+// SingleFile prepares a reading page as one self-contained file with its
+// images from store (snapshot.SingleFile). The command-line export uses it too.
+func SingleFile(ctx context.Context, q *db.Queries, store blob.Store, page []byte) (*snapshot.SingleFile, error) {
+	hash := func(sha string) ([32]byte, error) {
+		raw, err := hex.DecodeString(sha)
+		if err != nil || len(raw) != 32 {
+			return [32]byte{}, fmt.Errorf("bad hash %q", sha)
+		}
+		return [32]byte(raw), nil
+	}
+	return snapshot.NewSingleFile(page,
+		func(sha string) (string, error) {
+			h, err := hash(sha)
+			if err != nil {
+				return "", err
+			}
+			a, err := q.GetAsset(ctx, h[:])
+			return a.ContentType, err
+		},
+		func(sha string) (io.ReadCloser, error) {
+			h, err := hash(sha)
+			if err != nil {
+				return nil, err
+			}
+			return store.Get(ctx, blob.AssetKey(h))
+		})
 }
 
 func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
