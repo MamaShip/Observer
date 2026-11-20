@@ -45,7 +45,7 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 | 主体 | 无企业主体 | 无法使用服务号模板消息/订阅通知、开放平台 UnionID、微信扫码登录 → 通知只用邮件，登录用邮箱 |
 | 部署地 | 香港 VPS | 无需 ICP 备案；需实测香港数据中心 IP 抓取微信文章是否频繁触发验证 |
 | VPS | 2 核 / **1 GB 内存** / 30 GB 磁盘 / 500 GB 月流量 | 服务器只运行后端服务，**不运行浏览器**；Postgres 调小；本地缓存设上限 |
-| 已有资源 | Wasabi 对象存储套餐、域名 | 备份文件全部存 Wasabi；注意 90 天最短存储期、出站 ≤ 存储量的公平使用条款 |
+| 已有资源 | Wasabi 对象存储套餐、域名 | 备份文件全部存 Wasabi；注意 90 天最短存储期、出站 ≤ 存储量的公平使用条款（账号下其他应用已有约 1 TB 存储，本服务出站不受限，见 §8.1） |
 | 成本 | 其余尽量零成本 | 邮件用 Resend 免费档（3000 封/月，**100 封/日**）；CI/镜像仓库用 GitHub 免费额度 |
 
 ---
@@ -288,7 +288,7 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 - **在线查看**：前端调用 `POST /api/v1/snapshots/{id}/view-url` 获取签名链接（HMAC，1 小时有效），以 `<iframe sandbox>` 嵌入 `snap.<domain>/s/<id>?sig=...`。
 - **下载单文件 HTML**：快照服务在请求时把图片内联为 data URI，流式输出，不缓存成品（`snapshot.SingleFile`：先查齐所有图片的类型，缺图时在发送前就报错；之后逐张读取、边读边 Base64 编码写出，内存占用与图片大小无关；中途出错则断开连接，浏览器显示下载失败而不是保存半个文件）。同时最多 2 个下载，其余最多排队 15 秒，仍满则返回 503。命令行 `admin export` 用同一实现。2026-11-20 之前的实现会把全部图片的编码结果和整份文件放在内存里，已修正。
 - **保存为 PDF**：阅读版 HTML 内置打印样式（分页、图片适配纸宽、隐藏无关元素、页脚标注原文链接与备份时间）。用户点击"打印 / 保存为 PDF"后，前端在新标签页打开快照，并提示使用浏览器的打印功能（iOS、安卓需从系统浏览器打开，微信内置浏览器不支持打印）。服务器不生成 PDF。
-- 资源 `/a/<sha256>` 内容不可变，设置长期缓存头。读取顺序为 本地磁盘缓存 → Wasabi，回源后写入缓存。
+- 资源 `/a/<sha256>` 内容不可变，设置长期缓存头。读取顺序为 本地磁盘缓存 → Wasabi，回源后写入缓存。计划改为在线查看时图片直连 Wasabi（§8.1，待实施），`/a/` 保留作回退。
 
 ### 6.5 观察到期与收尾
 
@@ -469,13 +469,29 @@ snapshots/<snapshot_id>/raw.html.gz      原始页面
 backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 ```
 
-- Bucket 私有，只由 app 访问，用户永远不直连 Wasabi（大陆访问速度不可控，并且可以把 Wasabi 出站量控制在存储量以内）。
+- Bucket 私有，只由 app 访问，用户不直连 Wasabi（当初的理由：大陆访问速度不可控，并且可以把 Wasabi 出站量控制在存储量以内）。**2026-11-20 已决定图片改为直连，见 §8.1，尚未实施**；阅读版、原始页面、数据库备份仍然私有。
 - **90 天最短存储期**：除数据库备份外，所有对象都是长期保留，不受影响；数据库备份默认保留 120 天。**不要把 Wasabi 当临时存储用**，临时文件只放本地磁盘。
 - 本地磁盘 LRU 缓存上限 5 GB（配置项），存放热点图片与快照 HTML。只在读取（快照域服务）时用到，所以与快照域一起在 M3 实现。
 - 开发与测试用本地目录（`BLOB_DIR`）代替 S3，代码路径相同；S3 实现另有一个连真实 bucket 的测试（`TestS3`，需设置 `TEST_S3_*`），M2 已在 VPS 上对 Wasabi 跑通。
 - Region 选 **新加坡 `ap-southeast-1`**（`s3.ap-southeast-1.wasabisys.com`）：M0 从香港 VPS 实测连接耗时 34 ms，是所有区域中最低的（东京 55 ms，Wasabi 没有香港区域）。Bucket 的区域在创建时确定，Wasabi 套餐按账号计费，新建 bucket 不增加费用。
 - 已创建 bucket `observer-backup-001`（2026-11-19）：私有、未开启版本控制与 Object Lock；程序使用专用子用户 `observer-app` 的密钥，策略只允许访问该 bucket（`netcheck -s3` 已验证列出全部 bucket 会被拒绝）。
 - 从 VPS 实测：8 MB 对象上传 13–15 MB/s、下载 4–5 MB/s；64 KB 对象（接近文章图片大小）上传中位数 48–69 ms、下载 76–101 ms。一篇 55 张图的文章串行上传约 3–4 秒。
+
+### 8.1 图片直连 Wasabi（2026-11-20 决定，待实施）
+
+**起因**：文章浏览的流量几乎全是图片（一篇几 MB，阅读版 HTML 只有几十 KB）。图片现在全部经 VPS 转发：VPS 到大陆的线路带宽有限，并发时互相拥塞；据实际使用，大陆直连 Wasabi 取图明显快于经 VPS。当初"大陆访问 Wasabi 速度不可控"只是推测，M0 没有对比过大陆直连 Wasabi 与经 VPS 的速度。
+
+**出站配额不是问题**：同一 Wasabi 账号下其他应用已有接近 1 TB 的存储量，公平使用条款按账号的存储量比较，本服务的图片出站远低于此。（§2 中"出站 ≤ 存储量"的约束因此不再限制本设计。）
+
+**方案**：
+1. **Bucket 策略**：只给 `assets/*` 开放匿名读（`s3:GetObject`），`snapshots/`、`backups/` 保持私有；不开放列举。图片按内容哈希命名、地址固定，浏览器缓存可以长期生效。用户已接受代价：知道哈希的人都能取到该图片（这些本来就是公众号的公开图片）。下架时删除对应对象即可，与现在相同。
+2. **配置 `ASSET_BASE_URL`**（如 `https://s3.ap-southeast-1.wasabisys.com/observer-backup-001/assets/`）：设置后，快照服务在返回阅读版（`GET /s/{id}`）时把 `/a/<sha256>` 改写为 `ASSET_BASE_URL` 下对应的 `<sha256 前 2 位>/<sha256>`；不设置时保持现状。已存的 `page.html` 不改，回滚只需删掉这个配置。Wasabi 不支持自定义域名加 HTTPS，所以只能用 Wasabi 自己的域名。
+3. **CSP**：快照页的 `img-src` 加入 `ASSET_BASE_URL` 的源。快照页已有 `<meta name="referrer" content="no-referrer">`，带签名的快照链接不会通过 Referer 泄露给 Wasabi；实施时补一个响应头 `Referrer-Policy: no-referrer` 双重保险。
+4. **缓存头**：新上传的图片在 `PutObject` 时带 `Cache-Control: public, max-age=31536000, immutable`（`Content-Type` 已经在上传时设置）。已有图片没有这个头，浏览器会按启发式缓存；需要的话用一次性的原地复制补上元数据（对象都很新，覆盖会产生少量 90 天最短存储期的费用，可以忽略）。
+5. **不变的部分**：`/a/<sha256>` 路由保留（作为回退，以及 `ASSET_BASE_URL` 未设置时使用）；单文件下载与 `admin export` 仍在服务器端从 Wasabi 读取并内联；阅读版 HTML 仍经快照域加签名提供。本地磁盘缓存此后主要缓存阅读版和下载时用到的图片，可以视情况调小 `CACHE_MAX_BYTES`。
+6. **局限**：快照页禁止脚本，浏览器里没法"直连失败再走服务器"，只能整体开关。VPS 仍是单点：阅读版、签名链接、API 都在它上面，直连只减轻它的带宽压力。
+
+**实施前后验证**：上线前在大陆网络（至少两家运营商）对同一张图比较 `snap.<domain>/a/<sha>` 与 Wasabi 直连的首字节时间和下载速度；上线后浏览器检查在线查看的图片来自 Wasabi、无 CSP 报错，下载与打印 PDF 正常；确认匿名请求 `snapshots/`、`backups/` 下的对象和列举 bucket 都被拒绝。
 
 ---
 
@@ -590,6 +606,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 - **快照隔离**：快照是第三方内容，只在 `snap.<domain>` 提供，该域不设置任何登录 Cookie。响应头：
   `Content-Security-Policy: sandbox allow-same-origin allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors https://<domain>`。
   此外，入库前已经过 bluemonday 清洗。
+  图片改为直连 Wasabi 后（§8.1，待实施），`img-src` 还要加入 `ASSET_BASE_URL` 的源。
   `allow-same-origin` 是必需的：没有它，快照页会变成匿名来源（opaque origin），它对 `/a/` 图片的请求就成了跨源请求，会被图片的 `Cross-Origin-Resource-Policy: same-origin` 拦截（M4 浏览器验收时发现，此前在线查看一直不显示图片）。它只在**禁止脚本**的前提下安全，绝不能再加 `allow-scripts`；测试会检查这一点。前端 iframe 的 `sandbox` 属性同样如此设置。
 - **SSRF 防护**：抓取只允许白名单域名，页面只允许 `mp.weixin.qq.com`，资源只允许 `*.qpic.cn`、`*.qlogo.cn`、`res.wx.qq.com`（M0 样本中出现的全部资源域名）。拨号时拒绝内网、回环、链路本地、CGNAT 等非公网地址，重定向后再次校验（已在 `internal/wechat/fetch.go` 实现）。
 - **签名链接**：HMAC-SHA256，密钥来自配置，带过期时间；签名绑定快照 ID。
@@ -845,7 +862,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 >
 > **v0.2.0（2026-11-20）**：管理后台、只在删除时发邮件、用户邀请（每月 5 个）；升级前先做了数据库备份，迁移 00003～00006 执行正常，Caddy 升到 2.11；用户账号设为管理员。Healthchecks.io 已接入（周期 5 分钟、宽限 10 分钟，邮件告警）。
 >
-> **仍待办**：真机验收（M4 遗留）；邀请制观察到 2026-12-04 左右再决定是否开放注册；投诉删除、账号封禁样本（决定是否改用 `head` 检查）；自动部署密钥（可选）。
+> **仍待办**：图片直连 Wasabi（§8.1，已决定，稍后实施）；真机验收（M4 遗留）；邀请制观察到 2026-12-04 左右再决定是否开放注册；投诉删除、账号封禁样本（决定是否改用 `head` 检查）；自动部署密钥（可选）。
 
 - 生产 Compose、Caddy、swap、Postgres 调参、`.env` 模板。
 - tag 触发部署、数据库每日备份、恢复演练、Healthchecks、告警。
