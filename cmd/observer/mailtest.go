@@ -19,9 +19,14 @@ import (
 func runMailtest(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("mailtest", flag.ExitOnError)
 	envFile := fs.String("env-file", "", "read variables from this file first (KEY=value lines, as Docker Compose env_file)")
-	to := fs.String("to", "", "also send a sample login code and a sample notification to this address")
+	to := fs.String("to", "", "also send sample emails to this address")
+	kind := fs.String("kind", "all", "samples to send with -to: login, digest or all")
 	name := fs.String("service-name", "折光观察者", "service name shown in the samples")
+	baseURL := fs.String("base-url", "", "site address in the samples (default $BASE_URL, else https://example.invalid)")
 	fs.Parse(args)
+	if *kind != "login" && *kind != "digest" && *kind != "all" {
+		return fmt.Errorf("-kind must be login, digest or all, got %q", *kind)
+	}
 
 	if *envFile != "" {
 		if err := loadEnvFile(*envFile); err != nil {
@@ -58,7 +63,13 @@ func runMailtest(ctx context.Context, args []string) error {
 		return err
 	}
 
-	const site = "https://example.invalid"
+	site := strings.TrimRight(*baseURL, "/")
+	if site == "" {
+		site = strings.TrimRight(os.Getenv("BASE_URL"), "/")
+	}
+	if site == "" {
+		site = "https://example.invalid"
+	}
 	login, err := mail.Render("login", addr, mail.LoginData{Code: "000000", ValidMinutes: 10, ServiceName: *name, ServiceURL: site})
 	if err != nil {
 		return err
@@ -73,7 +84,14 @@ func runMailtest(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, m := range []mail.Message{login, digest} {
+	var msgs []mail.Message
+	if *kind != "digest" {
+		msgs = append(msgs, login)
+	}
+	if *kind != "login" {
+		msgs = append(msgs, digest)
+	}
+	for _, m := range msgs {
 		m.Subject = "[测试] " + m.Subject
 		id, err := s.Send(ctx, m)
 		if err != nil {
