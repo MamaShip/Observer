@@ -98,6 +98,19 @@ func (s *SMTP) Send(ctx context.Context, m Message) (string, error) {
 	return id, nil
 }
 
+// Check connects and logs in without sending anything, to verify the
+// configuration and credentials.
+func (s *SMTP) Check(ctx context.Context) error {
+	client, err := gomail.NewClient(s.cfg.Host, s.opts...)
+	if err != nil {
+		return err
+	}
+	if err := client.DialWithContext(ctx); err != nil {
+		return err
+	}
+	return client.Close()
+}
+
 // build makes the MIME message, plain text first with an HTML alternative.
 func build(from string, m Message) (*gomail.Msg, error) {
 	msg := gomail.NewMsg()

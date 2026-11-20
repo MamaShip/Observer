@@ -21,6 +21,7 @@ Usage:
   observer admin stats               print service counters
   observer probe [flags] <url>...    fetch article links and report what WeChat returns
   observer netcheck [flags]          measure network paths to WeChat, Wasabi and SMTP
+  observer mailtest [-to ADDR]       log in to the SMTP server; with -to, send sample emails
   observer version
 
 Configuration comes from environment variables; see plan.md §13.3.
@@ -50,6 +51,8 @@ func main() {
 		err = runProbe(ctx, args)
 	case "netcheck":
 		err = runNetcheck(ctx, args)
+	case "mailtest":
+		err = runMailtest(ctx, args)
 	case "version", "-v", "--version":
 		fmt.Println(version)
 	case "help", "-h", "--help":

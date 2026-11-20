@@ -730,6 +730,8 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 > - 验收集成测试 `internal/app/flow_test.go` 在真实 HTTP、River 和 Postgres 上走完：验证码登录 → 提交 → 生成快照 → 查看 → 下载 → 删除确认 → 收到删除邮件 → 权限隔离 → 退出与删除账号。
 > - 编译出的程序用 curl 冒烟测试通过。
 >
+> - Resend 已配置（2026-11-20）：发件域名 `ob.portkey.click`（东京区域），DKIM、SPF（CNAME `rsend.ob` / `send.ob`）、DMARC（`_dmarc.ob`，`p=none`）均已生效；根域名的 Namecheap 邮件转发 MX 保持不变。`observer mailtest -env-file .env.smtp` 验证 SMTP 登录通过（加 `-to` 可发送示例邮件）。
+>
 > **待办（需要用户提供）**：Resend 账号与 SMTP 凭据、发件域名的 SPF/DKIM/DMARC 记录，拿到后用真实邮箱验证送达率（QQ、163、Gmail）。
 
 - 验证码登录、会话、限流、配额、注册模式。

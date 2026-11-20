@@ -1,0 +1,115 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"flag"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/MamaShip/Observer/internal/auth"
+	"github.com/MamaShip/Observer/internal/mail"
+)
+
+// runMailtest checks the SMTP settings (SMTP_HOST, SMTP_PORT, SMTP_USER,
+// SMTP_PASSWORD, MAIL_FROM) without needing a database.
+func runMailtest(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("mailtest", flag.ExitOnError)
+	envFile := fs.String("env-file", "", "read variables from this file first (KEY=value lines, as Docker Compose env_file)")
+	to := fs.String("to", "", "also send a sample login code and a sample notification to this address")
+	name := fs.String("service-name", "折光观察者", "service name shown in the samples")
+	fs.Parse(args)
+
+	if *envFile != "" {
+		if err := loadEnvFile(*envFile); err != nil {
+			return err
+		}
+	}
+	port := 587
+	if p := os.Getenv("SMTP_PORT"); p != "" {
+		var err error
+		if port, err = strconv.Atoi(p); err != nil {
+			return fmt.Errorf("SMTP_PORT: %w", err)
+		}
+	}
+	s, err := mail.NewSMTP(mail.SMTPConfig{
+		Host: os.Getenv("SMTP_HOST"), Port: port, Username: os.Getenv("SMTP_USER"),
+		Password: os.Getenv("SMTP_PASSWORD"), From: os.Getenv("MAIL_FROM"),
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	if err := s.Check(ctx); err != nil {
+		return fmt.Errorf("SMTP login failed: %w", err)
+	}
+	fmt.Printf("SMTP login ok: %s:%d as %q (%s)\n", os.Getenv("SMTP_HOST"), port, os.Getenv("SMTP_USER"), time.Since(start).Round(time.Millisecond))
+	if *to == "" {
+		return nil
+	}
+	addr, err := auth.NormalizeEmail(*to)
+	if err != nil {
+		return err
+	}
+
+	const site = "https://example.invalid"
+	login, err := mail.Render("login", addr, mail.LoginData{Code: "000000", ValidMinutes: 10, ServiceName: *name, ServiceURL: site})
+	if err != nil {
+		return err
+	}
+	digest, err := mail.Render("digest", addr, mail.DigestData{
+		Deleted: 1, Expired: 1, ServiceName: *name, ServiceURL: site, SettingsURL: site + "/settings",
+		Items: []mail.DigestItem{
+			{Title: "（测试）一篇被删除的文章", AccountName: "测试公众号", Deleted: true, Reason: "此内容因违规无法查看", Link: site + "/watches/test"},
+			{Title: "（测试）一篇观察期结束的文章", AccountName: "测试公众号", Link: site + "/watches/test"},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	for _, m := range []mail.Message{login, digest} {
+		m.Subject = "[测试] " + m.Subject
+		id, err := s.Send(ctx, m)
+		if err != nil {
+			return fmt.Errorf("send %q: %w", m.Subject, err)
+		}
+		fmt.Printf("sent %q, Message-ID %s\n", m.Subject, id)
+	}
+	return nil
+}
+
+// loadEnvFile sets KEY=value lines from path, without shell quoting rules
+// (values may contain spaces and <>), like Docker Compose env_file. Variables
+// already set in the environment win.
+func loadEnvFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for n := 1; sc.Scan(); n++ {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			return fmt.Errorf("%s:%d: not KEY=value", path, n)
+		}
+		k = strings.TrimSpace(strings.TrimPrefix(k, "export "))
+		if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+			v = v[1 : len(v)-1]
+		}
+		if _, set := os.LookupEnv(k); !set {
+			os.Setenv(k, v)
+		}
+	}
+	return sc.Err()
+}
