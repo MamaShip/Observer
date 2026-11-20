@@ -46,6 +46,21 @@ export function watchBadge(w: Watch): Badge {
   }
 }
 
+const day = 24 * 60 * 60 * 1000
+
+/** daysLeft is how many days an open watch still runs, rounded up. */
+export function daysLeft(w: Pick<Watch, 'expires_at'>, now = Date.now()): number {
+  return Math.max(0, Math.ceil((new Date(w.expires_at).getTime() - now) / day))
+}
+
+/** Within this many days of its end a watch is shown as ending soon. */
+export const endingSoonDays = 7
+
+/** renewedUntil is when a watch renewed now would end. */
+export function renewedUntil(watchDays: number, now = Date.now()): Date {
+  return new Date(now + watchDays * day)
+}
+
 /** watchSummary explains a watch's state in a sentence. */
 export function watchSummary(w: Watch): string {
   switch (w.status) {

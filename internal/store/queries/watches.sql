@@ -97,3 +97,14 @@ SELECT EXISTS (
   SELECT 1 FROM snapshots s JOIN watches w ON w.article_id = s.article_id
   WHERE s.id = sqlc.arg(snapshot_id) AND w.user_id = sqlc.arg(user_id)
 );
+
+-- name: LockUserWatch :one
+SELECT * FROM watches WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id) FOR UPDATE;
+
+-- RenewWatch makes a watch active until expires_at: an active one is
+-- extended, an expired or stopped one is watched again.
+-- name: RenewWatch :one
+UPDATE watches SET status = 'active', expires_at = sqlc.arg(expires_at)::timestamptz,
+                   end_reason = NULL, ended_at = NULL, notified_at = NULL
+WHERE id = sqlc.arg(id)
+RETURNING *;

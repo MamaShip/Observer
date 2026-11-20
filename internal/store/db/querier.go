@@ -106,6 +106,7 @@ type Querier interface {
 	ListWatchesPage(ctx context.Context, arg ListWatchesPageParams) ([]ListWatchesPageRow, error)
 	// LockUser serialises one user's invitations so the monthly count holds.
 	LockUser(ctx context.Context, id uuid.UUID) (User, error)
+	LockUserWatch(ctx context.Context, arg LockUserWatchParams) (Watch, error)
 	MarkArticleAlive(ctx context.Context, arg MarkArticleAliveParams) (Article, error)
 	MarkArticleInvalid(ctx context.Context, arg MarkArticleInvalidParams) error
 	MarkUnwatchedArticlesDormant(ctx context.Context) (int64, error)
@@ -122,6 +123,9 @@ type Querier interface {
 	RecordArticleFailure(ctx context.Context, arg RecordArticleFailureParams) (int32, error)
 	// ReleaseLoginRequest gives back a claim whose email could not be sent.
 	ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error
+	// RenewWatch makes a watch active until expires_at: an active one is
+	// extended, an expired or stopped one is watched again.
+	RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, error)
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
 	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
 	// forgets the address.

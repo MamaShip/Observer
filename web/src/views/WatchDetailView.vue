@@ -4,7 +4,8 @@ import PrintHelp from '@/components/PrintHelp.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { inWeChat } from '@/lib/device'
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format'
-import { checkResultText, deletedReasonText, isOpen, watchSummary } from '@/lib/status'
+import { checkResultText, daysLeft, deletedReasonText, isOpen, renewedUntil, watchSummary } from '@/lib/status'
+import { session } from '@/session'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -27,6 +28,8 @@ const confirmStop = ref(false)
 const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches
 const showPreview = ref(!narrow)
 const stopping = ref(false)
+const renewing = ref(false)
+const renewed = ref('')
 
 const w = computed(() => detail.value?.watch)
 const article = computed(() => w.value?.article)
@@ -113,6 +116,27 @@ async function download() {
   }
 }
 
+const watchDays = computed(() => session.site?.watch_days ?? 60)
+// Offered once renewing would add at least a day.
+const canExtend = computed(() => !!w.value?.can_renew && w.value.status === 'active' && daysLeft(w.value) < watchDays.value)
+const canWatchAgain = computed(() => !!w.value?.can_renew && w.value.status === 'ended')
+
+async function renewWatch() {
+  renewing.value = true
+  renewed.value = ''
+  error.value = ''
+  try {
+    const again = w.value?.status === 'ended'
+    const d = await call(api.POST('/api/v1/watches/{id}/renew', { params: { path: { id: id.value } } }))
+    detail.value = d
+    renewed.value = `${again ? '已重新开始观察' : '已延长观察期'}，观察到 ${formatDate(d.watch.expires_at)}。`
+  } catch (e) {
+    error.value = messageOf(e)
+  } finally {
+    renewing.value = false
+  }
+}
+
 async function stop() {
   stopping.value = true
   try {
@@ -172,7 +196,7 @@ async function stop() {
         </div>
         <div v-if="isOpen(w)">
           <dt>观察到</dt>
-          <dd>{{ formatDate(w.expires_at) }}</dd>
+          <dd>{{ formatDate(w.expires_at) }}<span class="muted left">（还剩 {{ daysLeft(w) }} 天）</span></dd>
         </div>
         <div v-else-if="w.ended_at">
           <dt>结束时间</dt>
@@ -191,6 +215,16 @@ async function stop() {
           <dd><a :href="article?.url || w.submitted_url" target="_blank" rel="noopener noreferrer" class="url">{{ article?.url || w.submitted_url }}</a></dd>
         </div>
       </dl>
+
+      <p v-if="renewed" class="notice notice-ok" role="status">{{ renewed }}</p>
+      <div v-if="canWatchAgain" class="renew">
+        <p class="small muted">文章仍可以访问。重新观察后，从今天起再检查 {{ watchDays }} 天（到 {{ formatDate(renewedUntil(watchDays)) }}）。</p>
+        <button type="button" class="btn btn-primary" :disabled="renewing" @click="renewWatch">重新观察</button>
+      </div>
+      <div v-else-if="canExtend" class="renew">
+        <p class="small muted">延长后，从今天起再观察 {{ watchDays }} 天（到 {{ formatDate(renewedUntil(watchDays)) }}）。</p>
+        <button type="button" class="btn" :disabled="renewing" @click="renewWatch">延长观察</button>
+      </div>
     </article>
 
     <section class="card stack">
@@ -378,5 +412,21 @@ summary {
 }
 .stop {
   margin-top: 24px;
+}
+.left {
+  white-space: nowrap;
+}
+.renew {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.renew p {
+  margin: 0;
+  flex: 1 1 240px;
 }
 </style>

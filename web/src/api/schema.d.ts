@@ -351,6 +351,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/watches/{id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Watch for another period
+         * @description Sets the watch to end watch_days from now. An active watch is extended; one that expired or was stopped is watched again if the article is still online (this counts toward the open-watch limit).
+         */
+        post: operations["renew-watch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -885,6 +905,8 @@ export interface components {
         };
         Watch: {
             article?: components["schemas"]["Article"];
+            /** @description POST /watches/{id}/renew would extend it, or watch the article again */
+            can_renew: boolean;
             /** Format: date-time */
             created_at: string;
             /** @description deleted, expired, user_stopped, invalid or unreachable */
@@ -1622,6 +1644,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "renew-watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchDetail"];
+                };
             };
             /** @description Error */
             default: {

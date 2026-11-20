@@ -3,7 +3,7 @@ import { api, call, messageOf, type Watch, type WatchDetail } from '@/api/client
 import StatusBadge from '@/components/StatusBadge.vue'
 import SubmitBox from '@/components/SubmitBox.vue'
 import { formatShort } from '@/lib/format'
-import { deletedReasonText } from '@/lib/status'
+import { daysLeft, deletedReasonText, endingSoonDays } from '@/lib/status'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -103,7 +103,10 @@ function title(w: Watch): string {
 function meta(w: Watch): string {
   const parts: string[] = []
   if (w.article?.account_name) parts.push(w.article.account_name)
-  if (w.status === 'active') parts.push(`观察至 ${formatShort(w.expires_at)}`)
+  if (w.status === 'active') {
+    const left = daysLeft(w)
+    parts.push(left <= endingSoonDays ? `还剩 ${left} 天到期` : `观察至 ${formatShort(w.expires_at)}`)
+  }
   else if (w.end_reason === 'deleted') parts.push(deletedReasonText(w.article?.deleted_reason))
   else if (w.ended_at) parts.push(`结束于 ${formatShort(w.ended_at)}`)
   else parts.push(`提交于 ${formatShort(w.created_at)}`)

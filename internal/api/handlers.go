@@ -242,6 +242,7 @@ type Watch struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	ExpiresAt    time.Time  `json:"expires_at"`
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
+	CanRenew     bool       `json:"can_renew" doc:"POST /watches/{id}/renew would extend it, or watch the article again"`
 	Article      *Article   `json:"article,omitempty"`
 }
 
@@ -364,6 +365,7 @@ func (h *handlers) registerWatches(g huma.API) {
 			if r.ArticleID != nil {
 				w.Article = &Article{ID: *r.ArticleID, Status: str(r.ArticleStatus), Title: str(r.Title),
 					AccountName: str(r.AccountName), DeletedReason: str(r.DeletedReasonCode)}
+				w.CanRenew = watch.Renewable(r.Status, str(r.EndReason), str(r.ArticleStatus))
 			}
 			out.Body.Items = append(out.Body.Items, w)
 		}
@@ -380,6 +382,43 @@ func (h *handlers) registerWatches(g huma.API) {
 			return nil, err
 		}
 		return &watchOutput{Status: http.StatusOK, Body: *d}, nil
+	})
+
+	huma.Register(g, huma.Operation{
+		OperationID: "renew-watch", Method: http.MethodPost, Path: "/watches/{id}/renew",
+		Summary: "Watch for another period", Tags: []string{"watches"}, Security: loggedIn,
+		Description: "Sets the watch to end watch_days from now. An active watch is extended; one that expired or was stopped " +
+			"is watched again if the article is still online (this counts toward the open-watch limit).",
+	}, func(ctx context.Context, in *idInput) (*watchOutput, error) {
+		u := principalFrom(ctx).User
+		cur, err := h.d.Queries.GetUserWatch(ctx, db.GetUserWatchParams{ID: in.ID, UserID: u.ID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, huma.Error404NotFound("没有找到这个观察。")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if cur.Watch.Status != "active" && u.Role != "admin" {
+			if err := h.checkOpenWatches(ctx, u.ID); err != nil {
+				return nil, err
+			}
+		}
+		_, err = h.d.Watch.Renew(ctx, u.ID, in.ID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, huma.Error404NotFound("没有找到这个观察。")
+		case errors.Is(err, watch.ErrWatchingAgain):
+			return nil, huma.Error409Conflict("你已经重新提交过这篇文章，它正在另一条观察里。")
+		case errors.Is(err, watch.ErrNotRenewable):
+			return nil, huma.Error409Conflict("这条观察不能续期：只有观察中、已到期或已停止，且文章仍在线的观察可以续期。")
+		case err != nil:
+			return nil, err
+		}
+		detail, err := h.detail(ctx, u.ID, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &watchOutput{Status: http.StatusOK, Body: *detail}, nil
 	})
 
 	huma.Register(g, huma.Operation{
@@ -403,13 +442,20 @@ func (h *handlers) registerWatches(g huma.API) {
 	})
 }
 
-func (h *handlers) checkQuota(ctx context.Context, userID uuid.UUID) error {
+func (h *handlers) checkOpenWatches(ctx context.Context, userID uuid.UUID) error {
 	open, err := h.d.Queries.CountOpenWatches(ctx, userID)
 	if err != nil {
 		return err
 	}
 	if lim := h.d.Limits.MaxOpenWatches; lim > 0 && open >= int64(lim) {
 		return huma.Error429TooManyRequests("同时观察的文章已达上限（" + strconv.Itoa(lim) + " 篇），请先停止一些观察。")
+	}
+	return nil
+}
+
+func (h *handlers) checkQuota(ctx context.Context, userID uuid.UUID) error {
+	if err := h.checkOpenWatches(ctx, userID); err != nil {
+		return err
 	}
 	today, err := h.d.Queries.CountWatchesSince(ctx, db.CountWatchesSinceParams{UserID: userID, Since: time.Now().Add(-24 * time.Hour)})
 	if err != nil {
@@ -447,6 +493,7 @@ func (h *handlers) detail(ctx context.Context, userID, watchID uuid.UUID) (*Watc
 	if d.Watch.Article.URL == "" {
 		d.Watch.Article.URL = w.SubmittedUrl
 	}
+	d.Watch.CanRenew = watch.Renewable(w.Status, str(w.EndReason), str(r.ArticleStatus))
 	snaps, err := h.d.Queries.ListSnapshots(ctx, *w.ArticleID)
 	if err != nil {
 		return nil, err

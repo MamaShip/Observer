@@ -460,6 +460,33 @@ func (q *Queries) ListWatchesPage(ctx context.Context, arg ListWatchesPageParams
 	return items, nil
 }
 
+const lockUserWatch = `-- name: LockUserWatch :one
+SELECT id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at FROM watches WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type LockUserWatchParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) LockUserWatch(ctx context.Context, arg LockUserWatchParams) (Watch, error) {
+	row := q.db.QueryRow(ctx, lockUserWatch, arg.ID, arg.UserID)
+	var i Watch
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ArticleID,
+		&i.SubmittedUrl,
+		&i.Status,
+		&i.EndReason,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.EndedAt,
+		&i.NotifiedAt,
+	)
+	return i, err
+}
+
 const moveWatches = `-- name: MoveWatches :exec
 UPDATE watches SET article_id = $1::uuid WHERE article_id = $2::uuid
 `
@@ -475,6 +502,38 @@ type MoveWatchesParams struct {
 func (q *Queries) MoveWatches(ctx context.Context, arg MoveWatchesParams) error {
 	_, err := q.db.Exec(ctx, moveWatches, arg.ToID, arg.FromID)
 	return err
+}
+
+const renewWatch = `-- name: RenewWatch :one
+UPDATE watches SET status = 'active', expires_at = $1::timestamptz,
+                   end_reason = NULL, ended_at = NULL, notified_at = NULL
+WHERE id = $2
+RETURNING id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at
+`
+
+type RenewWatchParams struct {
+	ExpiresAt time.Time
+	ID        uuid.UUID
+}
+
+// RenewWatch makes a watch active until expires_at: an active one is
+// extended, an expired or stopped one is watched again.
+func (q *Queries) RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, error) {
+	row := q.db.QueryRow(ctx, renewWatch, arg.ExpiresAt, arg.ID)
+	var i Watch
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ArticleID,
+		&i.SubmittedUrl,
+		&i.Status,
+		&i.EndReason,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.EndedAt,
+		&i.NotifiedAt,
+	)
+	return i, err
 }
 
 const stopWatch = `-- name: StopWatch :execrows

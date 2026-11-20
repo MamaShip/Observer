@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Watch } from '@/api/client'
 import { formatRelative, formatShort } from '@/lib/format'
 import { extractLink } from '@/lib/link'
-import { deletedReasonText, isOpen, watchBadge, watchSummary } from '@/lib/status'
+import { daysLeft, deletedReasonText, isOpen, renewedUntil, watchBadge, watchSummary } from '@/lib/status'
 import { safeNext } from '@/router'
 
 describe('extractLink', () => {
@@ -35,7 +35,20 @@ const base: Watch = {
   submitted_url: 'https://mp.weixin.qq.com/s/abc',
   created_at: '2026-11-20T02:00:00Z',
   expires_at: '2027-01-19T02:00:00Z',
+  can_renew: true,
 }
+
+describe('watch period', () => {
+  const now = Date.parse('2027-01-12T03:00:00Z')
+  it('counts the days left, rounded up and never below 0', () => {
+    expect(daysLeft(base, now)).toBe(7) // 6 days 23 hours
+    expect(daysLeft({ expires_at: '2027-01-12T02:00:00Z' }, now)).toBe(0)
+    expect(daysLeft({ expires_at: '2027-01-12T03:00:01Z' }, now)).toBe(1)
+  })
+  it('says when a renewal would end', () => {
+    expect(renewedUntil(60, now).toISOString()).toBe('2027-03-13T03:00:00.000Z')
+  })
+})
 
 describe('watch status', () => {
   it.each<[Partial<Watch>, string, string]>([
