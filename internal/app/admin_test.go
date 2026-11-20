@@ -90,9 +90,17 @@ func TestAdminConsole(t *testing.T) {
 	// Accounts.
 	var bob api.AdminUser
 	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "Bob@Example.com"}, http.StatusCreated, &bob)
-	if bob.Email != "bob@example.com" || bob.Status != "active" || bob.MonthlyEmails != 20 || bob.CustomEmailLimit {
+	if bob.Email != "bob@example.com" || bob.Status != "active" || bob.MonthlyEmails != 20 || bob.CustomEmailLimit ||
+		!bob.Invited || bob.InvitedBy != "alice@example.com" {
 		t.Errorf("invited = %+v", bob)
 	}
+	// Registration is open here: users have nothing to invite.
+	var invs api.Invitations
+	alice.api(http.MethodGet, "/invites", nil, 200, &invs)
+	if invs.CanInvite {
+		t.Errorf("open mode invitations = %+v", invs)
+	}
+	alice.api(http.MethodPost, "/invites", map[string]string{"email": "carol@example.com"}, http.StatusConflict, nil)
 	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "bob@example.com"}, http.StatusOK, nil)
 	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "nope"}, http.StatusUnprocessableEntity, nil)
 	var users struct {

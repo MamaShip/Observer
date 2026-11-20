@@ -272,19 +272,28 @@ SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly
   (SELECT count(*) FROM watches w WHERE w.user_id = u.id)::int AS total_watches,
   (SELECT count(*) FROM watches w WHERE w.user_id = u.id AND w.created_at >= $1::timestamptz)::int AS watches_this_month,
   (SELECT count(*) FROM email_log e WHERE e.user_id = u.id AND e.kind IN ('deleted', 'expired') AND e.status = 'sent'
-     AND e.sent_at >= $1::timestamptz)::int AS emails_this_month
+     AND e.sent_at >= $1::timestamptz)::int AS emails_this_month,
+  (i.id IS NOT NULL)::bool AS invited,
+  i.inviter_id AS inviter_id,
+  coalesce(inv.email, '')::text AS inviter_email,
+  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.invitee_id IS NOT NULL)::int AS invitees,
+  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= $1::timestamptz)::int AS invites_this_month
 FROM users u
+LEFT JOIN invites i ON i.invitee_id = u.id
+LEFT JOIN users inv ON inv.id = i.inviter_id
 WHERE ($2::uuid IS NULL OR u.id < $2::uuid)
   AND ($3::uuid IS NULL OR u.id = $3::uuid)
-  AND ($4::text IS NULL OR u.email ILIKE '%' || $4::text || '%')
+  AND ($4::uuid IS NULL OR i.inviter_id = $4::uuid)
+  AND ($5::text IS NULL OR u.email ILIKE '%' || $5::text || '%')
 ORDER BY u.id DESC
-LIMIT $5::int
+LIMIT $6::int
 `
 
 type AdminListUsersParams struct {
 	MonthStart time.Time
 	Before     *uuid.UUID
 	OnlyID     *uuid.UUID
+	InvitedBy  *uuid.UUID
 	Search     *string
 	MaxRows    int32
 }
@@ -301,6 +310,11 @@ type AdminListUsersRow struct {
 	TotalWatches      int32
 	WatchesThisMonth  int32
 	EmailsThisMonth   int32
+	Invited           bool
+	InviterID         *uuid.UUID
+	InviterEmail      string
+	Invitees          int32
+	InvitesThisMonth  int32
 }
 
 func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error) {
@@ -308,6 +322,7 @@ func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) 
 		arg.MonthStart,
 		arg.Before,
 		arg.OnlyID,
+		arg.InvitedBy,
 		arg.Search,
 		arg.MaxRows,
 	)
@@ -330,6 +345,11 @@ func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) 
 			&i.TotalWatches,
 			&i.WatchesThisMonth,
 			&i.EmailsThisMonth,
+			&i.Invited,
+			&i.InviterID,
+			&i.InviterEmail,
+			&i.Invitees,
+			&i.InvitesThisMonth,
 		); err != nil {
 			return nil, err
 		}

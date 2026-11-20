@@ -8,6 +8,7 @@ import { onMounted, ref } from 'vue'
 const items = ref<AdminUser[]>([])
 const next = ref<string | undefined>()
 const search = ref('')
+const invitedBy = ref<AdminUser | null>(null) // show only the accounts this user's invitations created
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -23,7 +24,14 @@ async function load(more = false) {
   try {
     const page = await call(
       api.GET('/api/v1/admin/users', {
-        params: { query: { search: search.value.trim() || undefined, cursor: more ? next.value : undefined, limit: 50 } },
+        params: {
+          query: {
+            search: search.value.trim() || undefined,
+            invited_by: invitedBy.value?.id,
+            cursor: more ? next.value : undefined,
+            limit: 50,
+          },
+        },
       }),
     )
     items.value = more ? [...items.value, ...page.items] : page.items
@@ -52,6 +60,21 @@ async function invite() {
   } finally {
     inviting.value = false
   }
+}
+
+function showInvitees(u: AdminUser | null) {
+  invitedBy.value = u
+  search.value = ''
+  open.value = null
+  void load()
+}
+
+function showInviter(u: AdminUser) {
+  if (!u.invited_by) return
+  invitedBy.value = null
+  search.value = u.invited_by
+  open.value = null
+  void load()
 }
 
 function toggle(u: AdminUser) {
@@ -103,6 +126,10 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
     </form>
   </div>
 
+  <p v-if="invitedBy" class="notice notice-info filter">
+    只看 <strong>{{ invitedBy.email }}</strong> 邀请注册的账户。
+    <button type="button" class="btn-link" @click="showInvitees(null)">显示全部</button>
+  </p>
   <p v-if="notice" class="notice notice-ok" role="status">{{ notice }}</p>
   <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
 
@@ -114,6 +141,8 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
           <th class="num">观察中 / 累计</th>
           <th class="num">本月提交</th>
           <th class="num">本月通知</th>
+          <th>邀请人</th>
+          <th class="num" title="邀请注册的账户数（本月发出的邀请数）">邀请</th>
           <th>最近登录</th>
           <th>注册</th>
           <th />
@@ -132,12 +161,24 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
             <td class="num" :title="u.custom_email_limit ? '为该账户单独设置的上限' : '默认上限'">
               {{ u.emails_this_month }} / {{ u.monthly_emails || '不限' }}<span v-if="u.custom_email_limit">*</span>
             </td>
+            <td>
+              <button v-if="u.invited_by" type="button" class="btn-link" :title="`查看 ${u.invited_by}`" @click="showInviter(u)">
+                {{ u.invited_by }}
+              </button>
+              <span v-else-if="u.invited" class="muted">已注销的账户</span>
+              <span v-else class="muted">—</span>
+            </td>
+            <td class="num" :title="`本月发出 ${u.invites_this_month} 个邀请`">
+              <button v-if="u.invitees" type="button" class="btn-link" @click="showInvitees(u)">{{ u.invitees }}</button>
+              <template v-else>0</template>
+              <span v-if="u.invites_this_month" class="muted">（{{ u.invites_this_month }}）</span>
+            </td>
             <td>{{ u.last_login_at ? formatRelative(u.last_login_at) : '从未' }}</td>
             <td>{{ formatDate(u.created_at) }}</td>
             <td><button type="button" class="btn-link" :aria-expanded="open === u.id" @click="toggle(u)">管理</button></td>
           </tr>
           <tr v-if="open === u.id" class="actions-row">
-            <td colspan="7">
+            <td colspan="9">
               <div class="actions">
                 <form class="row" @submit.prevent="saveLimit(u)">
                   <label class="row">每月通知邮件上限
@@ -163,18 +204,23 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
           </tr>
         </template>
         <tr v-if="!items.length && !loading">
-          <td colspan="7" class="muted center">没有账户。</td>
+          <td colspan="9" class="muted center">没有账户。</td>
         </tr>
       </tbody>
     </table>
   </div>
-  <p class="muted small">* 为该账户单独设置的上限。本月提交与通知按北京时间自然月统计。</p>
+  <p class="muted small">
+    * 为该账户单独设置的上限。「邀请」是该账户邀请注册的账户数，括号里是本月发出的邀请数（包括邀请已有账户的邮箱）。「—」表示由命令行创建，或在记录邀请关系之前注册。本月数字按北京时间自然月统计。
+  </p>
   <div v-if="next" class="center">
     <button type="button" class="btn" :disabled="loading" @click="load(true)">加载更多</button>
   </div>
 </template>
 
 <style scoped>
+.filter {
+  margin-bottom: 12px;
+}
 .toolbar {
   display: flex;
   flex-wrap: wrap;

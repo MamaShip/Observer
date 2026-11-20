@@ -51,7 +51,7 @@ dc ps                                   # 状态
 dc logs -f --since 1h app               # 日志（JSON；不含访问者 IP）
 dc logs --since 1h caddy                # Caddy 只记自身事件；请求信息已被过滤（无 IP、请求头、签名）
 dc exec app observer admin stats        # 统计
-dc exec app observer admin invite <email>
+dc exec app observer admin invite <email>       # 用户也可以在设置页邀请（每月 5 个），后台账户页可看邀请关系
 dc exec app observer admin disable <email>      # 停用并退出所有设备
 dc exec app observer admin articles -n 20
 dc exec app observer admin email-limit <email> <n|default>  # 该账号每月通知邮件上限（0 = 不限）

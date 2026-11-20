@@ -207,6 +207,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My invitations */
+        get: operations["list-invites"];
+        put?: never;
+        /**
+         * Invite an email address
+         * @description Lets the address log in. Nobody is emailed; tell the person yourself. Every invitation counts toward the monthly allowance, except repeating one of your own.
+         */
+        post: operations["create-invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -565,6 +586,22 @@ export interface components {
              */
             emails_this_month: number;
             id: string;
+            /** @description The account was created by someone's invitation (false: by the command line or before invitations were recorded) */
+            invited: boolean;
+            /** @description The inviter's email */
+            invited_by?: string;
+            /** @description Absent when the inviter deleted their account */
+            invited_by_id?: string;
+            /**
+             * Format: int64
+             * @description Accounts this user's invitations created
+             */
+            invitees: number;
+            /**
+             * Format: int64
+             * @description Invitations sent this month, including to addresses that had an account
+             */
+            invites_this_month: number;
             /** Format: date-time */
             last_login_at?: string;
             /**
@@ -720,6 +757,40 @@ export interface components {
             version: string;
             /** @enum {string} */
             worker: "ok" | "starting" | "stalled";
+        };
+        Invitation: {
+            /** Format: date-time */
+            created_at: string;
+            email: string;
+        };
+        Invitations: {
+            /** @description False when registration is open or invitations are only for admins */
+            can_invite: boolean;
+            /** @description Newest first, at most 100 */
+            items: components["schemas"]["Invitation"][];
+            /**
+             * Format: int64
+             * @description Invitations per month; 0 means no limit
+             */
+            monthly_limit: number;
+            /**
+             * Format: int64
+             * @description Invitations sent this month (Beijing time)
+             */
+            used_this_month: number;
+        };
+        InviteInputBody: {
+            email: string;
+        };
+        InviteOutputBody: {
+            invitation: components["schemas"]["Invitation"];
+            /**
+             * Format: int64
+             * @description 0 means no limit
+             */
+            monthly_limit: number;
+            /** Format: int64 */
+            used_this_month: number;
         };
         LinkOutputBody: {
             /** Format: date-time */
@@ -974,6 +1045,8 @@ export interface operations {
             query?: {
                 /** @description Part of an email address */
                 search?: string;
+                /** @description Only accounts created by this user's invitations (a user id) */
+                invited_by?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -1221,6 +1294,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    "list-invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitations"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
             };
         };
     };

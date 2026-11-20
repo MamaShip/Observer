@@ -230,6 +230,7 @@ summary:focus-visible {
   background: none;
   padding: 0;
   min-height: 0;
+  font: inherit;
   color: var(--accent);
   font-weight: normal;
 }

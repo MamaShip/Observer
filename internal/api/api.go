@@ -36,6 +36,7 @@ type Limits struct {
 	MaxOpenWatches     int
 	MaxDailySubmission int
 	DailyEmails        int // provider's daily limit, shown in the admin console
+	MonthlyInvites     int // invitations per user per month; 0: only admins invite
 }
 
 // Deps are the services the handlers use. Only Version, Health and
@@ -112,6 +113,7 @@ func build(d Deps, all bool) (http.Handler, huma.API) {
 		h := &handlers{d: d}
 		h.registerAuth(g)
 		h.registerMe(g)
+		h.registerInvites(g)
 		h.registerWatches(g)
 		h.registerSnapshots(g)
 		h.registerAdmin(g)

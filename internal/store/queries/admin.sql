@@ -69,10 +69,18 @@ SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly
   (SELECT count(*) FROM watches w WHERE w.user_id = u.id)::int AS total_watches,
   (SELECT count(*) FROM watches w WHERE w.user_id = u.id AND w.created_at >= sqlc.arg(month_start)::timestamptz)::int AS watches_this_month,
   (SELECT count(*) FROM email_log e WHERE e.user_id = u.id AND e.kind IN ('deleted', 'expired') AND e.status = 'sent'
-     AND e.sent_at >= sqlc.arg(month_start)::timestamptz)::int AS emails_this_month
+     AND e.sent_at >= sqlc.arg(month_start)::timestamptz)::int AS emails_this_month,
+  (i.id IS NOT NULL)::bool AS invited,
+  i.inviter_id AS inviter_id,
+  coalesce(inv.email, '')::text AS inviter_email,
+  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.invitee_id IS NOT NULL)::int AS invitees,
+  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= sqlc.arg(month_start)::timestamptz)::int AS invites_this_month
 FROM users u
+LEFT JOIN invites i ON i.invitee_id = u.id
+LEFT JOIN users inv ON inv.id = i.inviter_id
 WHERE (sqlc.narg(before)::uuid IS NULL OR u.id < sqlc.narg(before)::uuid)
   AND (sqlc.narg(only_id)::uuid IS NULL OR u.id = sqlc.narg(only_id)::uuid)
+  AND (sqlc.narg(invited_by)::uuid IS NULL OR i.inviter_id = sqlc.narg(invited_by)::uuid)
   AND (sqlc.narg(search)::text IS NULL OR u.email ILIKE '%' || sqlc.narg(search)::text || '%')
 ORDER BY u.id DESC
 LIMIT sqlc.arg(max_rows)::int;

@@ -245,6 +245,13 @@ Observer（折光观察者）是一个微信公众号文章备份与删除监测
 
 邮箱的所有权由验证码本身验证，解决了旧系统"可绑定他人邮箱"的问题。
 
+**邀请**（邀请制下，2026-11-20 实现）：只有已有账户的邮箱能收到验证码，所以"邀请"就是为这个邮箱建好账户。
+- 用户在设置页填写对方邮箱即可邀请，**每人每月 5 个**（北京时间自然月，`MONTHLY_INVITE_LIMIT`，0 表示只有管理员能邀请）；管理员不限，也可以在后台账户页或用 `observer admin invite` 邀请。
+- 不给被邀请人发邮件（避免被用来向任意地址发信，也不占用每日发信额度）。页面给出一段可复制的话，由邀请人自己转告：打开登录页，用这个邮箱获取验证码。
+- 每次邀请都计入名额，包括邀请已有账户的邮箱，回答也完全相同，所以邀请不会泄露某个邮箱是否注册过；只有重复邀请自己邀请过的邮箱不计数。已有的账户不会被改动（停用的仍是停用）。不能邀请自己。
+- 邀请关系记在 `invites` 表（迁移 00006）：每次邀请一行（邀请人、邮箱、时间）；只有当这次邀请新建了账户时才记 `invitee_id`，这就是"由谁邀请"。删除账户时，带有该邮箱的邀请记录一并删除；该用户发出的邀请中，建了账户的保留（邀请人显示为"已注销的账户"），其余删除。
+- 开放注册模式下不需要邀请，设置页不显示邀请卡片，接口返回 409。
+
 **为什么用验证码而不是魔法链接**（2026-11-20 决定）：
 - 用户多在手机浏览器或微信内置浏览器里使用本站，而邮件常在 QQ 邮箱等 App 里看；点链接会在邮件 App 的内置浏览器里登录，回到原页面仍是未登录。验证码在原页面输入，登录就发生在原浏览器里。
 - 每天只有 2 次机会，魔法链接"登录到了错误的浏览器"会白白浪费一次。
@@ -469,12 +476,13 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | GET | `/auth/session` | 当前登录用户（同 `/me`）；未登录时返回 200 且无用户，前端启动时用它，避免访客页面出现 401 报错 |
 | POST | `/auth/logout` | 注销当前会话 |
 | GET | `/admin/overview` | 管理后台概览（§10.1） |
-| GET / POST | `/admin/users` | 账户列表与用量 / 邀请 |
+| GET / POST | `/admin/users` | 账户列表与用量（`invited_by=<用户 id>` 只看该用户邀请注册的账户）/ 邀请 |
 | PATCH | `/admin/users/{id}` | 停用 / 启用、角色、每月通知上限 |
 | GET | `/admin/articles`、`/admin/articles/{id}` | 文章列表（含完整性标记）/ 详情 |
 | POST | `/admin/articles/{id}/resnapshot` | 重新抓取并生成新备份 |
 | GET | `/me` | 当前用户信息与设置，含本月通知邮件数与上限（`emails_this_month`、`monthly_emails`） |
-| DELETE | `/me` | 删除账号（同时从验证码记录和发信记录中抹去邮箱） |
+| DELETE | `/me` | 删除账号（同时从验证码记录、发信记录和邀请记录中抹去邮箱） |
+| GET / POST | `/invites` | 我发出的邀请与本月名额（`can_invite`、`used_this_month`、`monthly_limit`）/ `{email}` 邀请 → 201；名额用完 429，开放注册时 409（§6.1） |
 | POST | `/watches` | `{url}` → 201（已备份）/ 202（解析中） |
 | GET | `/watches` | 列表，支持 `status` 过滤，游标分页 |
 | GET | `/watches/{id}` | 详情（含文章状态、最近检查记录、快照列表） |
@@ -505,7 +513,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | `/login` | 登录 | 输入邮箱 → 获取验证码（60 秒重发倒计时、当天剩余次数）→ 同一页面输入验证码，输满 6 位自动提交；步骤存在 `sessionStorage`，切到邮件 App 后页面被重新加载也能继续 |
 | `/watches` | 我的观察 | 顶部提交框（从粘贴的整段分享文字里提取链接）；状态筛选（全部 / 观察中 / 已结束 / 失败）；状态徽章（备份中 / 观察中 / 已删除 / 已到期 / 已停止 / 提交失败）；游标分页；有"备份中"的条目时每 5 秒刷新 |
 | `/watches/:id` | 观察详情 | 文章信息、删除原因与微信原文提示、检查时间、检查记录；备份在 iframe 中预览，可在新窗口阅读、下载单文件 HTML、打印 / 保存为 PDF（按 iOS / 安卓 / 桌面给出操作步骤）；微信内置浏览器中提示改用系统浏览器；备份生成前自动轮询（前 1 分钟每 3 秒，之后每 10 秒，最多 10 分钟）；停止观察（二次确认） |
-| `/settings` | 设置 | 邮箱、退出登录、本月通知邮件数与上限、删除账号（输入"删除"确认） |
+| `/settings` | 设置 | 邮箱、退出登录、本月通知邮件数与上限、邀请朋友（邀请制下：本月剩余名额、可复制的转告文字、邀请过的邮箱）、删除账号（输入"删除"确认） |
 | `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载） |
 
 - 技术：Vue 3 + vue-router + TypeScript，原生 CSS（浅色 / 深色跟随系统），不引入组件库；API 类型由 `observer openapi` → `openapi-typescript` 生成，请求用 `openapi-fetch`。生产包约 50 KB（gzip）。
@@ -521,7 +529,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | 页面 | 内容 |
 |---|---|
 | 概览 `/admin` | 运行状态（数据库、后台任务心跳、版本）；**本月用量**（北京时间自然月）：邮件（验证码 / 通知 / 告警 / 失败）、今日邮件对服务商日额度（UTC 0 点重置）、检查次数与拦截率、微信页面抓取流量、新保存图片量、新增账户 / 观察 / 文章 / 备份、发现删除；**今天**的同类数字；**累计**：账户、观察、文章各状态、备份、对象存储（图片 + 阅读页）；**近 30 天**每日趋势（新观察、新账户、新备份、发现删除、检查、被拦截、邮件）小图 + 数据表 |
-| 账户 `/admin/users` | 搜索、邀请；每个账户的角色、状态、观察中 / 累计、本月提交、本月通知 / 上限（单独设置的标 *）、最近登录、注册时间；停用 / 启用（停用同时退出所有设备）、设为 / 取消管理员、调整每月通知上限或恢复默认。不能停用自己或取消自己的管理员 |
+| 账户 `/admin/users` | 搜索、邀请；每个账户的角色、状态、观察中 / 累计、本月提交、本月通知 / 上限（单独设置的标 *）、邀请人（点击查看）、邀请注册的账户数（点击筛选出这些账户）与本月发出的邀请数、最近登录、注册时间；停用 / 启用（停用同时退出所有设备）、设为 / 取消管理员、调整每月通知上限或恢复默认。不能停用自己或取消自己的管理员 |
 | 文章 `/admin/articles` | 按状态或"有问题"筛选，按标题 / 公众号搜索；每篇显示观察人数、备份数、最新备份的图片数与缺失数、正文字数、问题标签 |
 | 文章详情 | 文章信息与问题说明；全部备份（图片、缺失、正文字数、页面大小），可预览、新窗口打开、下载；**重新备份**（文章在线时：按全局限速重新抓取完整页面，生成新备份，旧的保留）；观察者；最近 50 次检查（方式、结果、规则、HTTP 状态、流量、耗时） |
 
@@ -625,7 +633,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 已实现（M1）：`DATABASE_URL`（必填，URL 格式）、`DB_MAX_CONNS`（默认 10）、`HTTP_ADDR`（默认 `:8080`）、`BASE_URL`、`LOG_LEVEL`（默认 `info`）、`LOG_FORMAT`（`json` / `text`，默认 `json`）。
 
-已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`MONTHLY_EMAIL_LIMIT`（每个账号每月通知邮件数，20；0 表示不限）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
+已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`MONTHLY_EMAIL_LIMIT`（每个账号每月通知邮件数，20；0 表示不限）、`MONTHLY_INVITE_LIMIT`（每个用户每月邀请数，5；0 表示只有管理员能邀请）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
 生产环境取值：`BASE_URL=https://ob.portkey.click`、`SNAP_BASE_URL=https://snap.ob.portkey.click`、`SMTP_HOST=smtp.resend.com`、`SMTP_PORT=465`、`SMTP_USER=resend`、`SMTP_PASSWORD=<Resend API Key，只给发信权限并限定发件域名>`、`MAIL_FROM=折光观察者 <noreply@ob.portkey.click>`。env 文件按 Docker Compose `env_file` 的格式书写（值不加引号，可含空格和 `<>`），`observer mailtest -env-file <文件>` 可直接读取。
 `BASE_URL` 为 https 时视为生产环境：`SIGNING_KEY`、`SMTP_HOST` 必填，`SNAP_BASE_URL` 也必须是 https；开发环境缺少它们时，分别退化为随机签名密钥、只把邮件写进日志。
 
@@ -863,7 +871,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 |---|---|
 | 观察期 | 60 天 |
 | 观察期满是否发邮件 | 不发；只在文章被删除时发邮件 |
-| 注册模式 | 邀请制软启动 |
+| 注册模式 | 邀请制软启动；用户每月可邀请 5 人，管理员不限 |
 | 每用户活跃观察上限 / 每日提交上限 | 50 / 30 |
 | 每账号每月通知邮件 | 20 封（可按账号调整，预留付费提高上限） |
 | 快照可见性 | 仅对观察过该文章的用户可见 |

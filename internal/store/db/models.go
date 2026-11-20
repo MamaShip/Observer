@@ -66,6 +66,14 @@ type EmailLog struct {
 	SentAt     *time.Time
 }
 
+type Invite struct {
+	ID        uuid.UUID
+	InviterID *uuid.UUID
+	Email     string
+	InviteeID *uuid.UUID
+	CreatedAt time.Time
+}
+
 type LoginCode struct {
 	ID        uuid.UUID
 	Email     string

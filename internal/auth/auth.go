@@ -327,7 +327,7 @@ func (s *Service) LogoutAll(ctx context.Context, userID uuid.UUID) (int64, error
 }
 
 // DeleteAccount removes a user with their sessions and watches, and the
-// address from login codes and the email log. Per-day code counts stay
+// address from login codes, the email log and invitations. Per-day code counts stay
 // until Cleanup (two days), so deleting an account does not reset the limit.
 func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -343,6 +343,9 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
 			return err
 		}
 		if err := q.ScrubEmailLog(ctx, db.ScrubEmailLogParams{UserID: &u.ID, Email: u.Email}); err != nil {
+			return err
+		}
+		if err := q.ForgetInvites(ctx, db.ForgetInvitesParams{Email: u.Email, UserID: &u.ID}); err != nil {
 			return err
 		}
 		return q.DeleteUser(ctx, u.ID)

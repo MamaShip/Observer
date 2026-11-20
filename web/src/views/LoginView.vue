@@ -141,7 +141,7 @@ function changeEmail() {
     <form v-if="step === 'email'" class="stack" novalidate @submit.prevent="requestCode">
       <p class="muted">输入邮箱，我们会发送一个 6 位数字验证码。第一次使用会自动创建账号。</p>
       <p v-if="session.site?.registration_mode === 'invite'" class="notice notice-info">
-        目前处于邀请测试阶段，只有受邀的邮箱能收到验证码。
+        目前处于邀请测试阶段，只有受邀的邮箱能收到验证码。已经在用的朋友可以在「设置」里邀请你。
       </p>
       <label class="field">
         <span>邮箱</span>

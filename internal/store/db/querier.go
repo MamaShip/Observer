@@ -41,6 +41,7 @@ type Querier interface {
 	ConfirmArticleDeleted(ctx context.Context, arg ConfirmArticleDeletedParams) error
 	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
+	CountInvitesSince(ctx context.Context, arg CountInvitesSinceParams) (int32, error)
 	CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error)
 	// CountUserNotificationsSince counts the notification emails (not login
 	// codes) sent to a user since a time.
@@ -50,6 +51,7 @@ type Querier interface {
 	// (possibly one a concurrent submission created a moment ago).
 	CreateAlias(ctx context.Context, arg CreateAliasParams) (int64, error)
 	CreateArticle(ctx context.Context) (Article, error)
+	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateUser(ctx context.Context, email string) (User, error)
@@ -72,11 +74,15 @@ type Querier interface {
 	ExpireWatches(ctx context.Context, now time.Time) ([]ExpireWatchesRow, error)
 	FailResolvingWatches(ctx context.Context, arg FailResolvingWatchesParams) (int64, error)
 	FinishEmailLog(ctx context.Context, arg FinishEmailLogParams) error
+	// ForgetInvites runs when an account is deleted: rows carrying its address
+	// go, and so do the rows it sent that created no account.
+	ForgetInvites(ctx context.Context, arg ForgetInvitesParams) error
 	GetArticle(ctx context.Context, id uuid.UUID) (Article, error)
 	GetArticleByAlias(ctx context.Context, url string) (Article, error)
 	GetArticleByKeyForUpdate(ctx context.Context, canonicalKey *string) (Article, error)
 	GetArticleForUpdate(ctx context.Context, id uuid.UUID) (Article, error)
 	GetAsset(ctx context.Context, sha256 []byte) (Asset, error)
+	GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (Invite, error)
 	GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error)
 	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
 	GetSession(ctx context.Context, arg GetSessionParams) (GetSessionRow, error)
@@ -89,12 +95,17 @@ type Querier interface {
 	InsertEmailLog(ctx context.Context, arg InsertEmailLogParams) (uuid.UUID, error)
 	InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) error
 	InsertSnapshotAsset(ctx context.Context, arg InsertSnapshotAssetParams) error
+	// InsertUser creates an account, or returns no row if the address has one.
+	InsertUser(ctx context.Context, email string) (User, error)
 	ListArticles(ctx context.Context, maxRows int32) ([]ListArticlesRow, error)
+	ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID) ([]Invite, error)
 	ListRecentCheckRuns(ctx context.Context, arg ListRecentCheckRunsParams) ([]ListRecentCheckRunsRow, error)
 	ListSnapshots(ctx context.Context, articleID uuid.UUID) ([]Snapshot, error)
 	ListUserWatches(ctx context.Context, userID uuid.UUID) ([]ListUserWatchesRow, error)
 	// ListWatchesPage pages newest first by id (UUIDv7 ids sort by creation time).
 	ListWatchesPage(ctx context.Context, arg ListWatchesPageParams) ([]ListWatchesPageRow, error)
+	// LockUser serialises one user's invitations so the monthly count holds.
+	LockUser(ctx context.Context, id uuid.UUID) (User, error)
 	MarkArticleAlive(ctx context.Context, arg MarkArticleAliveParams) (Article, error)
 	MarkArticleInvalid(ctx context.Context, arg MarkArticleInvalidParams) error
 	MarkUnwatchedArticlesDormant(ctx context.Context) (int64, error)

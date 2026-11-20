@@ -40,6 +40,9 @@ type Config struct {
 	RegistrationMode    string `env:"REGISTRATION_MODE" envDefault:"invite"` // open or invite
 	MaxOpenWatches      int    `env:"MAX_OPEN_WATCHES" envDefault:"50"`
 	MaxDailySubmissions int    `env:"MAX_DAILY_SUBMISSIONS" envDefault:"30"`
+	// Invitations each user may send per month in invite mode; 0 means only
+	// admins invite. Admins have no limit.
+	MonthlyInviteLimit int `env:"MONTHLY_INVITE_LIMIT" envDefault:"5"`
 
 	// Email. Without SMTP_HOST, messages are only logged (development).
 	SMTPHost        string `env:"SMTP_HOST"`

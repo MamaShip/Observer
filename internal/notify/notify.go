@@ -185,10 +185,7 @@ func (n *Notifier) Sweep(ctx context.Context) (int, error) {
 
 // MonthStart is the start of t's calendar month in Beijing time, when the
 // monthly notification count resets.
-func MonthStart(t time.Time) time.Time {
-	y, m, _ := t.In(auth.Beijing).Date()
-	return time.Date(y, m, 1, 0, 0, 0, 0, auth.Beijing)
-}
+func MonthStart(t time.Time) time.Time { return auth.MonthStart(t) }
 
 // Quota is an account's notification emails this month.
 type Quota struct {

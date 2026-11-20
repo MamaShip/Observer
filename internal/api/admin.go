@@ -218,6 +218,11 @@ type AdminUser struct {
 	EmailsThisMonth  int        `json:"emails_this_month" doc:"Notification emails this month"`
 	MonthlyEmails    int        `json:"monthly_emails" doc:"This account's limit in effect; 0 means none"`
 	CustomEmailLimit bool       `json:"custom_email_limit" doc:"The limit is set for this account rather than the default"`
+	Invited          bool       `json:"invited" doc:"The account was created by someone's invitation (false: by the command line or before invitations were recorded)"`
+	InvitedByID      *uuid.UUID `json:"invited_by_id,omitempty" doc:"Absent when the inviter deleted their account"`
+	InvitedBy        string     `json:"invited_by,omitempty" doc:"The inviter's email"`
+	Invitees         int        `json:"invitees" doc:"Accounts this user's invitations created"`
+	InvitesThisMonth int        `json:"invites_this_month" doc:"Invitations sent this month, including to addresses that had an account"`
 }
 
 func (h *handlers) adminUser(r db.AdminListUsersRow) AdminUser {
@@ -225,6 +230,8 @@ func (h *handlers) adminUser(r db.AdminListUsersRow) AdminUser {
 		ID: r.ID, Email: r.Email, Role: r.Role, Status: r.Status, CreatedAt: r.CreatedAt, LastLoginAt: r.LastLoginAt,
 		OpenWatches: int(r.OpenWatches), TotalWatches: int(r.TotalWatches), WatchesThisMonth: int(r.WatchesThisMonth),
 		EmailsThisMonth: int(r.EmailsThisMonth), MonthlyEmails: h.d.Site.MonthlyEmails,
+		Invited: r.Invited, InvitedByID: r.InviterID, InvitedBy: r.InviterEmail,
+		Invitees: int(r.Invitees), InvitesThisMonth: int(r.InvitesThisMonth),
 	}
 	if r.MonthlyEmailLimit != nil {
 		u.MonthlyEmails, u.CustomEmailLimit = int(*r.MonthlyEmailLimit), true
@@ -245,9 +252,10 @@ func (h *handlers) getAdminUser(ctx context.Context, id uuid.UUID) (*AdminUser, 
 }
 
 type adminUsersInput struct {
-	Search string `query:"search" maxLength:"254" doc:"Part of an email address"`
-	Cursor string `query:"cursor"`
-	Limit  int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
+	Search    string `query:"search" maxLength:"254" doc:"Part of an email address"`
+	InvitedBy string `query:"invited_by" doc:"Only accounts created by this user's invitations (a user id)"`
+	Cursor    string `query:"cursor"`
+	Limit     int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
 }
 
 type adminUsersOutput struct {
@@ -414,6 +422,13 @@ func (h *handlers) registerAdmin(g huma.API) {
 		if in.Search != "" {
 			p.Search = &in.Search
 		}
+		if in.InvitedBy != "" {
+			id, err := uuid.Parse(in.InvitedBy)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invited_by 应为用户 ID。")
+			}
+			p.InvitedBy = &id
+		}
 		if in.Cursor != "" {
 			c, err := uuid.Parse(in.Cursor)
 			if err != nil {
@@ -445,18 +460,16 @@ func (h *handlers) registerAdmin(g huma.API) {
 		if err := requireAdmin(ctx); err != nil {
 			return nil, err
 		}
-		email, err := auth.NormalizeEmail(in.Body.Email)
-		if err != nil {
+		u, created, err := h.d.Auth.CreateInvited(ctx, &principalFrom(ctx).User.ID, in.Body.Email)
+		if errors.Is(err, auth.ErrInvalidEmail) {
 			return nil, huma.Error422UnprocessableEntity("邮箱地址格式不正确。")
-		}
-		status := http.StatusOK // already there
-		u, err := h.d.Queries.GetUserByEmail(ctx, email)
-		if errors.Is(err, pgx.ErrNoRows) {
-			u, err = h.d.Queries.CreateUser(ctx, email)
-			status = http.StatusCreated
 		}
 		if err != nil {
 			return nil, err
+		}
+		status := http.StatusOK // already there
+		if created {
+			status = http.StatusCreated
 		}
 		au, err := h.getAdminUser(ctx, u.ID)
 		if err != nil {
