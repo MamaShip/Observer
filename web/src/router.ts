@@ -13,6 +13,10 @@ declare module 'vue-router' {
     auth?: boolean
     /** Only for visitors; logged-in users go to their list. */
     guest?: boolean
+    /** Only for admins (role admin). */
+    admin?: boolean
+    /** A wider page (tables). */
+    wide?: boolean
   }
 }
 
@@ -24,6 +28,30 @@ export const router = createRouter({
     { path: '/watches', name: 'watches', component: WatchListView, meta: { title: '我的观察', auth: true } },
     { path: '/watches/:id', name: 'watch', component: WatchDetailView, meta: { title: '观察详情', auth: true } },
     { path: '/settings', name: 'settings', component: SettingsView, meta: { title: '设置', auth: true } },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('./views/admin/AdminOverviewView.vue'),
+      meta: { title: '管理后台', auth: true, admin: true, wide: true },
+    },
+    {
+      path: '/admin/users',
+      name: 'admin-users',
+      component: () => import('./views/admin/AdminUsersView.vue'),
+      meta: { title: '账户 · 管理后台', auth: true, admin: true, wide: true },
+    },
+    {
+      path: '/admin/articles',
+      name: 'admin-articles',
+      component: () => import('./views/admin/AdminArticlesView.vue'),
+      meta: { title: '文章 · 管理后台', auth: true, admin: true, wide: true },
+    },
+    {
+      path: '/admin/articles/:id',
+      name: 'admin-article',
+      component: () => import('./views/admin/AdminArticleView.vue'),
+      meta: { title: '文章详情 · 管理后台', auth: true, admin: true, wide: true },
+    },
     { path: '/about', name: 'about', component: () => import('./views/AboutView.vue'), meta: { title: '关于' } },
     { path: '/privacy', name: 'privacy', component: () => import('./views/PrivacyView.vue'), meta: { title: '隐私说明' } },
     { path: '/terms', name: 'terms', component: () => import('./views/TermsView.vue'), meta: { title: '服务条款' } },
@@ -47,6 +75,7 @@ export function loginRoute(to: RouteLocationNormalized | string) {
 router.beforeEach(async (to) => {
   await ensureSession()
   if (to.meta.auth && !session.user) return loginRoute(to)
+  if (to.meta.admin && session.user?.role !== 'admin') return { name: 'not-found', params: { rest: to.path.slice(1).split('/') } }
   if (to.meta.guest && session.user) return safeNext(to.query.next)
   return true
 })

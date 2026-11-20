@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import AppHeader from '@/components/AppHeader.vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
 </script>
 
 <template>
   <AppHeader />
-  <main class="page">
+  <main class="page" :class="{ 'page-wide': route.meta.wide }">
     <RouterView />
   </main>
   <footer class="footer">

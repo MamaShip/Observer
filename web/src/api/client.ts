@@ -11,6 +11,12 @@ export type Article = Schemas['Article']
 export type WatchDetail = Schemas['WatchDetail']
 export type Snapshot = Schemas['Snapshot']
 export type Check = Schemas['Check']
+export type AdminOverview = Schemas['AdminOverview']
+export type AdminDay = Schemas['AdminDay']
+export type AdminUser = Schemas['AdminUser']
+export type AdminArticle = Schemas['AdminArticle']
+export type AdminArticleDetail = Schemas['AdminArticleDetail']
+export type AdminSnapshot = Schemas['AdminSnapshot']
 
 /** The API client. Paths are absolute (/api/v1/...); the session cookie is sent automatically. */
 export const api = createClient<paths>({ baseUrl: '' })

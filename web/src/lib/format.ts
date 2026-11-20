@@ -47,3 +47,30 @@ export function formatRelative(v: string | Date | undefined | null, now = new Da
   if (abs < 7 * 86_400_000) return `${Math.round(abs / 86_400_000)} 天${suffix}`
   return formatDate(d)
 }
+
+const numberFmt = new Intl.NumberFormat('zh-CN')
+
+/** 12,345 */
+export function formatNumber(n: number): string {
+  return numberFmt.format(n)
+}
+
+/** 1.5 MB (binary units, one decimal from MB up) */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
+}
+
+/** 12.5% of total, or "—" when there is no total */
+export function formatPercent(part: number, total: number): string {
+  if (!total) return '—'
+  const p = (part / total) * 100
+  return `${p < 10 ? p.toFixed(1) : Math.round(p)}%`
+}

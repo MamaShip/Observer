@@ -503,11 +503,16 @@ func (h *handlers) registerSnapshots(g huma.API) {
 		huma.Register(g, huma.Operation{
 			OperationID: op.id, Method: http.MethodPost, Path: op.path,
 			Summary: op.summary, Tags: []string{"snapshots"}, Security: loggedIn,
-			Description: "Only users who have watched the article may read its backups.",
+			Description: "Only users who have watched the article may read its backups, and admins.",
 		}, func(ctx context.Context, in *idInput) (*linkOutput, error) {
-			ok, err := h.d.Queries.UserCanViewSnapshot(ctx, db.UserCanViewSnapshotParams{UserID: principalFrom(ctx).User.ID, SnapshotID: in.ID})
-			if err != nil {
-				return nil, err
+			u := principalFrom(ctx).User
+			ok := u.Role == "admin"
+			if !ok {
+				var err error
+				ok, err = h.d.Queries.UserCanViewSnapshot(ctx, db.UserCanViewSnapshotParams{UserID: u.ID, SnapshotID: in.ID})
+				if err != nil {
+					return nil, err
+				}
 			}
 			if !ok {
 				return nil, huma.Error404NotFound("没有找到这份备份。")

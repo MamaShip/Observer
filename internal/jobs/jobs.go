@@ -92,6 +92,19 @@ func result(err error) error {
 // so their timeout is generous.
 const fetchTimeout = 10 * time.Minute
 
+type resnapshotWorker struct {
+	river.WorkerDefaults[watch.ResnapshotArgs]
+	svc *watch.Service
+}
+
+func (w *resnapshotWorker) Work(ctx context.Context, job *river.Job[watch.ResnapshotArgs]) error {
+	return result(w.svc.Resnapshot(ctx, job.Args))
+}
+
+func (w *resnapshotWorker) Timeout(*river.Job[watch.ResnapshotArgs]) time.Duration {
+	return fetchTimeout
+}
+
 type resolveWorker struct {
 	river.WorkerDefaults[watch.ResolveArgs]
 	svc *watch.Service
@@ -206,6 +219,7 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, s Services) 
 	river.AddWorker(workers, &resolveWorker{svc: svc})
 	river.AddWorker(workers, &checkWorker{svc: svc})
 	river.AddWorker(workers, &snapshotWorker{svc: svc})
+	river.AddWorker(workers, &resnapshotWorker{svc: svc})
 	river.AddWorker(workers, &periodicWorker[watch.ScheduleArgs]{timeout: time.Minute, run: func(ctx context.Context) error {
 		n, err := svc.ScheduleDue(ctx)
 		if n > 0 {

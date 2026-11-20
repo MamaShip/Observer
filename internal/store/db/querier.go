@@ -16,6 +16,20 @@ type Querier interface {
 	// an active one (a user may have submitted two different links of the same
 	// article); DeleteResolvingWatches then removes the leftovers.
 	ActivateResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
+	AdminArticleWatchers(ctx context.Context, articleID *uuid.UUID) ([]AdminArticleWatchersRow, error)
+	AdminCheckRuns(ctx context.Context, arg AdminCheckRunsParams) ([]AdminCheckRunsRow, error)
+	// AdminDailyCounts is one row per metric and Beijing day that has any.
+	AdminDailyCounts(ctx context.Context, since time.Time) ([]AdminDailyCountsRow, error)
+	// AdminListArticles lists articles with their latest snapshot. With
+	// issues_only, only those whose backup looks incomplete (keep in step with
+	// api.articleIssues): no snapshot although the page was fetched, images that
+	// could not be stored, under 100 characters of text, or repeated failed checks.
+	AdminListArticles(ctx context.Context, arg AdminListArticlesParams) ([]AdminListArticlesRow, error)
+	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
+	// Queries for the admin console (plan.md §10.1). Months and days are counted
+	// in Beijing time; the caller passes the boundaries.
+	AdminTotals(ctx context.Context) (AdminTotalsRow, error)
+	AdminUsage(ctx context.Context, since time.Time) (AdminUsageRow, error)
 	ArticleHasSnapshot(ctx context.Context, articleID uuid.UUID) (bool, error)
 	// AttemptLoginCode counts one guess against the address's latest code and
 	// returns it, unless that code expired, was used or has no guesses left.
@@ -101,6 +115,7 @@ type Querier interface {
 	// forgets the address.
 	ScrubEmailLog(ctx context.Context, arg ScrubEmailLogParams) error
 	SetMonthlyEmailLimit(ctx context.Context, arg SetMonthlyEmailLimitParams) (int64, error)
+	SetUserRole(ctx context.Context, arg SetUserRoleParams) (int64, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (int64, error)
 	SkipExpiryNotifications(ctx context.Context, now time.Time) (int64, error)
 	Stats(ctx context.Context) (StatsRow, error)

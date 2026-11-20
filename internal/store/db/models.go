@@ -105,6 +105,7 @@ type Snapshot struct {
 	SizeBytes     int64
 	AssetCount    int32
 	MissingAssets int32
+	TextRunes     *int32
 }
 
 type SnapshotAsset struct {

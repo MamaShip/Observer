@@ -6,8 +6,8 @@ SELECT EXISTS (SELECT 1 FROM snapshots WHERE article_id = $1);
 
 -- name: InsertSnapshot :exec
 INSERT INTO snapshots (id, article_id, captured_at, content_hash, title, html_key, raw_key,
-                       size_bytes, asset_count, missing_assets)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+                       size_bytes, asset_count, missing_assets, text_runes)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
 
 -- name: ListSnapshots :many
 SELECT * FROM snapshots WHERE article_id = $1 ORDER BY captured_at DESC;

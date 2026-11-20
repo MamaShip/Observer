@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { serviceName, session } from '@/session'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
 </script>
 
 <template>
   <header class="header">
-    <div class="inner">
+    <div class="inner" :class="{ wide: route.meta.wide }">
       <RouterLink to="/" class="brand">
         <img src="/favicon.svg" alt="" width="24" height="24">
         <span>{{ serviceName() }}</span>
@@ -13,6 +16,7 @@ import { serviceName, session } from '@/session'
         <template v-if="session.user">
           <RouterLink to="/watches">我的观察</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
+          <RouterLink v-if="session.user.role === 'admin'" to="/admin">管理</RouterLink>
         </template>
         <RouterLink v-else-if="session.loaded" to="/login">登录</RouterLink>
       </nav>
@@ -35,6 +39,9 @@ import { serviceName, session } from '@/session'
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.inner.wide {
+  max-width: 1120px;
 }
 .brand {
   display: flex;

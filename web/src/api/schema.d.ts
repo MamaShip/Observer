@@ -4,6 +4,112 @@
  */
 
 export interface paths {
+    "/api/v1/admin/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backed-up articles, newest first, with completeness flags */
+        get: operations["admin-list-articles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/articles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An article with all its backups, checks and watchers */
+        get: operations["admin-get-article"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/articles/{id}/resnapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch an online article again and make a new backup
+         * @description Queued: the page is fetched within the global rate limit, then the snapshot is built. Earlier backups stay.
+         */
+        post: operations["admin-resnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Totals, this month's usage and 30-day trends */
+        get: operations["admin-overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Accounts with their usage, newest first */
+        get: operations["admin-list-users"];
+        put?: never;
+        /** Invite an email address (create the account) */
+        post: operations["admin-invite-user"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Disable or enable an account, change its role or email limit */
+        patch: operations["admin-update-user"];
+        trace?: never;
+    };
     "/api/v1/auth/code": {
         parameters: {
             query?: never;
@@ -151,7 +257,7 @@ export interface paths {
         put?: never;
         /**
          * Signed link to download a backup as one HTML file (10 minutes)
-         * @description Only users who have watched the article may read its backups.
+         * @description Only users who have watched the article may read its backups, and admins.
          */
         post: operations["snapshot-download-url"];
         delete?: never;
@@ -171,7 +277,7 @@ export interface paths {
         put?: never;
         /**
          * Signed link to read a backup online (1 hour)
-         * @description Only users who have watched the article may read its backups.
+         * @description Only users who have watched the article may read its backups, and admins.
          */
         post: operations["snapshot-view-url"];
         delete?: never;
@@ -229,6 +335,269 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AdminArticle: {
+            account_name?: string;
+            /** Format: int64 */
+            consecutive_failures: number;
+            /** Format: date-time */
+            deleted_at?: string;
+            deleted_reason?: string;
+            /** Format: date-time */
+            first_seen_at: string;
+            id: string;
+            /** @description no_snapshot, missing_images, short_text, failing_checks */
+            issues: string[];
+            /** Format: date-time */
+            last_checked_at?: string;
+            /** @description The newest backup */
+            latest?: components["schemas"]["AdminSnapshot"];
+            /** Format: int64 */
+            snapshots: number;
+            /** @enum {string} */
+            status: "pending" | "alive" | "deleted" | "invalid" | "dormant";
+            title?: string;
+            /** Format: int64 */
+            watchers: number;
+        };
+        AdminArticleDetail: {
+            article: components["schemas"]["Article"];
+            /** @description The article is online, so a new backup can be made */
+            can_resnapshot: boolean;
+            /** @description Newest first, at most 50 */
+            checks: components["schemas"]["AdminCheck"][];
+            /** Format: int64 */
+            consecutive_failures: number;
+            /** Format: date-time */
+            first_seen_at: string;
+            issues: string[];
+            /** @description Newest first */
+            snapshots: components["schemas"]["AdminSnapshot"][];
+            watchers: components["schemas"]["AdminWatcher"][];
+        };
+        AdminArticlesOutputBody: {
+            items: components["schemas"]["AdminArticle"][];
+            next_cursor?: string;
+        };
+        AdminCheck: {
+            /** Format: date-time */
+            checked_at: string;
+            /** Format: int64 */
+            duration_ms?: number;
+            /** Format: int64 */
+            http_status?: number;
+            mode: string;
+            reason?: string;
+            /** @enum {string} */
+            result: "alive" | "deleted" | "invalid" | "blocked" | "error";
+            rule?: string;
+            /** Format: int64 */
+            wire_bytes?: number;
+        };
+        AdminDay: {
+            /** Format: int64 */
+            blocked: number;
+            /** Format: int64 */
+            checks: number;
+            /** @description YYYY-MM-DD, Beijing time */
+            day: string;
+            /** Format: int64 */
+            deletions: number;
+            /** Format: int64 */
+            emails: number;
+            /** Format: int64 */
+            snapshots: number;
+            /** Format: int64 */
+            users: number;
+            /** Format: int64 */
+            watches: number;
+        };
+        AdminInviteInputBody: {
+            email: string;
+        };
+        AdminLimits: {
+            /**
+             * Format: int64
+             * @description Provider's daily sending limit (DAILY_EMAIL_LIMIT), counted from midnight UTC
+             */
+            daily_emails: number;
+            /** Format: int64 */
+            max_open_watches: number;
+            /**
+             * Format: int64
+             * @description Default notification emails per account per month
+             */
+            monthly_emails: number;
+        };
+        AdminOverview: {
+            /** @description The last 30 days, oldest first */
+            days: components["schemas"]["AdminDay"][];
+            /**
+             * Format: int64
+             * @description Emails sent since midnight UTC, against limits.daily_emails
+             */
+            emails_today: number;
+            health: components["schemas"]["Health"];
+            limits: components["schemas"]["AdminLimits"];
+            /** @description Since the start of this month, Beijing time */
+            month: components["schemas"]["AdminUsage"];
+            /** Format: date-time */
+            month_start: string;
+            /** @description Since midnight Beijing time */
+            today: components["schemas"]["AdminUsage"];
+            totals: components["schemas"]["AdminTotals"];
+        };
+        AdminPatchUserInputBody: {
+            /** @description Go back to the service default */
+            default_email_limit?: boolean;
+            /**
+             * Format: int64
+             * @description Notification emails per month for this account; 0 means no limit
+             */
+            monthly_emails?: number;
+            /** @enum {string} */
+            role?: "user" | "admin";
+            /**
+             * @description disabled also ends every session
+             * @enum {string}
+             */
+            status?: "active" | "disabled";
+        };
+        AdminSnapshot: {
+            /** Format: date-time */
+            captured_at: string;
+            id: string;
+            /** Format: int64 */
+            images: number;
+            /** Format: int64 */
+            missing_images: number;
+            /** Format: int64 */
+            size_bytes?: number;
+            /**
+             * Format: int64
+             * @description Characters of text; absent for backups made before it was recorded
+             */
+            text_runes?: number;
+        };
+        AdminTotals: {
+            /**
+             * Format: int64
+             * @description Logged in during the last 30 days
+             */
+            active_users_30d: number;
+            /** Format: int64 */
+            articles: number;
+            /** Format: int64 */
+            articles_alive: number;
+            /** Format: int64 */
+            articles_deleted: number;
+            /** Format: int64 */
+            articles_dormant: number;
+            /** Format: int64 */
+            articles_invalid: number;
+            /** Format: int64 */
+            articles_pending: number;
+            /** Format: int64 */
+            disabled_users: number;
+            /** Format: int64 */
+            image_bytes: number;
+            /** Format: int64 */
+            images: number;
+            /** Format: int64 */
+            open_watches: number;
+            /**
+             * Format: int64
+             * @description Reading pages; raw page copies are not counted
+             */
+            snapshot_bytes: number;
+            /** Format: int64 */
+            snapshots: number;
+            /** Format: int64 */
+            users: number;
+            /** Format: int64 */
+            watches: number;
+        };
+        AdminUsage: {
+            /** Format: int64 */
+            alert_emails: number;
+            /** Format: int64 */
+            blocked: number;
+            /** Format: int64 */
+            checks: number;
+            /** Format: int64 */
+            deletions: number;
+            /** Format: int64 */
+            emails: number;
+            /** Format: int64 */
+            errors: number;
+            /** Format: int64 */
+            failed_emails: number;
+            /** Format: int64 */
+            login_emails: number;
+            /** Format: int64 */
+            new_articles: number;
+            /**
+             * Format: int64
+             * @description Images stored for the first time; roughly the image download traffic
+             */
+            new_image_bytes: number;
+            /** Format: int64 */
+            new_snapshots: number;
+            /** Format: int64 */
+            new_users: number;
+            /** Format: int64 */
+            new_watches: number;
+            /** Format: int64 */
+            notification_emails: number;
+            /**
+             * Format: int64
+             * @description WeChat pages fetched (compressed size on the wire); images not included
+             */
+            page_bytes: number;
+        };
+        AdminUser: {
+            /** Format: date-time */
+            created_at: string;
+            /** @description The limit is set for this account rather than the default */
+            custom_email_limit: boolean;
+            email: string;
+            /**
+             * Format: int64
+             * @description Notification emails this month
+             */
+            emails_this_month: number;
+            id: string;
+            /** Format: date-time */
+            last_login_at?: string;
+            /**
+             * Format: int64
+             * @description This account's limit in effect; 0 means none
+             */
+            monthly_emails: number;
+            /** Format: int64 */
+            open_watches: number;
+            /** @enum {string} */
+            role: "user" | "admin";
+            /** @enum {string} */
+            status: "active" | "disabled";
+            /** Format: int64 */
+            total_watches: number;
+            /** Format: int64 */
+            watches_this_month: number;
+        };
+        AdminUsersOutputBody: {
+            items: components["schemas"]["AdminUser"][];
+            next_cursor?: string;
+        };
+        AdminWatcher: {
+            /** Format: date-time */
+            created_at: string;
+            email: string;
+            end_reason?: string;
+            /** Format: date-time */
+            ended_at?: string;
+            /** @enum {string} */
+            status: "resolving" | "active" | "ended" | "failed";
+        };
         Article: {
             account_name?: string;
             author?: string;
@@ -482,6 +851,234 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "admin-list-articles": {
+        parameters: {
+            query?: {
+                status?: "pending" | "alive" | "deleted" | "invalid" | "dormant";
+                /** @description Only articles whose backup looks incomplete */
+                issues?: boolean;
+                /** @description Part of the title or account name */
+                search?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminArticlesOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-get-article": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminArticleDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-resnapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-list-users": {
+        parameters: {
+            query?: {
+                /** @description Part of an email address */
+                search?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUsersOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-invite-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminInviteInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-update-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPatchUserInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "request-login-code": {
         parameters: {
             query?: never;

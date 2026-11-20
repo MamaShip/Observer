@@ -65,7 +65,7 @@ try {
   step('logged-out visitors are sent to the login page')
 
   if (session) {
-    await ctx.addCookies([{ name: '__Host-session', value: session, url: base, secure: true, httpOnly: true, sameSite: 'Lax' }])
+    await ctx.addCookies([{ name: '__Host-session', value: session, url: base.replace(/^http:/, 'https:'), secure: true, httpOnly: true, sameSite: 'Lax' }])
     await page.goto(base + '/watches')
     await page.waitForURL((u) => u.pathname === '/watches')
     step('logged in with the given session')

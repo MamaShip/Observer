@@ -40,7 +40,7 @@ func (q *Queries) GetAsset(ctx context.Context, sha256 []byte) (Asset, error) {
 }
 
 const getSnapshot = `-- name: GetSnapshot :one
-SELECT id, article_id, captured_at, content_hash, title, html_key, raw_key, size_bytes, asset_count, missing_assets FROM snapshots WHERE id = $1
+SELECT id, article_id, captured_at, content_hash, title, html_key, raw_key, size_bytes, asset_count, missing_assets, text_runes FROM snapshots WHERE id = $1
 `
 
 func (q *Queries) GetSnapshot(ctx context.Context, id uuid.UUID) (Snapshot, error) {
@@ -57,6 +57,7 @@ func (q *Queries) GetSnapshot(ctx context.Context, id uuid.UUID) (Snapshot, erro
 		&i.SizeBytes,
 		&i.AssetCount,
 		&i.MissingAssets,
+		&i.TextRunes,
 	)
 	return i, err
 }
@@ -79,8 +80,8 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 
 const insertSnapshot = `-- name: InsertSnapshot :exec
 INSERT INTO snapshots (id, article_id, captured_at, content_hash, title, html_key, raw_key,
-                       size_bytes, asset_count, missing_assets)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                       size_bytes, asset_count, missing_assets, text_runes)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `
 
 type InsertSnapshotParams struct {
@@ -94,6 +95,7 @@ type InsertSnapshotParams struct {
 	SizeBytes     int64
 	AssetCount    int32
 	MissingAssets int32
+	TextRunes     *int32
 }
 
 func (q *Queries) InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) error {
@@ -108,6 +110,7 @@ func (q *Queries) InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) 
 		arg.SizeBytes,
 		arg.AssetCount,
 		arg.MissingAssets,
+		arg.TextRunes,
 	)
 	return err
 }
@@ -129,7 +132,7 @@ func (q *Queries) InsertSnapshotAsset(ctx context.Context, arg InsertSnapshotAss
 }
 
 const listSnapshots = `-- name: ListSnapshots :many
-SELECT id, article_id, captured_at, content_hash, title, html_key, raw_key, size_bytes, asset_count, missing_assets FROM snapshots WHERE article_id = $1 ORDER BY captured_at DESC
+SELECT id, article_id, captured_at, content_hash, title, html_key, raw_key, size_bytes, asset_count, missing_assets, text_runes FROM snapshots WHERE article_id = $1 ORDER BY captured_at DESC
 `
 
 func (q *Queries) ListSnapshots(ctx context.Context, articleID uuid.UUID) ([]Snapshot, error) {
@@ -152,6 +155,7 @@ func (q *Queries) ListSnapshots(ctx context.Context, articleID uuid.UUID) ([]Sna
 			&i.SizeBytes,
 			&i.AssetCount,
 			&i.MissingAssets,
+			&i.TextRunes,
 		); err != nil {
 			return nil, err
 		}

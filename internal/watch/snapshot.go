@@ -66,6 +66,7 @@ func (s *Service) Snapshot(ctx context.Context, args SnapshotArgs) error {
 			ID: args.SnapshotID, ArticleID: art.ID, CapturedAt: args.CapturedAt,
 			ContentHash: res.ContentHash[:], Title: art.Title, HtmlKey: htmlKey, RawKey: rawKey,
 			SizeBytes: int64(len(res.HTML)), AssetCount: int32(len(res.Assets)), MissingAssets: int32(res.Missing),
+			TextRunes: ptr(int32(res.TextRunes)),
 		}); err != nil {
 			return err
 		}

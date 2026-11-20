@@ -33,6 +33,7 @@ const adminUsage = `Usage: observer admin <command>
   invite <email>                   let an address log in (REGISTRATION_MODE=invite)
   disable <email> | enable <email> block or unblock an account (disabling also logs it out)
   logout-all <email>               end every session of an account
+  role <email> <admin|user>        give or take the admin console (/admin)
   email-limit <email> <n|default>  notification emails per month for one account
                                    (default: MONTHLY_EMAIL_LIMIT; 0: no limit)
   session <email>                  start a session and print its token (for smoke tests;
@@ -88,6 +89,22 @@ func runAdmin(ctx context.Context, args []string) error {
 		return err
 	case "export":
 		return adminExport(ctx, cfg, q, rest)
+	case "role":
+		if len(rest) != 2 || (rest[1] != "admin" && rest[1] != "user") {
+			return errors.New("usage: observer admin role <email> <admin|user>")
+		}
+		email, err := auth.NormalizeEmail(rest[0])
+		if err != nil {
+			return err
+		}
+		n, err := q.SetUserRole(ctx, db.SetUserRoleParams{Email: email, Role: rest[1]})
+		if err == nil && n == 0 {
+			err = errors.New("no account with that email (observer admin invite creates one)")
+		}
+		if err == nil {
+			fmt.Printf("%s is now %s\n", email, rest[1])
+		}
+		return err
 	case "email-limit":
 		if len(rest) != 2 {
 			return errors.New("usage: observer admin email-limit <email> <n|default>")

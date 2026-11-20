@@ -131,7 +131,7 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 		Version: version, Health: a, StallAfter: jobs.StallAfter,
 		Auth: authSvc, Notify: notifier, Watch: svc, Queries: q, Signer: signer,
 		BaseURL: cfg.Origin(), SnapBaseURL: cfg.SnapOrigin(), TrustProxy: cfg.TrustProxyHeaders,
-		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions},
+		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions, DailyEmails: cfg.DailyEmailLimit},
 		Site: api.Site{ServiceName: cfg.ServiceName, RegistrationMode: cfg.RegistrationMode, WatchDays: cfg.WatchDays, MaxOpenWatches: cfg.MaxOpenWatches,
 			MonthlyEmails: cfg.MonthlyEmailLimit},
 	})

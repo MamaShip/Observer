@@ -35,6 +35,7 @@ const Prefix = "/api/v1"
 type Limits struct {
 	MaxOpenWatches     int
 	MaxDailySubmission int
+	DailyEmails        int // provider's daily limit, shown in the admin console
 }
 
 // Deps are the services the handlers use. Only Version, Health and
@@ -113,6 +114,7 @@ func build(d Deps, all bool) (http.Handler, huma.API) {
 		h.registerMe(g)
 		h.registerWatches(g)
 		h.registerSnapshots(g)
+		h.registerAdmin(g)
 	}
 	return d.middleware(mux), api
 }
