@@ -75,6 +75,7 @@ export BLOB_DIR=data/blob
 | `admin backup`、`admin restore -db URL` | 将数据库备份到对象存储，或恢复到空数据库 |
 | `mailtest -env-file F [-to ADDR]` | 验证 SMTP 配置，加 `-to` 发送测试邮件 |
 | `openapi` | 输出 OpenAPI JSON |
+| `mpsim [-event subscribe] [文字]` | 以微信的方式（带签名的 XML）给运行中的服务发一条公众号消息并打印回复；需要服务设置了 `WECHAT_TOKEN`，用 `-token`、`-url`、`-openid` 指定 |
 | `probe <url>...`、`netcheck` | 诊断文章抓取，测量到微信、Wasabi 和 SMTP 的网络路径 |
 
 配置项见[部署示例](../deploy/.env.example)和[配置定义](../internal/config/config.go)。设计背景、开发记录与实测结果见 [v2 重构方案](../plan.md)。旧版 Python 微信公众号机器人于 2022 年停服，源码保存在 [legacy-python 标签](https://github.com/MamaShip/Observer/tree/legacy-python)。

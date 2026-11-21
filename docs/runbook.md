@@ -140,6 +140,17 @@ dc up -d
 | 数据库备份失败 | 每日 `pg_dump` 或上传失败 | `dc logs app | grep backup`；手动 `observer admin backup` 复现 |
 | Healthchecks 邮件（如已配置） | 5 分钟一次的心跳停了：app 挂了或任务队列卡住 | `dc ps`、`dc logs app`、`curl .../api/v1/healthz` |
 
+## 公众号入口
+
+用户可以在个人订阅号里发送文章链接、绑定邮箱（plan.md §6.7）。只用被动回复，不需要 AppSecret 和 IP 白名单。
+
+1. 在 `.env` 设置 `WECHAT_TOKEN`（自己生成，3–32 位字母或数字，如 `openssl rand -hex 16`）、`WECHAT_ACCOUNT_ID`（公众号原始 ID，`gh_` 开头，在「设置与开发 → 公众号设置」里）、`WECHAT_NAME`（公众号名称），然后 `dc up -d app`。
+2. 先在开发机上确认回调可用（要求本机能访问站点）：`observer mpsim -url https://<域名> -token <WECHAT_TOKEN> -account <gh_…> 帮助`，应打印用法说明。这会生成一个 30 分钟有效的绑定链接，不影响别人。
+3. 公众平台「设置与开发 → 基本配置 → 服务器配置」：URL 填 `https://<域名>/wechat/callback`，Token 同上，消息加解密方式选**明文模式**，提交（平台会用 GET 请求验证地址），再点「启用」。启用后后台的「自动回复」和「自定义菜单」不再生效。
+4. 用手机关注公众号，按回复绑定一次，发一篇文章链接，确认回复里的链接能在微信里打开。
+
+停用：在公众平台停用服务器配置，或清空 `WECHAT_TOKEN` 后 `dc up -d app`（回调返回 404，设置页不再显示公众号卡片，已有绑定保留）。
+
 ## 密钥轮换
 
 | 密钥 | 方法 | 影响 |
@@ -147,6 +158,7 @@ dc up -d
 | Resend API Key | Resend 后台新建 → 改 `.env` 的 `SMTP_PASSWORD` → `dc up -d app` → `observer mailtest` → 删除旧 Key | 无 |
 | Wasabi Access Key | Wasabi 后台新建 → 改 `.env` → `dc up -d app` → 删除旧 Key | 无 |
 | `SIGNING_KEY` | 改 `.env` → `dc up -d app` | 已发出的快照查看链接失效（最长 1 小时） |
+| `WECHAT_TOKEN` | 改 `.env` → `dc up -d app` → 公众平台服务器配置里改成同一个 Token 并提交 | 两边不一致期间公众号无法回复 |
 | `POSTGRES_PASSWORD` | `dc exec postgres psql -U observer -c "ALTER USER observer PASSWORD '新密码'"` → 改 `.env` → `dc up -d` | 重启期间短暂不可用 |
 
 ## 资源
