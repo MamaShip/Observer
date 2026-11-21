@@ -34,6 +34,10 @@ const codeInput = ref<HTMLInputElement>()
 const ttlMinutes = computed(() => session.site?.code_ttl_minutes ?? 10)
 const perDay = computed(() => session.site?.codes_per_day ?? 2)
 const wait = computed(() => Math.max(0, Math.ceil((resendAt.value - now.value) / 1000)))
+// Sent here by a bind link from the Official Account's replies.
+const fromWechat = computed(() => typeof route.query.next === 'string' && route.query.next.startsWith('/wx/'))
+const siteName = computed(() => session.site?.service_name || '折光观察者')
+const accountName = computed(() => session.site?.wechat?.name || siteName.value)
 const emailLooksValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim()))
 
 let timer: ReturnType<typeof setInterval> | undefined
@@ -143,9 +147,12 @@ function changeEmail() {
   <div class="login-layout">
   <section class="zg-auth">
     <h1 class="zg-auth__title">邮箱登录</h1>
+    <p v-if="fromWechat" class="notice notice-info">
+      {{ accountName === siteName ? `这是公众号「${accountName}」的网站。` : `「${siteName}」是公众号「${accountName}」配套的文章备份网站。` }}用邮箱登录后，就能完成微信绑定。
+    </p>
 
     <form v-if="step === 'email'" class="zg-stack" novalidate @submit.prevent="requestCode">
-      <p class="zg-auth__lede">输入邮箱，我们会发送一个 6 位数字验证码。第一次使用会自动创建账号。</p>
+      <p class="zg-auth__lede">输入邮箱，我们会发送一个 6 位数字验证码。<template v-if="session.site?.registration_mode !== 'invite'">第一次使用会自动创建账号。</template></p>
 
       <label class="zg-field">
         <span class="zg-field__label">邮箱</span>

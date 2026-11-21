@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WechatQR from '@/components/WechatQR.vue'
 import ZgIcon from '@/components/ZgIcon.vue'
 import { session } from '@/session'
 
@@ -61,6 +62,10 @@ const steps = [
       <div>
         <h2 class="zg-section-title">怎么用</h2>
         <p>在微信里打开文章，点右上角「复制链接」，粘贴到「我的观察」即可。</p>
+        <template v-if="session.site?.wechat">
+          <p class="wx-also">也可以关注公众号「{{ session.site.wechat.name }}」，在微信里把文章链接直接发给它。</p>
+          <WechatQR />
+        </template>
       </div>
       <div class="zg-shard zg-panel">
         <h3 class="zg-panel__title">支持</h3>
@@ -134,6 +139,7 @@ const steps = [
 }
 .scope .zg-panel { --_fill: var(--surface-200); --_edge: var(--surface-200); }
 .scope p, .start p { margin: 0; color: var(--ink-200); }
+.scope .wx-also { margin: var(--space-4) 0 var(--space-3); }
 .start { --_c: var(--chamfer-l); padding: var(--space-6); flex-flow: row wrap; align-items: center; justify-content: space-between; }
 .start h2 { margin-bottom: var(--space-2); }
 @media (max-width: 767px) {

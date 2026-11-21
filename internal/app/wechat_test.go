@@ -200,6 +200,14 @@ func TestWechatFlow(t *testing.T) {
 	phone.api(http.MethodGet, m[1], nil, 200, nil)
 	(&client{t: t, addr: addr}).api(http.MethodPost, "/wechat/login", map[string]string{"token": m[2]}, http.StatusGone, nil)
 
+	// Another address of the same article: the reply waits for the first
+	// fetch, which finds the article already watched.
+	other := "https://mp.weixin.qq.com/s/another-address-of-it"
+	web.Set(other, watchtest.Fixture(t, "alive_article.html"))
+	if reply := wx.text(other); !strings.Contains(reply, "已经在观察中") || !strings.Contains(reply, "未完成ICP备案") {
+		t.Errorf("another address: %s", reply)
+	}
+
 	if reply := wx.text("我的"); !strings.Contains(reply, "a***@example.com · 观察中 1 篇") || !strings.Contains(reply, "我市新型冠状病毒") {
 		t.Errorf("list: %s", reply)
 	}
@@ -234,6 +242,15 @@ func TestWechatFlow(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("no deletion email; sent: %+v", mailer.Sent())
 		}
+	}
+
+	// We cannot push, so the next reply tells; only once.
+	reply = wx.text("我的")
+	if !strings.HasPrefix(reply, "【删除提醒】你观察的《") || !strings.Contains(reply, "/watches/"+bound.WatchID+"#t=") {
+		t.Errorf("no deletion news: %s", reply)
+	}
+	if reply := wx.text("我的"); strings.Contains(reply, "删除提醒") {
+		t.Errorf("told twice: %s", reply)
 	}
 
 	// Unfollowing forgets the binding.

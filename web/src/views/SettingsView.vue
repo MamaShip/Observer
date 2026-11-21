@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { api, call, messageOf, type Invitations, type Me } from '@/api/client'
+import WechatQR from '@/components/WechatQR.vue'
 import ZgIcon from '@/components/ZgIcon.vue'
 import { formatDate, formatShort } from '@/lib/format'
 import { serviceName, session, setUser } from '@/session'
@@ -180,7 +181,10 @@ async function deleteAccount() {
           </span>
         </div>
       </template>
-      <p v-else class="muted small">关注公众号「{{ wechatName }}」，发送「绑定」，再按回复里的链接确认。之后在微信里把文章链接发给公众号，就能开始观察。</p>
+      <template v-else>
+        <p class="muted small">关注公众号「{{ wechatName }}」，发送「绑定」，再按回复里的链接确认。之后在微信里把文章链接发给公众号，就能开始观察。</p>
+        <WechatQR />
+      </template>
       <p v-if="wechatError" class="notice notice-danger" role="alert">{{ wechatError }}</p>
     </section>
 

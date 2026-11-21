@@ -132,8 +132,9 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 	var siteWechat *api.SiteWechat
 	wechatHandler := http.NotFoundHandler()
 	if cfg.Wechat() {
-		bot = mp.NewBot(authSvc, svc, q, mp.Config{BaseURL: cfg.Origin(), ServiceName: cfg.ServiceName, WatchDays: cfg.WatchDays,
-			MaxOpen: cfg.MaxOpenWatches, MaxDaily: cfg.MaxDailySubmissions})
+		bot = mp.NewBot(authSvc, svc, q, mp.Config{BaseURL: cfg.Origin(), ServiceName: cfg.ServiceName, AccountName: cfg.WechatName,
+			InviteOnly: cfg.RegistrationMode == auth.ModeInvite, WatchDays: cfg.WatchDays,
+			MaxOpen: cfg.MaxOpenWatches, MaxDaily: cfg.MaxDailySubmissions, ResolveWait: 3 * time.Second})
 		wechatHandler = mp.NewHandler(bot, cfg.WechatToken, cfg.WechatAccountID, log)
 		siteWechat = &api.SiteWechat{Name: cfg.WechatName}
 	}

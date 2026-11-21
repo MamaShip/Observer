@@ -191,6 +191,10 @@ type Querier interface {
 	Stats(ctx context.Context) (StatsRow, error)
 	StopWatch(ctx context.Context, arg StopWatchParams) (int64, error)
 	SuspectArticleDeleted(ctx context.Context, arg SuspectArticleDeletedParams) error
+	// TakeWechatNews marks up to max_rows of the user's watches that ended with
+	// the article deleted after `since` and have not been mentioned in a reply,
+	// and returns them (in no particular order).
+	TakeWechatNews(ctx context.Context, arg TakeWechatNewsParams) ([]TakeWechatNewsRow, error)
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) error
 	UpsertUserByEmail(ctx context.Context, email string) (User, error)

@@ -64,7 +64,7 @@ func (q *Queries) CountWatchesSince(ctx context.Context, arg CountWatchesSincePa
 const createWatch = `-- name: CreateWatch :one
 INSERT INTO watches (user_id, article_id, submitted_url, status, end_reason, expires_at, ended_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at
+RETURNING id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at, wechat_told_at
 `
 
 type CreateWatchParams struct {
@@ -99,6 +99,7 @@ func (q *Queries) CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch
 		&i.ExpiresAt,
 		&i.EndedAt,
 		&i.NotifiedAt,
+		&i.WechatToldAt,
 	)
 	return i, err
 }
@@ -205,7 +206,7 @@ func (q *Queries) FailResolvingWatches(ctx context.Context, arg FailResolvingWat
 }
 
 const getOpenWatch = `-- name: GetOpenWatch :one
-SELECT id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at FROM watches
+SELECT id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at, wechat_told_at FROM watches
 WHERE user_id = $1 AND article_id = $2::uuid AND status IN ('resolving', 'active')
 ORDER BY created_at
 LIMIT 1
@@ -230,12 +231,13 @@ func (q *Queries) GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Wat
 		&i.ExpiresAt,
 		&i.EndedAt,
 		&i.NotifiedAt,
+		&i.WechatToldAt,
 	)
 	return i, err
 }
 
 const getUserWatch = `-- name: GetUserWatch :one
-SELECT w.id, w.user_id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at, w.notified_at, a.title, a.account_name, a.author, a.published_at, a.status AS article_status,
+SELECT w.id, w.user_id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at, w.notified_at, w.wechat_told_at, a.title, a.account_name, a.author, a.published_at, a.status AS article_status,
        a.canonical_url, a.deleted_reason_code, a.deleted_reason_text, a.deleted_at,
        a.last_checked_at, a.next_check_at
 FROM watches w LEFT JOIN articles a ON a.id = w.article_id
@@ -276,6 +278,7 @@ func (q *Queries) GetUserWatch(ctx context.Context, arg GetUserWatchParams) (Get
 		&i.Watch.ExpiresAt,
 		&i.Watch.EndedAt,
 		&i.Watch.NotifiedAt,
+		&i.Watch.WechatToldAt,
 		&i.Title,
 		&i.AccountName,
 		&i.Author,
@@ -334,7 +337,7 @@ func (q *Queries) ListRecentCheckRuns(ctx context.Context, arg ListRecentCheckRu
 }
 
 const listUserWatches = `-- name: ListUserWatches :many
-SELECT w.id, w.user_id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at, w.notified_at, a.title, a.status AS article_status
+SELECT w.id, w.user_id, w.article_id, w.submitted_url, w.status, w.end_reason, w.created_at, w.expires_at, w.ended_at, w.notified_at, w.wechat_told_at, a.title, a.status AS article_status
 FROM watches w LEFT JOIN articles a ON a.id = w.article_id
 WHERE w.user_id = $1
 ORDER BY w.created_at DESC
@@ -351,6 +354,7 @@ type ListUserWatchesRow struct {
 	ExpiresAt     time.Time
 	EndedAt       *time.Time
 	NotifiedAt    *time.Time
+	WechatToldAt  *time.Time
 	Title         *string
 	ArticleStatus *string
 }
@@ -375,6 +379,7 @@ func (q *Queries) ListUserWatches(ctx context.Context, userID uuid.UUID) ([]List
 			&i.ExpiresAt,
 			&i.EndedAt,
 			&i.NotifiedAt,
+			&i.WechatToldAt,
 			&i.Title,
 			&i.ArticleStatus,
 		); err != nil {
@@ -461,7 +466,7 @@ func (q *Queries) ListWatchesPage(ctx context.Context, arg ListWatchesPageParams
 }
 
 const lockUserWatch = `-- name: LockUserWatch :one
-SELECT id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at FROM watches WHERE id = $1 AND user_id = $2 FOR UPDATE
+SELECT id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at, wechat_told_at FROM watches WHERE id = $1 AND user_id = $2 FOR UPDATE
 `
 
 type LockUserWatchParams struct {
@@ -483,6 +488,7 @@ func (q *Queries) LockUserWatch(ctx context.Context, arg LockUserWatchParams) (W
 		&i.ExpiresAt,
 		&i.EndedAt,
 		&i.NotifiedAt,
+		&i.WechatToldAt,
 	)
 	return i, err
 }
@@ -508,7 +514,7 @@ const renewWatch = `-- name: RenewWatch :one
 UPDATE watches SET status = 'active', expires_at = $1::timestamptz,
                    end_reason = NULL, ended_at = NULL, notified_at = NULL
 WHERE id = $2
-RETURNING id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at
+RETURNING id, user_id, article_id, submitted_url, status, end_reason, created_at, expires_at, ended_at, notified_at, wechat_told_at
 `
 
 type RenewWatchParams struct {
@@ -532,6 +538,7 @@ func (q *Queries) RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, 
 		&i.ExpiresAt,
 		&i.EndedAt,
 		&i.NotifiedAt,
+		&i.WechatToldAt,
 	)
 	return i, err
 }

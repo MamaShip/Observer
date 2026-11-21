@@ -205,6 +205,62 @@ func (q *Queries) LockWechatOpenID(ctx context.Context, openid string) error {
 	return err
 }
 
+const takeWechatNews = `-- name: TakeWechatNews :many
+WITH picked AS (
+  SELECT t.id FROM watches t
+  WHERE t.user_id = $2 AND t.end_reason = 'deleted' AND t.wechat_told_at IS NULL
+    AND t.ended_at > $3::timestamptz
+  ORDER BY t.ended_at
+  LIMIT $4
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE watches w SET wechat_told_at = $1::timestamptz
+FROM picked p, articles a
+WHERE w.id = p.id AND a.id = w.article_id
+RETURNING w.id, w.ended_at, a.title
+`
+
+type TakeWechatNewsParams struct {
+	Now     time.Time
+	UserID  uuid.UUID
+	Since   time.Time
+	MaxRows int32
+}
+
+type TakeWechatNewsRow struct {
+	ID      uuid.UUID
+	EndedAt *time.Time
+	Title   *string
+}
+
+// TakeWechatNews marks up to max_rows of the user's watches that ended with
+// the article deleted after `since` and have not been mentioned in a reply,
+// and returns them (in no particular order).
+func (q *Queries) TakeWechatNews(ctx context.Context, arg TakeWechatNewsParams) ([]TakeWechatNewsRow, error) {
+	rows, err := q.db.Query(ctx, takeWechatNews,
+		arg.Now,
+		arg.UserID,
+		arg.Since,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TakeWechatNewsRow{}
+	for rows.Next() {
+		var i TakeWechatNewsRow
+		if err := rows.Scan(&i.ID, &i.EndedAt, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const useWechatToken = `-- name: UseWechatToken :one
 UPDATE wechat_tokens SET used_at = $1::timestamptz
 WHERE token_hash = $2 AND purpose = $3

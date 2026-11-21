@@ -19,7 +19,8 @@ const busy = ref(false)
 const error = ref('')
 const watchID = ref<string | null>(null)
 const submitError = ref('')
-const accountName = computed(() => session.site?.wechat?.name || session.site?.service_name || '折光观察者')
+const siteName = computed(() => session.site?.service_name || '折光观察者')
+const accountName = computed(() => session.site?.wechat?.name || siteName.value)
 
 onMounted(async () => {
   token.value = takeToken('bind', route.hash)
@@ -73,8 +74,9 @@ async function switchAccount() {
 <template>
   <section class="zg-auth">
     <p v-if="state === 'loading'" class="muted" role="status"><span class="spinner" aria-hidden="true" /> 正在打开…</p>
+    <p v-else-if="siteName !== accountName" class="muted small wx-origin">「{{ siteName }}」是公众号「{{ accountName }}」配套的文章备份网站</p>
 
-    <template v-else-if="state === 'confirm' && session.user">
+    <template v-if="state === 'confirm' && session.user">
       <h1 class="zg-auth__title">绑定公众号</h1>
       <p class="zg-auth__lede">把你的微信绑定到这个账号：</p>
       <p class="zg-shard zg-panel bind-email">{{ session.user.email }}</p>
@@ -100,7 +102,7 @@ async function switchAccount() {
       </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="state === 'missing' || state === 'gone'">
       <h1 class="zg-auth__title">链接已失效</h1>
       <p class="zg-auth__lede">
         {{ state === 'gone' ? '绑定链接只能使用一次，并且 30 分钟内有效。' : '这个链接不完整。' }}请回到公众号「{{ accountName }}」，发送「绑定」获取新的链接。
@@ -111,5 +113,6 @@ async function switchAccount() {
 </template>
 
 <style scoped>
+.wx-origin { margin: 0; }
 .bind-email { margin: 0; font: 500 15px/22px var(--font-mono); overflow-wrap: anywhere; }
 </style>

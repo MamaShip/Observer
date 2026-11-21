@@ -166,6 +166,7 @@ type Watch struct {
 	ExpiresAt    time.Time
 	EndedAt      *time.Time
 	NotifiedAt   *time.Time
+	WechatToldAt *time.Time
 }
 
 type WechatBinding struct {

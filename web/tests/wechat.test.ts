@@ -46,7 +46,7 @@ beforeEach(async () => {
   await router.push('/')
 })
 
-async function open(path: string, view: 'WechatBindView' | 'WechatGoView' | 'SettingsView') {
+async function open(path: string, view: 'WechatBindView' | 'WechatGoView' | 'SettingsView' | 'LoginView') {
   await router.push(path)
   await router.isReady()
   const component = (await import(`@/views/${view}.vue`)).default
@@ -156,6 +156,29 @@ describe('the bind link (/wx/bind)', () => {
   })
 })
 
+describe('the site and the Official Account', () => {
+  const other = { ...site, registration_mode: 'invite', wechat: { name: '时间从来不回答' } }
+
+  it('are named together on the bind page', async () => {
+    session.site = other as never
+    session.user = user as never
+    const w = await open(`/wx/bind#t=${token}`, 'WechatBindView')
+    expect(w.find('.wx-origin').text()).toBe('「折光观察者」是公众号「时间从来不回答」配套的文章备份网站')
+    session.site = site as never
+    const same = await open(`/wx/bind#t=${token}`, 'WechatBindView')
+    expect(same.find('.wx-origin').exists()).toBe(false)
+  })
+
+  it('and on the login page, when sent there from a bind link', async () => {
+    session.site = other as never
+    let w = await open('/login?next=/wx/bind', 'LoginView')
+    expect(w.text()).toContain('「折光观察者」是公众号「时间从来不回答」配套的文章备份网站。用邮箱登录后，就能完成微信绑定。')
+    expect(w.text()).not.toContain('自动创建账号') // invitation only
+    w = await open('/login', 'LoginView')
+    expect(w.text()).not.toContain('配套的文章备份网站')
+  })
+})
+
 describe('the settings card', () => {
   const me = { ...user, emails_this_month: 0, monthly_emails: 20 }
 
@@ -165,6 +188,7 @@ describe('the settings card', () => {
     const w = await open('/settings', 'SettingsView')
     expect(w.text()).toContain('微信公众号')
     expect(w.text()).toContain('发送「绑定」')
+    expect(w.find('img[src="/wechat-qr.jpg"]').attributes('alt')).toBe('公众号「折光观察者」的二维码')
   })
 
   it('unbinds after confirming', async () => {
@@ -192,5 +216,6 @@ describe('the settings card', () => {
     session.site = { service_name: '折光观察者' } as never
     const w = await open('/settings', 'SettingsView')
     expect(w.text()).not.toContain('微信公众号')
+    expect(w.find('img[src="/wechat-qr.jpg"]').exists()).toBe(false)
   })
 })

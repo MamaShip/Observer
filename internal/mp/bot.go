@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -28,11 +30,13 @@ type Accounts interface {
 // Watches is the part of watch.Service the bot uses.
 type Watches interface {
 	SubmitLink(ctx context.Context, userID uuid.UUID, rawURL string, quota watch.Quota) (watch.Submission, error)
+	TakeDeletionNews(ctx context.Context, userID uuid.UUID, since time.Time, n int) ([]db.TakeWechatNewsRow, error)
 }
 
 // Store is the part of db.Queries the bot reads.
 type Store interface {
 	GetArticle(ctx context.Context, id uuid.UUID) (db.Article, error)
+	GetUserWatch(ctx context.Context, arg db.GetUserWatchParams) (db.GetUserWatchRow, error)
 	ListWatchesPage(ctx context.Context, arg db.ListWatchesPageParams) ([]db.ListWatchesPageRow, error)
 	CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error)
 }
@@ -40,10 +44,16 @@ type Store interface {
 // Config configures the bot.
 type Config struct {
 	BaseURL     string // the site's origin, for links
-	ServiceName string
+	ServiceName string // the website's name
+	AccountName string // the Official Account's name; ServiceName if empty
+	InviteOnly  bool   // registration needs an invitation
 	WatchDays   int
 	MaxOpen     int // watch quota (admins have none)
 	MaxDaily    int
+	// ResolveWait is how long a reply may wait for a new article's first
+	// fetch, so it can tell how that went (0: do not wait). It always stops
+	// a second before the message's deadline.
+	ResolveWait time.Duration
 }
 
 // Bot answers messages. Every reply is complete in itself: we cannot send
@@ -53,12 +63,21 @@ type Bot struct {
 	watches Watches
 	store   Store
 	cfg     Config
+	host    string // the site's host name, shown next to links
+	poll    time.Duration
 	now     func() time.Time
 }
 
 // NewBot builds a bot.
 func NewBot(acc Accounts, watches Watches, store Store, cfg Config) *Bot {
-	return &Bot{acc: acc, watches: watches, store: store, cfg: cfg, now: time.Now}
+	if cfg.AccountName == "" {
+		cfg.AccountName = cfg.ServiceName
+	}
+	host := cfg.BaseURL
+	if u, err := url.Parse(cfg.BaseURL); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	return &Bot{acc: acc, watches: watches, store: store, cfg: cfg, host: host, poll: 250 * time.Millisecond, now: time.Now}
 }
 
 // Commands are whole messages.
@@ -69,13 +88,16 @@ var (
 )
 
 // reply is a reply being written. Links to the website share one login
-// token, made when the first link needs it.
+// token, made when the first link needs it. Deletion news goes first; a
+// note about the website closes any reply with links.
 type reply struct {
 	b       *Bot
 	ctx     context.Context
 	openid  string
 	binding *auth.WechatBinding
 	token   string
+	links   bool
+	news    strings.Builder
 	sb      strings.Builder
 }
 
@@ -96,18 +118,25 @@ func (b *Bot) Handle(ctx context.Context, m Message) (string, error) {
 		r.binding = &bd
 	}
 
-	var err error
 	text := strings.TrimSpace(m.Content)
+	unbinding := m.MsgType == "text" && in(text, cmdUnbind)
+	if r.binding != nil && r.binding.User.Status == "active" && !unbinding {
+		if err := r.deletionNews(); err != nil {
+			return "", err
+		}
+	}
+
+	var err error
 	switch {
 	case m.MsgType == "event": // subscribe
-		r.line("欢迎关注" + b.cfg.ServiceName + "。")
+		r.line("欢迎关注「" + b.cfg.AccountName + "」。")
 		r.line("")
 		err = r.help()
 	case m.MsgType == "text" && in(text, cmdList):
 		err = r.list()
 	case m.MsgType == "text" && in(text, cmdBind):
 		err = r.bind()
-	case m.MsgType == "text" && in(text, cmdUnbind):
+	case unbinding:
 		err = r.unbind()
 	default:
 		link := ""
@@ -140,7 +169,28 @@ func in(s string, set []string) bool {
 
 func (r *reply) line(s string) { r.sb.WriteString(s + "\n") }
 
-func (r *reply) String() string { return strings.TrimRight(r.sb.String(), "\n") }
+func (r *reply) String() string {
+	s := r.news.String() + r.sb.String()
+	if r.links {
+		s = strings.TrimRight(s, "\n") + "\n\n" + r.b.linkNote()
+	}
+	return strings.TrimRight(s, "\n")
+}
+
+// linkNote says where the links lead. Without an ICP filing WeChat warns
+// before opening the site, so the note says the warning is expected.
+func (b *Bot) linkNote() string {
+	return "链接打开的是本号配套的「" + b.cfg.ServiceName + "」网站（" + b.host + "）。微信提示「该网站未完成ICP备案」是因为服务器在香港，可以放心继续访问。"
+}
+
+// site names the website and, if it has another name, its relation to the
+// account.
+func (b *Bot) site() string {
+	if b.cfg.ServiceName == b.cfg.AccountName {
+		return "本号的网站"
+	}
+	return "本号配套的「" + b.cfg.ServiceName + "」网站"
+}
 
 // a is a link to a page of the website, signing the bound user in.
 func (r *reply) a(path, text string) (string, error) {
@@ -151,6 +201,7 @@ func (r *reply) a(path, text string) (string, error) {
 		}
 		r.token = t
 	}
+	r.links = true
 	return `<a href="` + r.b.cfg.BaseURL + "/wx/go?to=" + path + "#t=" + r.token + `">` + text + "</a>", nil
 }
 
@@ -160,6 +211,7 @@ func (r *reply) bindLink(pending string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	r.links = true
 	return `<a href="` + r.b.cfg.BaseURL + "/wx/bind#t=" + t + `">绑定邮箱</a>（` + minutes(auth.WechatBindTTL) + "内有效）", nil
 }
 
@@ -168,16 +220,11 @@ func minutes(d time.Duration) string { return fmt.Sprintf("%d 分钟", int(d/tim
 func (r *reply) help() error {
 	days := r.b.cfg.WatchDays
 	if r.binding == nil {
-		r.line(fmt.Sprintf("把公众号文章的链接发给我，我会备份全文，并在 %d 天内定期检查；文章被删除时发邮件通知你。", days))
+		r.line(fmt.Sprintf("把公众号文章的链接发给我，%s会备份全文，并在 %d 天内定期检查；文章被删除时发邮件通知你。", r.b.site(), days))
 		r.line("")
-		l, err := r.bindLink("")
-		if err != nil {
-			return err
-		}
-		r.line("第一次使用请先绑定邮箱：" + l)
-		return nil
+		return r.askToBind("", "第一次使用请先绑定邮箱：")
 	}
-	r.line(fmt.Sprintf("把公众号文章的链接发给我，我会备份全文，并在 %d 天内定期检查；文章被删除时发邮件到 %s。", days, maskEmail(r.binding.User.Email)))
+	r.line(fmt.Sprintf("把公众号文章的链接发给我，%s会备份全文，并在 %d 天内定期检查；文章被删除时发邮件到 %s。", r.b.site(), days, maskEmail(r.binding.User.Email)))
 	r.line("")
 	r.line("发送「我的」查看最近的观察")
 	r.line("发送「解绑」解除与邮箱的绑定")
@@ -194,11 +241,23 @@ func (r *reply) bind() error {
 		r.line("已绑定 " + maskEmail(r.binding.User.Email) + "。如需换绑，请先发送「解绑」。")
 		return nil
 	}
-	l, err := r.bindLink("")
+	return r.askToBind("", "点击下面的链接，在网站上登录并确认，就完成了绑定：")
+}
+
+// askToBind writes intro and a bind link that submits pending once bound.
+// When registration needs an invitation it says so: such a visitor would
+// otherwise wait for a login code that never comes.
+func (r *reply) askToBind(pending, intro string) error {
+	l, err := r.bindLink(pending)
 	if err != nil {
 		return err
 	}
-	r.line("点击" + l + "。登录后确认，就完成了绑定。")
+	if r.b.cfg.InviteOnly {
+		r.line("网站目前仅限受邀用户使用。已有账号或收到过邀请邮件的，" + strings.TrimPrefix(intro, "第一次使用"))
+	} else {
+		r.line(intro)
+	}
+	r.line(l)
 	return nil
 }
 
@@ -217,13 +276,8 @@ func (r *reply) unbind() error {
 
 func (r *reply) submit(link string) error {
 	if r.binding == nil {
-		l, err := r.bindLink(link)
-		if err != nil {
-			return err
-		}
-		r.line("收到链接。第一次使用请先绑定邮箱，绑定后会自动开始观察这篇文章：")
-		r.line(l)
-		return nil
+		r.line("收到链接。")
+		return r.askToBind(link, "第一次使用请先绑定邮箱，绑定后会自动开始观察这篇文章：")
 	}
 	u := r.binding.User
 	if u.Status != "active" {
@@ -239,6 +293,21 @@ func (r *reply) submit(link string) error {
 		return err
 	}
 	w := s.Watch
+	if !s.Existing && w.Status == "resolving" {
+		got, gone := r.b.waitResolved(r.ctx, u.ID, w.ID)
+		if gone { // the link was another address of an article already watched
+			r.line("这篇文章已经在观察中。")
+			l, err := r.a("/watches", "我的观察")
+			if err != nil {
+				return err
+			}
+			r.line(l)
+			return nil
+		}
+		if got != nil {
+			w = *got
+		}
+	}
 	var art db.Article
 	if w.ArticleID != nil {
 		if art, err = r.b.store.GetArticle(r.ctx, *w.ArticleID); err != nil {
@@ -266,6 +335,9 @@ func (r *reply) submit(link string) error {
 		}
 		r.line(msg + "。")
 		view = "查看已有的备份"
+	case w.EndReason != nil && *w.EndReason == "unreachable":
+		r.line("暂时打不开这篇文章，没能开始观察。请稍后再发送一次。")
+		return nil
 	default: // failed: invalid at first fetch
 		r.line("这个链接打不开（已失效或参数错误），没能开始观察。")
 		return nil
@@ -275,6 +347,75 @@ func (r *reply) submit(link string) error {
 		return err
 	}
 	r.line(l)
+	return nil
+}
+
+// waitResolved waits a little for the first fetch of a new watch's article
+// (usually a few seconds), so the reply can tell how it went. It returns the
+// watch once resolved, nil if it is still resolving, or gone if it was
+// dropped as a duplicate of one the user already has.
+func (b *Bot) waitResolved(ctx context.Context, userID, id uuid.UUID) (w *db.Watch, gone bool) {
+	if b.cfg.ResolveWait <= 0 {
+		return nil, false
+	}
+	stop := time.Now().Add(b.cfg.ResolveWait)
+	if d, ok := ctx.Deadline(); ok && d.Add(-time.Second).Before(stop) {
+		stop = d.Add(-time.Second)
+	}
+	t := time.NewTicker(b.poll)
+	defer t.Stop()
+	for time.Now().Before(stop) {
+		select {
+		case <-ctx.Done():
+			return nil, false
+		case <-t.C:
+		}
+		row, err := b.store.GetUserWatch(ctx, db.GetUserWatchParams{ID: id, UserID: userID})
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, true
+		case err != nil: // say it is being backed up, as without waiting
+			return nil, false
+		case row.Watch.Status != "resolving":
+			return &row.Watch, false
+		}
+	}
+	return nil, false
+}
+
+// newsSize is how many deletions one reply mentions; newsDays is how far
+// back it looks.
+const (
+	newsSize = 3
+	newsDays = 30
+)
+
+// deletionNews starts the reply with what was deleted since the last one.
+func (r *reply) deletionNews() error {
+	since := r.b.now().AddDate(0, 0, -newsDays)
+	if r.binding.Since.After(since) {
+		since = r.binding.Since
+	}
+	rows, err := r.b.watches.TakeDeletionNews(r.ctx, r.binding.User.ID, since, newsSize)
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	for _, w := range rows {
+		title := "（标题未知）"
+		if w.Title != nil && *w.Title != "" {
+			title = clip(*w.Title, 24)
+		}
+		when := ""
+		if w.EndedAt != nil {
+			when = "于 " + w.EndedAt.In(auth.Beijing).Format("01-02") + " "
+		}
+		l, err := r.a("/watches/"+w.ID.String(), "查看备份")
+		if err != nil {
+			return err
+		}
+		r.news.WriteString("【删除提醒】你观察的《" + title + "》已" + when + "被删除，" + l + "\n")
+	}
+	r.news.WriteString("\n")
 	return nil
 }
 
@@ -301,12 +442,8 @@ const listSize = 5
 
 func (r *reply) list() error {
 	if r.binding == nil {
-		l, err := r.bindLink("")
-		if err != nil {
-			return err
-		}
-		r.line("还没有绑定邮箱。请先" + l + "。")
-		return nil
+		r.line("还没有绑定邮箱。")
+		return r.askToBind("", "第一次使用请先绑定邮箱：")
 	}
 	u := r.binding.User
 	open, err := r.b.store.CountOpenWatches(r.ctx, u.ID)
@@ -329,7 +466,7 @@ func (r *reply) list() error {
 	}
 	r.line("")
 	// Stop before the reply would pass WeChat's limit.
-	budget := maxReplyBytes - len(all) - r.sb.Len() - 16
+	budget := maxReplyBytes - len(all) - r.news.Len() - r.sb.Len() - len(r.b.linkNote()) - 16
 	for _, w := range rows {
 		title := "（标题未知）"
 		if w.Title != nil && *w.Title != "" {

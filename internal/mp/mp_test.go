@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -31,11 +32,12 @@ type fakeAccounts struct {
 	forgot    []string
 	bindErr   error
 	pending   string
+	binding   time.Time // when bound
 }
 
 func (f *fakeAccounts) WechatBindingFor(_ context.Context, openid string) (auth.WechatBinding, bool, error) {
 	u, ok := f.bound[openid]
-	return auth.WechatBinding{OpenID: openid, User: u}, ok, nil
+	return auth.WechatBinding{OpenID: openid, User: u, Since: f.binding}, ok, nil
 }
 
 func (f *fakeAccounts) NewWechatBindLink(_ context.Context, _, pending string) (string, error) {
@@ -63,6 +65,15 @@ type fakeWatches struct {
 	sub   watch.Submission
 	err   error
 	calls []string
+	news  []db.TakeWechatNewsRow
+	since time.Time
+}
+
+func (f *fakeWatches) TakeDeletionNews(_ context.Context, _ uuid.UUID, since time.Time, _ int) ([]db.TakeWechatNewsRow, error) {
+	f.since = since
+	n := f.news
+	f.news = nil
+	return n, nil
 }
 
 func (f *fakeWatches) SubmitLink(_ context.Context, _ uuid.UUID, rawURL string, _ watch.Quota) (watch.Submission, error) {
@@ -71,9 +82,17 @@ func (f *fakeWatches) SubmitLink(_ context.Context, _ uuid.UUID, rawURL string, 
 }
 
 type fakeStore struct {
-	article db.Article
-	rows    []db.ListWatchesPageRow
-	open    int64
+	article  db.Article
+	rows     []db.ListWatchesPageRow
+	open     int64
+	watch    db.Watch // what a resolving watch has become
+	watchErr error
+	polls    int
+}
+
+func (f *fakeStore) GetUserWatch(context.Context, db.GetUserWatchParams) (db.GetUserWatchRow, error) {
+	f.polls++
+	return db.GetUserWatchRow{Watch: f.watch}, f.watchErr
 }
 
 func (f *fakeStore) GetArticle(context.Context, uuid.UUID) (db.Article, error) { return f.article, nil }
@@ -87,7 +106,7 @@ var now = time.Date(2026, 11, 21, 2, 0, 0, 0, time.UTC)
 func newBot() (*Bot, *fakeAccounts, *fakeWatches, *fakeStore) {
 	acc := &fakeAccounts{bound: map[string]db.User{}}
 	ws, st := &fakeWatches{}, &fakeStore{}
-	b := NewBot(acc, ws, st, Config{BaseURL: "https://ob.test", ServiceName: "折光观察者", WatchDays: 60, MaxOpen: 50, MaxDaily: 30})
+	b := NewBot(acc, ws, st, Config{BaseURL: "https://ob.test", ServiceName: "折光观察者", AccountName: "时间从来不回答", WatchDays: 60, MaxOpen: 50, MaxDaily: 30})
 	b.now = func() time.Time { return now }
 	return b, acc, ws, st
 }
@@ -174,7 +193,11 @@ func TestParseAndEncode(t *testing.T) {
 func TestUnboundUser(t *testing.T) {
 	b, acc, ws, _ := newBot()
 	r := handle(t, b, Message{FromUserName: "oA", MsgType: "event", Event: "subscribe"})
-	mustContain(t, r, "欢迎关注折光观察者", `<a href="https://ob.test/wx/bind#t=BINDTOKEN">绑定邮箱</a>`, "60 天")
+	mustContain(t, r, "欢迎关注「时间从来不回答」", "本号配套的「折光观察者」网站", `<a href="https://ob.test/wx/bind#t=BINDTOKEN">绑定邮箱</a>`, "60 天",
+		"（ob.test）", "未完成ICP备案", "放心继续访问")
+	if strings.Contains(r, "受邀") {
+		t.Error("open registration mentions invitations")
+	}
 
 	r = handle(t, b, text("看看这篇 https://mp.weixin.qq.com/s/abcdefgh ，很重要"))
 	mustContain(t, r, "绑定后会自动开始观察", "/wx/bind#t=")
@@ -187,8 +210,22 @@ func TestUnboundUser(t *testing.T) {
 	for _, s := range []string{"我的", "绑定", "你好"} {
 		mustContain(t, handle(t, b, text(s)), "/wx/bind#t=")
 	}
-	mustContain(t, handle(t, b, text("解绑")), "还没有绑定")
+	if r := handle(t, b, text("解绑")); !strings.Contains(r, "还没有绑定") || strings.Contains(r, "ICP") {
+		t.Errorf("unbind without a binding: %s", r)
+	}
 	mustContain(t, handle(t, b, Message{FromUserName: "oA", MsgType: "image"}), "/wx/bind#t=")
+
+	// Invitation only: a stranger would wait for a login code forever.
+	b.cfg.InviteOnly = true
+	mustContain(t, handle(t, b, text("帮助")), "仅限受邀用户", "已有账号或收到过邀请邮件的，请先绑定邮箱：", "/wx/bind#t=")
+	mustContain(t, handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")), "仅限受邀用户", "请先绑定邮箱，绑定后会自动开始观察")
+	mustContain(t, handle(t, b, text("绑定")), "仅限受邀用户", "点击下面的链接")
+}
+
+func TestSameNames(t *testing.T) {
+	b := NewBot(&fakeAccounts{}, &fakeWatches{}, &fakeStore{}, Config{BaseURL: "https://ob.test", ServiceName: "折光观察者", WatchDays: 60})
+	r := handle(t, b, Message{FromUserName: "oA", MsgType: "event", Event: "subscribe"})
+	mustContain(t, r, "欢迎关注「折光观察者」", "本号的网站会备份")
 }
 
 func TestBoundSubmit(t *testing.T) {
@@ -246,7 +283,7 @@ func TestBoundCommands(t *testing.T) {
 	b, acc, _, st := newBot()
 	acc.bound["oA"] = db.User{ID: uuid.New(), Email: "alice@example.com", Status: "active"}
 
-	mustContain(t, handle(t, b, text("帮助")), "a***@example.com", "发送「我的」", `/wx/go?to=/watches#t=LOGINTOKEN">打开网站</a>`)
+	mustContain(t, handle(t, b, text("帮助")), "a***@example.com", "发送「我的」", `/wx/go?to=/watches#t=LOGINTOKEN">打开网站</a>`, "未完成ICP备案")
 	mustContain(t, handle(t, b, text("绑定")), "已绑定 a***@example.com")
 	mustContain(t, handle(t, b, text("我的")), "观察中 0 篇", "还没有观察的文章")
 
@@ -270,6 +307,80 @@ func TestBoundCommands(t *testing.T) {
 	mustContain(t, handle(t, b, text("解绑")), "已解除与 a***@example.com 的绑定")
 	if _, ok := acc.bound["oA"]; ok {
 		t.Error("still bound")
+	}
+}
+
+func TestWaitsForTheFirstFetch(t *testing.T) {
+	b, acc, ws, st := newBot()
+	b.cfg.ResolveWait, b.poll = time.Second, time.Millisecond
+	acc.bound["oA"] = db.User{ID: uuid.New(), Email: "alice@example.com", Status: "active", Role: "user"}
+	id, art := uuid.New(), uuid.New()
+	ws.sub = watch.Submission{Watch: db.Watch{ID: id, Status: "resolving"}}
+	st.article = db.Article{Title: ptr("新文章")}
+
+	st.watch = db.Watch{ID: id, ArticleID: &art, Status: "active", ExpiresAt: time.Date(2027, 1, 20, 1, 0, 0, 0, time.UTC)}
+	mustContain(t, handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")), "已开始观察《新文章》", "2027-01-20")
+
+	st.watch = db.Watch{ID: id, ArticleID: &art, Status: "failed", EndReason: ptr("invalid")}
+	mustContain(t, handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")), "打不开")
+
+	st.watchErr = pgx.ErrNoRows // merged into a watch the user already had
+	mustContain(t, handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")), "已经在观察中", "/wx/go?to=/watches#t=")
+
+	// Still resolving: give up a second before the deadline.
+	st.watchErr, st.watch = nil, db.Watch{ID: id, Status: "resolving"}
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	r, err := b.Handle(ctx, text("https://mp.weixin.qq.com/s/abcdefgh"))
+	if err != nil || !strings.Contains(r, "正在备份") {
+		t.Fatalf("%q %v", r, err)
+	}
+	if d := time.Since(start); d > 600*time.Millisecond {
+		t.Errorf("waited %v", d)
+	}
+
+	// Without ResolveWait, no waiting.
+	b.cfg.ResolveWait, st.polls = 0, 0
+	mustContain(t, handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")), "正在备份")
+	if st.polls != 0 {
+		t.Errorf("%d polls", st.polls)
+	}
+}
+
+func TestDeletionNews(t *testing.T) {
+	b, acc, ws, _ := newBot()
+	bound := now.Add(-48 * time.Hour)
+	acc.bound["oA"] = db.User{ID: uuid.New(), Email: "alice@example.com", Status: "active"}
+	acc.binding = bound
+	id := uuid.New()
+	ws.news = []db.TakeWechatNewsRow{{ID: id, EndedAt: ptr(time.Date(2026, 11, 20, 17, 0, 0, 0, time.UTC)), Title: ptr("被删的文章")}}
+	r := handle(t, b, text("我的"))
+	if !strings.HasPrefix(r, "【删除提醒】你观察的《被删的文章》已于 11-21 被删除，") {
+		t.Errorf("news not first:\n%s", r)
+	}
+	mustContain(t, r, `/wx/go?to=/watches/`+id.String()+`#t=LOGINTOKEN">查看备份</a>`, "观察中 0 篇")
+	if !ws.since.Equal(bound) {
+		t.Errorf("since %v, want the binding time", ws.since)
+	}
+	if r := handle(t, b, text("我的")); strings.Contains(r, "删除提醒") {
+		t.Error("told twice")
+	}
+
+	// Only the last 30 days, even if bound long ago.
+	acc.binding = now.AddDate(-1, 0, 0)
+	handle(t, b, text("帮助"))
+	if want := now.AddDate(0, 0, -30); !ws.since.Equal(want) {
+		t.Errorf("since %v, want %v", ws.since, want)
+	}
+
+	// Not while unbinding, nor for a disabled account.
+	ws.since = time.Time{}
+	handle(t, b, text("解绑"))
+	acc.bound["oA"] = db.User{ID: uuid.New(), Status: "disabled"}
+	handle(t, b, text("我的"))
+	if !ws.since.IsZero() {
+		t.Error("news taken")
 	}
 }
 
