@@ -771,6 +771,11 @@ export interface components {
             total_watches: number;
             /** Format: int64 */
             watches_this_month: number;
+            /**
+             * Format: date-time
+             * @description When the account was bound to a WeChat user of the Official Account
+             */
+            wechat_bound_at?: string;
         };
         AdminUsersOutputBody: {
             items: components["schemas"]["AdminUser"][];

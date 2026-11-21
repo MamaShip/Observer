@@ -9,12 +9,32 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const quota = ref<Pick<Me, 'emails_this_month' | 'monthly_emails'> | null>(null)
 const invites = ref<Invitations | null>(null)
+const wechat = ref<Me['wechat'] | null>(null)
+const wechatName = computed(() => session.site?.wechat?.name || serviceName())
+const confirmUnbind = ref(false)
+const unbinding = ref(false)
+const wechatError = ref('')
+
+async function unbind() {
+  unbinding.value = true
+  wechatError.value = ''
+  try {
+    await call(api.DELETE('/api/v1/me/wechat'))
+    wechat.value = null
+    confirmUnbind.value = false
+  } catch (e) {
+    wechatError.value = messageOf(e)
+  } finally {
+    unbinding.value = false
+  }
+}
 
 onMounted(async () => {
   try {
     const me = await call(api.GET('/api/v1/me'))
     setUser(me)
     quota.value = me
+    wechat.value = me.wechat ?? null
   } catch {
     // The page works without the count.
   }
@@ -159,6 +179,23 @@ async function deleteAccount() {
           aria-valuemin="0" :aria-valuemax="quota.monthly_emails"><div class="zg-meter__fill" /></div>
       </div>
       <p class="muted small">文章被删除时会发邮件通知你，几篇文章的通知合并成一封。观察到期时可以在「我的观察」里查看状态。达到邮件上限后，新的变化会在下月初汇总发送。验证码邮件不计入用量。</p>
+    </section>
+
+    <section v-if="session.site?.wechat" class="zg-shard zg-panel">
+      <div class="zg-panel__head"><h2 class="zg-panel__title">微信公众号</h2>
+        <span class="zg-meta">{{ wechat ? `${formatDate(wechat.bound_at)} 绑定` : '未绑定' }}</span></div>
+      <template v-if="wechat">
+        <p class="muted small">在公众号「{{ wechatName }}」里发送文章链接，就会加入这个账号的观察列表；删除提醒仍然发到这个邮箱。</p>
+        <div class="zg-setrow"><span class="zg-setrow__label">解除绑定<span class="zg-setrow__sub">已有的观察不受影响</span></span>
+          <button v-if="!confirmUnbind" type="button" class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" @click="confirmUnbind = true">解除绑定</button>
+          <span v-else class="row">
+            <button type="button" class="zg-shard zg-btn zg-btn--danger zg-btn--sm" :disabled="unbinding" @click="unbind">确认解除</button>
+            <button type="button" class="zg-shard zg-btn zg-btn--ghost zg-btn--sm" :disabled="unbinding" @click="confirmUnbind = false">取消</button>
+          </span>
+        </div>
+      </template>
+      <p v-else class="muted small">关注公众号「{{ wechatName }}」，发送「绑定」，再按回复里的链接确认。之后在微信里把文章链接发给公众号，就能开始观察。</p>
+      <p v-if="wechatError" class="notice notice-danger" role="alert">{{ wechatError }}</p>
     </section>
 
     <section v-if="invites?.can_invite" class="zg-shard zg-panel">

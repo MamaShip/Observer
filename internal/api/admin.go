@@ -223,6 +223,7 @@ type AdminUser struct {
 	InvitedBy        string     `json:"invited_by,omitempty" doc:"The inviter's email"`
 	Invitees         int        `json:"invitees" doc:"Accounts this user's invitations created"`
 	InvitesThisMonth int        `json:"invites_this_month" doc:"Invitations sent this month, including to addresses that had an account"`
+	WechatBoundAt    *time.Time `json:"wechat_bound_at,omitempty" doc:"When the account was bound to a WeChat user of the Official Account"`
 }
 
 func (h *handlers) adminUser(r db.AdminListUsersRow) AdminUser {
@@ -231,7 +232,7 @@ func (h *handlers) adminUser(r db.AdminListUsersRow) AdminUser {
 		OpenWatches: int(r.OpenWatches), TotalWatches: int(r.TotalWatches), WatchesThisMonth: int(r.WatchesThisMonth),
 		EmailsThisMonth: int(r.EmailsThisMonth), MonthlyEmails: h.d.Site.MonthlyEmails,
 		Invited: r.Invited, InvitedByID: r.InviterID, InvitedBy: r.InviterEmail,
-		Invitees: int(r.Invitees), InvitesThisMonth: int(r.InvitesThisMonth),
+		Invitees: int(r.Invitees), InvitesThisMonth: int(r.InvitesThisMonth), WechatBoundAt: r.WechatBoundAt,
 	}
 	if r.MonthlyEmailLimit != nil {
 		u.MonthlyEmails, u.CustomEmailLimit = int(*r.MonthlyEmailLimit), true

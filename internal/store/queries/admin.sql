@@ -74,10 +74,12 @@ SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly
   i.inviter_id AS inviter_id,
   coalesce(inv.email, '')::text AS inviter_email,
   (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.invitee_id IS NOT NULL)::int AS invitees,
-  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= sqlc.arg(month_start)::timestamptz)::int AS invites_this_month
+  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= sqlc.arg(month_start)::timestamptz)::int AS invites_this_month,
+  wb.created_at AS wechat_bound_at
 FROM users u
 LEFT JOIN invites i ON i.invitee_id = u.id
 LEFT JOIN users inv ON inv.id = i.inviter_id
+LEFT JOIN wechat_bindings wb ON wb.user_id = u.id
 WHERE (sqlc.narg(before)::uuid IS NULL OR u.id < sqlc.narg(before)::uuid)
   AND (sqlc.narg(only_id)::uuid IS NULL OR u.id = sqlc.narg(only_id)::uuid)
   AND (sqlc.narg(invited_by)::uuid IS NULL OR i.inviter_id = sqlc.narg(invited_by)::uuid)

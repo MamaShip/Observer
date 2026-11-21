@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
+import { isTokenHash } from './lib/wechat'
 import { ensureSession, serviceName, session } from './session'
 import HomeView from './views/HomeView.vue'
 import LoginView from './views/LoginView.vue'
@@ -53,13 +54,17 @@ export const router = createRouter({
       component: () => import('./views/admin/AdminArticleView.vue'),
       meta: { title: '文章详情 · 管理后台', auth: true, admin: true, wide: true },
     },
+    // Links from the Official Account's replies (plan.md, 6.7). They check
+    // the login themselves, so the token never goes into a login redirect.
+    { path: '/wx/bind', name: 'wechat-bind', component: () => import('./views/WechatBindView.vue'), meta: { title: '绑定公众号' } },
+    { path: '/wx/go', name: 'wechat-go', component: () => import('./views/WechatGoView.vue'), meta: { title: '正在打开' } },
     { path: '/about', name: 'about', component: () => import('./views/AboutView.vue'), meta: { title: '关于' } },
     { path: '/privacy', name: 'privacy', component: () => import('./views/PrivacyView.vue'), meta: { title: '隐私说明' } },
     { path: '/terms', name: 'terms', component: () => import('./views/TermsView.vue'), meta: { title: '服务条款' } },
     { path: '/:rest(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue'), meta: { title: '页面不存在' } },
   ],
   scrollBehavior(to, _from, saved) {
-    return saved ?? (to.hash ? { el: to.hash, top: 80 } : { top: 0 })
+    return saved ?? (to.hash && !isTokenHash(to.hash) ? { el: to.hash, top: 80 } : { top: 0 })
   },
 })
 

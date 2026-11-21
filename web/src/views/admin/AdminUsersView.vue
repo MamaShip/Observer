@@ -142,6 +142,7 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
           <dt>邀请注册</dt><dd><button v-if="selected.invitees" class="btn-link" @click="showInvitees(selected)">{{ selected.invitees }} 人</button><template v-else>0 人</template></dd>
           <dt>本月邀请</dt><dd>{{ selected.invites_this_month }} 人</dd><dt>累计观察</dt><dd>{{ selected.total_watches }} 篇</dd>
           <dt>本月提交</dt><dd>{{ selected.watches_this_month }} 篇</dd><dt>最近登录</dt><dd>{{ selected.last_login_at ? formatRelative(selected.last_login_at) : '从未' }}</dd>
+          <template v-if="session.site?.wechat"><dt>公众号</dt><dd>{{ selected.wechat_bound_at ? formatDate(selected.wechat_bound_at) + ' 绑定' : '未绑定' }}</dd></template>
         </dl>
         <div>
           <label class="zg-setrow zg-switch">启用账户
