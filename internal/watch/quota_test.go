@@ -14,13 +14,14 @@ func TestSubmitQuota(t *testing.T) {
 	e.web.set(shortURL, fixture(t, "alive_article.html"))
 	quota := Quota{MaxOpen: 1, MaxDaily: 2}
 
-	w, err := e.svc.Submit(e.ctx, alice, shortURL, quota)
-	if err != nil {
-		t.Fatal(err)
+	first, err := e.svc.SubmitLink(e.ctx, alice, shortURL, quota)
+	if err != nil || first.Existing {
+		t.Fatal(first.Existing, err)
 	}
+	w := first.Watch
 	// At the limit, the same link again returns her watch.
-	if again, err := e.svc.Submit(e.ctx, alice, shortURL+"?scene=1", quota); err != nil || again.ID != w.ID {
-		t.Errorf("same link at the limit = %v, %v", again.ID, err)
+	if again, err := e.svc.SubmitLink(e.ctx, alice, shortURL+"?scene=1", quota); err != nil || again.Watch.ID != w.ID || !again.Existing {
+		t.Errorf("same link at the limit = %v (existing %v), %v", again.Watch.ID, again.Existing, err)
 	}
 	// Another link is refused and leaves nothing behind.
 	if _, err := e.svc.Submit(e.ctx, alice, otherURL, quota); !errors.Is(err, ErrOpenLimit) {

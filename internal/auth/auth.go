@@ -348,6 +348,15 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
 		if err := q.ForgetInvites(ctx, db.ForgetInvitesParams{Email: u.Email, UserID: &u.ID}); err != nil {
 			return err
 		}
+		// The binding and login links go with the user; bind links carry
+		// only the OpenID.
+		if b, err := q.GetWechatBindingByUser(ctx, u.ID); err == nil {
+			if err := q.DeleteWechatTokensByOpenID(ctx, b.Openid); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
 		return q.DeleteUser(ctx, u.ID)
 	})
 }
@@ -355,8 +364,8 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
 // EmailLogRetention is how long sent-email records (with addresses) are kept.
 const EmailLogRetention = 90 * 24 * time.Hour
 
-// Cleanup deletes expired login codes, old request counts, sessions and
-// email records older than EmailLogRetention.
+// Cleanup deletes expired login codes, old request counts, sessions, WeChat
+// links and email records older than EmailLogRetention.
 func (s *Service) Cleanup(ctx context.Context) error {
 	now := s.now()
 	codes, err := s.q.DeleteExpiredLoginCodes(ctx, now.Add(-24*time.Hour))
@@ -372,8 +381,12 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		return err
 	}
 	sess, err := s.q.DeleteExpiredSessions(ctx, now)
-	if err == nil && codes+reqs+sess+mails > 0 {
-		s.log.Info("expired records cleaned up", "login_codes", codes, "login_requests", reqs, "sessions", sess, "email_log", mails)
+	if err != nil {
+		return err
+	}
+	links, err := s.q.DeleteExpiredWechatTokens(ctx, now)
+	if err == nil && codes+reqs+sess+mails+links > 0 {
+		s.log.Info("expired records cleaned up", "login_codes", codes, "login_requests", reqs, "sessions", sess, "email_log", mails, "wechat_links", links)
 	}
 	return err
 }

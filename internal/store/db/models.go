@@ -163,3 +163,20 @@ type Watch struct {
 	EndedAt      *time.Time
 	NotifiedAt   *time.Time
 }
+
+type WechatBinding struct {
+	Openid    string
+	UserID    uuid.UUID
+	CreatedAt time.Time
+}
+
+type WechatToken struct {
+	TokenHash  []byte
+	Purpose    string
+	Openid     string
+	UserID     *uuid.UUID
+	PendingUrl *string
+	ExpiresAt  time.Time
+	UsedAt     *time.Time
+	CreatedAt  time.Time
+}

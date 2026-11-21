@@ -132,15 +132,36 @@ func checkOpen(ctx context.Context, q *db.Queries, userID uuid.UUID, quota Quota
 	return nil
 }
 
+// QuotaFor is a user's watch quota: admins have none.
+func QuotaFor(role string, maxOpen, maxDaily int) Quota {
+	if role == "admin" {
+		return Quota{}
+	}
+	return Quota{MaxOpen: maxOpen, MaxDaily: maxDaily}
+}
+
+// Submission is the outcome of SubmitLink.
+type Submission struct {
+	Watch    db.Watch
+	Existing bool // the user was already watching the article
+}
+
 // Submit starts watching a link for a user. It returns the user's existing
 // open watch if there is one for the same article; that is free. Otherwise
 // the new watch counts toward the quota.
 func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string, quota Quota) (db.Watch, error) {
+	r, err := s.SubmitLink(ctx, userID, rawURL, quota)
+	return r.Watch, err
+}
+
+// SubmitLink is Submit, also telling whether the watch already existed.
+func (s *Service) SubmitLink(ctx context.Context, userID uuid.UUID, rawURL string, quota Quota) (Submission, error) {
 	link, err := wechat.ParseLink(rawURL)
 	if err != nil {
-		return db.Watch{}, fmt.Errorf("%w: %w", ErrBadLink, err)
+		return Submission{}, fmt.Errorf("%w: %w", ErrBadLink, err)
 	}
 	var w db.Watch
+	existing := false
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		// One submission per user at a time: the duplicate check and the
@@ -158,6 +179,7 @@ func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string, q
 			return err
 		}
 		if w, err = q.GetOpenWatch(ctx, db.GetOpenWatchParams{UserID: userID, ArticleID: art.ID}); err == nil {
+			existing = true
 			return nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -206,7 +228,10 @@ func (s *Service) Submit(ctx context.Context, userID uuid.UUID, rawURL string, q
 		w, err = q.CreateWatch(ctx, p)
 		return err
 	})
-	return w, err
+	if err != nil {
+		return Submission{}, err
+	}
+	return Submission{Watch: w, Existing: existing}, nil
 }
 
 // createArticle makes a pending article for a link nobody submitted before.

@@ -429,10 +429,7 @@ func (h *handlers) registerWatches(g huma.API) {
 
 // quota is the user's watch quota; admins have none.
 func (h *handlers) quota(u db.User) watch.Quota {
-	if u.Role == "admin" {
-		return watch.Quota{}
-	}
-	return watch.Quota{MaxOpen: h.d.Limits.MaxOpenWatches, MaxDaily: h.d.Limits.MaxDailySubmission}
+	return watch.QuotaFor(u.Role, h.d.Limits.MaxOpenWatches, h.d.Limits.MaxDailySubmission)
 }
 
 // quotaError turns a quota error from Submit or Renew into a 429.

@@ -52,6 +52,7 @@ type Querier interface {
 	// codes) sent to a user since a time.
 	CountUserNotificationsSince(ctx context.Context, arg CountUserNotificationsSinceParams) (int32, error)
 	CountWatchesSince(ctx context.Context, arg CountWatchesSinceParams) (int64, error)
+	CountWechatBindings(ctx context.Context) (int32, error)
 	// CreateAlias reports 0 rows when the URL already belongs to an article
 	// (possibly one a concurrent submission created a moment ago).
 	CreateAlias(ctx context.Context, arg CreateAliasParams) (int64, error)
@@ -62,9 +63,12 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateUser(ctx context.Context, email string) (User, error)
 	CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch, error)
+	CreateWechatBinding(ctx context.Context, arg CreateWechatBindingParams) (WechatBinding, error)
+	CreateWechatToken(ctx context.Context, arg CreateWechatTokenParams) error
 	DeleteArticle(ctx context.Context, id uuid.UUID) error
 	DeleteExpiredLoginCodes(ctx context.Context, before time.Time) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	DeleteExpiredWechatTokens(ctx context.Context, now time.Time) (int64, error)
 	DeleteInvite(ctx context.Context, id uuid.UUID) error
 	DeleteLoginCodesFor(ctx context.Context, email string) error
 	DeleteOldCheckRuns(ctx context.Context, before time.Time) (int64, error)
@@ -77,6 +81,12 @@ type Querier interface {
 	// Sessions and watches go with the user (ON DELETE CASCADE).
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) (int64, error)
+	DeleteWechatBindingByOpenID(ctx context.Context, openid string) (int64, error)
+	DeleteWechatBindingByUser(ctx context.Context, userID uuid.UUID) (string, error)
+	DeleteWechatBindingsFor(ctx context.Context, arg DeleteWechatBindingsForParams) error
+	// DeleteWechatLoginTokens removes login links that no longer match a binding.
+	DeleteWechatLoginTokens(ctx context.Context, arg DeleteWechatLoginTokensParams) error
+	DeleteWechatTokensByOpenID(ctx context.Context, openid string) error
 	DueArticles(ctx context.Context, arg DueArticlesParams) ([]uuid.UUID, error)
 	EndActiveWatchesDeleted(ctx context.Context, arg EndActiveWatchesDeletedParams) ([]EndActiveWatchesDeletedRow, error)
 	// Expiry is never emailed, so the watch is announced as it ends.
@@ -107,6 +117,9 @@ type Querier interface {
 	// revoked invitation cannot remove it halfway.
 	GetUserByEmailForUpdate(ctx context.Context, email string) (User, error)
 	GetUserWatch(ctx context.Context, arg GetUserWatchParams) (GetUserWatchRow, error)
+	GetWechatBindingByOpenID(ctx context.Context, openid string) (GetWechatBindingByOpenIDRow, error)
+	GetWechatBindingByUser(ctx context.Context, userID uuid.UUID) (WechatBinding, error)
+	GetWechatBindingForUpdate(ctx context.Context, arg GetWechatBindingForUpdateParams) (WechatBinding, error)
 	InsertAsset(ctx context.Context, arg InsertAssetParams) error
 	InsertCheckRun(ctx context.Context, arg InsertCheckRunParams) error
 	InsertEmailLog(ctx context.Context, arg InsertEmailLogParams) (uuid.UUID, error)
@@ -128,6 +141,9 @@ type Querier interface {
 	// LockUser serialises one user's invitations so the monthly count holds.
 	LockUser(ctx context.Context, id uuid.UUID) (User, error)
 	LockUserWatch(ctx context.Context, arg LockUserWatchParams) (Watch, error)
+	// LockWechatOpenID serialises bindings of one OpenID (there may be no row
+	// to lock yet).
+	LockWechatOpenID(ctx context.Context, openid string) error
 	MarkArticleAlive(ctx context.Context, arg MarkArticleAliveParams) (Article, error)
 	MarkArticleInvalid(ctx context.Context, arg MarkArticleInvalidParams) error
 	MarkUnwatchedArticlesDormant(ctx context.Context) (int64, error)
@@ -170,6 +186,9 @@ type Querier interface {
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) error
 	UpsertUserByEmail(ctx context.Context, email string) (User, error)
+	// UseWechatToken marks an unused, unexpired token as used and returns it.
+	// No row means it is unknown, used, expired or for another purpose.
+	UseWechatToken(ctx context.Context, arg UseWechatTokenParams) (WechatToken, error)
 	// A user may see an article's snapshots if they ever watched it.
 	UserCanViewSnapshot(ctx context.Context, arg UserCanViewSnapshotParams) (bool, error)
 	// Watches that ended because the article was deleted and still owe the

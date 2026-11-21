@@ -80,3 +80,25 @@ func TestServiceFetchURL(t *testing.T) {
 		}
 	}
 }
+
+// The same cases as extractLink in web/tests/lib.test.ts.
+func TestExtractLink(t *testing.T) {
+	for text, want := range map[string]string{
+		"https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A":                       "https://mp.weixin.qq.com/s/q-WkvTApjcwqtgk9LY7Q-A",
+		"  https://mp.weixin.qq.com/s/abc  ":                                      "https://mp.weixin.qq.com/s/abc",
+		"分享一篇文章 https://mp.weixin.qq.com/s/abc 来自公众号":                             "https://mp.weixin.qq.com/s/abc",
+		"【标题】https://mp.weixin.qq.com/s/abc，快看":                                   "https://mp.weixin.qq.com/s/abc",
+		"(https://mp.weixin.qq.com/s/abc).":                                       "https://mp.weixin.qq.com/s/abc",
+		"https://mp.weixin.qq.com/s?__biz=MzA5&mid=2650&idx=1&sn=abc&chksm=8b#rd": "https://mp.weixin.qq.com/s?__biz=MzA5&mid=2650&idx=1&sn=abc&chksm=8b#rd",
+		"HTTP://MP.WEIXIN.QQ.COM/s/ABC":                                           "HTTP://MP.WEIXIN.QQ.COM/s/ABC",
+		"":                                                                        "",
+		"hello":                                                                   "",
+		"https://example.com/s/abc":                                               "",
+		"https://mp.weixin.qq.com/":                                               "",
+		"mp.weixin.qq.com/s/abc":                                                  "",
+	} {
+		if got := ExtractLink(text); got != want {
+			t.Errorf("ExtractLink(%q) = %q, want %q", text, got, want)
+		}
+	}
+}

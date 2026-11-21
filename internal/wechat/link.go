@@ -126,3 +126,13 @@ func CanonicalKey(biz, mid, idx string) string {
 	}
 	return biz + ":" + mid + ":" + idx
 }
+
+// reInText matches an article link inside shared text. It mirrors
+// web/src/lib/link.ts: users paste whatever WeChat's "copy link" or a share
+// gives them, and ParseLink does the real validation.
+var reInText = regexp.MustCompile(`(?i)https?://mp\.weixin\.qq\.com/s[^\s<>"'，。；、）)】]*`)
+
+// ExtractLink returns the first article link in text, or "".
+func ExtractLink(text string) string {
+	return strings.TrimRight(reInText.FindString(text), ".,;!?")
+}
