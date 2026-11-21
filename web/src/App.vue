@@ -18,7 +18,7 @@ const route = useRoute()
     <footer class="zg-footer">
       <div class="zg-container zg-footer__inner">
         <div>
-          <p v-if="route.name === 'home'" class="footer-motto">冷眼看待，温柔保存。</p>
+          <p v-if="route.name === 'home'" class="footer-motto">时间从来不回答。</p>
           <p class="zg-footer__fine">© {{ new Date().getFullYear() }} {{ serviceName() }} · 开源项目，可自行部署</p>
         </div>
         <nav class="zg-footer__links" aria-label="页脚">

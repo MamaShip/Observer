@@ -58,8 +58,8 @@ const steps = [
     </section>
     <section class="scope">
       <div>
-        <h2 class="zg-section-title">能观察什么</h2>
-        <p>目前只支持公开的微信公众号文章。在微信里打开文章，点右上角复制链接，粘贴到「我的观察」即可。</p>
+        <h2 class="zg-section-title">怎么用</h2>
+        <p>在微信里打开文章，点右上角「复制链接」，粘贴到「我的观察」即可。</p>
       </div>
       <div class="zg-shard zg-panel">
         <h3 class="zg-panel__title">支持</h3>
