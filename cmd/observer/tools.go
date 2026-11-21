@@ -5,10 +5,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/MamaShip/Observer/internal/mp"
 	"github.com/MamaShip/Observer/internal/netcheck"
 	"github.com/MamaShip/Observer/internal/probe"
 )
@@ -95,4 +97,48 @@ func readLines(path string) ([]string, error) {
 		}
 	}
 	return out, sc.Err()
+}
+
+func runMPSim(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("mpsim", flag.ExitOnError)
+	base := fs.String("url", "http://localhost:8080", "the service's site origin")
+	token := fs.String("token", os.Getenv("WECHAT_TOKEN"), "WECHAT_TOKEN of the service")
+	account := fs.String("account", envOr("WECHAT_ACCOUNT_ID", "gh_mpsim"), "the Official Account's original ID")
+	openid := fs.String("openid", "oMPSimUser", "the follower sending the message")
+	event := fs.String("event", "", "send an event instead of text: subscribe or unsubscribe")
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: observer mpsim [flags] [text]\n\nSends a message to the service as WeChat would and prints the reply.\n\nFlags:\n")
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+	if *token == "" {
+		return fmt.Errorf("set -token or WECHAT_TOKEN")
+	}
+	m := mp.Message{ToUserName: *account, FromUserName: *openid, MsgType: "text", Content: strings.Join(fs.Args(), " ")}
+	switch {
+	case *event != "":
+		m.MsgType, m.Event, m.Content = "event", *event, ""
+	case m.Content == "":
+		fs.Usage()
+		os.Exit(2)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	reply, err := mp.Simulate(ctx, http.DefaultClient, *base, *token, m)
+	if err != nil {
+		return err
+	}
+	if reply == "" {
+		fmt.Println("(no reply)")
+		return nil
+	}
+	fmt.Println(reply)
+	return nil
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

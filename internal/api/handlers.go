@@ -177,8 +177,9 @@ func userFromDB(u db.User) User {
 // Me is the account with its notification quota for this month.
 type Me struct {
 	User
-	EmailsThisMonth int `json:"emails_this_month" doc:"Notification emails sent this month (Beijing time)"`
-	MonthlyEmails   int `json:"monthly_emails" doc:"This account's monthly limit; 0 means no limit"`
+	EmailsThisMonth int       `json:"emails_this_month" doc:"Notification emails sent this month (Beijing time)"`
+	MonthlyEmails   int       `json:"monthly_emails" doc:"This account's monthly limit; 0 means no limit"`
+	Wechat          *MeWechat `json:"wechat,omitempty" doc:"Present when bound to a WeChat user of the Official Account"`
 }
 
 type userOutput struct{ Body Me }
@@ -191,6 +192,15 @@ func (h *handlers) me(ctx context.Context, u db.User) (*userOutput, error) {
 			return nil, err
 		}
 		out.Body.EmailsThisMonth, out.Body.MonthlyEmails = q.Sent, q.Limit
+	}
+	if h.d.Auth != nil {
+		since, err := h.d.Auth.WechatBoundSince(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		if since != nil {
+			out.Body.Wechat = &MeWechat{BoundAt: *since}
+		}
 	}
 	return out, nil
 }

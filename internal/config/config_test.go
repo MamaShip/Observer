@@ -43,6 +43,8 @@ func TestLoadErrors(t *testing.T) {
 		{"bad mode", "REGISTRATION_MODE", "free", "REGISTRATION_MODE"},
 		{"bad admin email", "ADMIN_EMAILS", "ops@example.com,nope", "ADMIN_EMAILS"},
 		{"smtp without from", "SMTP_HOST", "smtp.example.com", "MAIL_FROM"},
+		{"bad wechat token", "WECHAT_TOKEN", "has space", "WECHAT_TOKEN"},
+		{"bad wechat account", "WECHAT_ACCOUNT_ID", "observer", "WECHAT_ACCOUNT_ID"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 	"github.com/MamaShip/Observer/internal/config"
 	"github.com/MamaShip/Observer/internal/jobs"
 	"github.com/MamaShip/Observer/internal/mail"
+	"github.com/MamaShip/Observer/internal/mp"
 	"github.com/MamaShip/Observer/internal/notify"
 	"github.com/MamaShip/Observer/internal/snapserver"
 	"github.com/MamaShip/Observer/internal/store"
@@ -127,6 +128,15 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 	snap := snapserver.New(q, snapStore, signer, cfg.Origin(), log)
 
 	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, started: time.Now(), Watch: svc, Notify: notifier, Auth: authSvc}
+	var bot *mp.Bot
+	var siteWechat *api.SiteWechat
+	wechatHandler := http.NotFoundHandler()
+	if cfg.Wechat() {
+		bot = mp.NewBot(authSvc, svc, q, mp.Config{BaseURL: cfg.Origin(), ServiceName: cfg.ServiceName, WatchDays: cfg.WatchDays,
+			MaxOpen: cfg.MaxOpenWatches, MaxDaily: cfg.MaxDailySubmissions})
+		wechatHandler = mp.NewHandler(bot, cfg.WechatToken, cfg.WechatAccountID, log)
+		siteWechat = &api.SiteWechat{Name: cfg.WechatName}
+	}
 	apiHandler, _ := api.New(api.Deps{
 		Version: version, Health: a, StallAfter: jobs.StallAfter,
 		Auth: authSvc, Notify: notifier, Watch: svc, Queries: q, Signer: signer,
@@ -134,12 +144,17 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions, DailyEmails: cfg.DailyEmailLimit,
 			MonthlyInvites: cfg.MonthlyInviteLimit},
 		Site: api.Site{ServiceName: cfg.ServiceName, RegistrationMode: cfg.RegistrationMode, WatchDays: cfg.WatchDays, MaxOpenWatches: cfg.MaxOpenWatches,
-			MonthlyEmails: cfg.MonthlyEmailLimit},
+			MonthlyEmails: cfg.MonthlyEmailLimit, Wechat: siteWechat},
+		MP: bot,
 	})
 	web := webui.Handler(webui.CSP(cfg.SnapOrigin()))
 	main := siteHeaders(cfg.Production(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == api.Prefix || strings.HasPrefix(r.URL.Path, api.Prefix+"/") {
 			apiHandler.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == mp.Path {
+			wechatHandler.ServeHTTP(w, r)
 			return
 		}
 		web.ServeHTTP(w, r)

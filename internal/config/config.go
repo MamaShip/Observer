@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -69,6 +70,14 @@ type Config struct {
 	S3AccessKey string `env:"S3_ACCESS_KEY"`
 	S3SecretKey string `env:"S3_SECRET_KEY"`
 	BlobDir     string `env:"BLOB_DIR"`
+
+	// WeChat Official Account entry (plan.md §6.7), on when WECHAT_TOKEN is
+	// set: the token from the platform's server configuration. The original
+	// ID (gh_…) is checked against incoming messages when set; the name is
+	// what the website tells users to follow.
+	WechatToken     string `env:"WECHAT_TOKEN"`
+	WechatAccountID string `env:"WECHAT_ACCOUNT_ID"`
+	WechatName      string `env:"WECHAT_NAME"`
 
 	WatchDays        int           `env:"WATCH_DAYS" envDefault:"60"`
 	FetchMinInterval time.Duration `env:"FETCH_MIN_INTERVAL" envDefault:"3s"`
@@ -147,6 +156,15 @@ func Load() (Config, error) {
 			errs = append(errs, errors.New("SNAP_BASE_URL must be https when BASE_URL is"))
 		}
 	}
+	if c.WechatToken != "" && !reWechatToken.MatchString(c.WechatToken) {
+		errs = append(errs, errors.New("WECHAT_TOKEN must be 3–32 letters or digits (as the WeChat platform requires)"))
+	}
+	if c.WechatAccountID != "" && !strings.HasPrefix(c.WechatAccountID, "gh_") {
+		errs = append(errs, errors.New("WECHAT_ACCOUNT_ID is the account's original ID, starting with gh_"))
+	}
+	if c.WechatName == "" {
+		c.WechatName = c.ServiceName
+	}
 	for _, u := range []string{c.CanaryAliveURL, c.CanaryDeletedURL} {
 		if u == "" {
 			continue
@@ -160,6 +178,11 @@ func Load() (Config, error) {
 	}
 	return c, nil
 }
+
+var reWechatToken = regexp.MustCompile(`^[A-Za-z0-9]{3,32}$`)
+
+// Wechat reports whether the Official Account entry is on.
+func (c Config) Wechat() bool { return c.WechatToken != "" }
 
 // Production is true when the site is served over https.
 func (c Config) Production() bool { return strings.HasPrefix(c.BaseURL, "https://") }

@@ -5,7 +5,8 @@
 # there is no `log` directive in the sites, so no access log, and the filter
 # below strips the request details that Caddy adds to its own warnings and
 # errors (e.g. when a client disconnects mid-response). Signed snapshot
-# links are credentials while they last, so their signature goes too.
+# links are credentials while they last, so their signature goes too, and so
+# do the WeChat callback's parameters (they carry the follower's OpenID).
 {
 	log default {
 		output stderr
@@ -20,6 +21,12 @@
 				request>uri query {
 					delete sig
 					delete exp
+					delete signature
+					delete msg_signature
+					delete timestamp
+					delete nonce
+					delete openid
+					delete echostr
 				}
 			}
 		}

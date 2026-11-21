@@ -26,6 +26,7 @@ Usage:
   observer probe [flags] <url>...    fetch article links and report what WeChat returns
   observer netcheck [flags]          measure network paths to WeChat, Wasabi and SMTP
   observer mailtest [-to ADDR]       log in to the SMTP server; with -to, send sample emails
+  observer mpsim [flags] [text]      send a message to the service as WeChat would, print the reply
   observer openapi                   print the API's OpenAPI document (JSON)
   observer version
 
@@ -56,6 +57,8 @@ func main() {
 		err = runProbe(ctx, args)
 	case "netcheck":
 		err = runNetcheck(ctx, args)
+	case "mpsim":
+		err = runMPSim(ctx, args)
 	case "mailtest":
 		err = runMailtest(ctx, args)
 	case "openapi":

@@ -289,6 +289,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/wechat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unbind WeChat */
+        delete: operations["wechat-unbind"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/site": {
         parameters: {
             query?: never;
@@ -405,6 +422,46 @@ export interface paths {
          * @description Sets the watch to end watch_days from now. An active watch is extended; one that expired or was stopped is watched again if the article is still online (this counts toward the open-watch limit).
          */
         post: operations["renew-watch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/wechat/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind the WeChat user of a link to my account
+         * @description Replaces any earlier binding of either side. If the WeChat user sent an article before binding, it is watched now.
+         */
+        post: operations["wechat-bind"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/wechat/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log in with a link from the Official Account
+         * @description Each link works once, for the account bound to the WeChat user it was sent to. 410 when used, expired or no longer bound.
+         */
+        post: operations["wechat-login"];
         delete?: never;
         options?: never;
         head?: never;
@@ -919,6 +976,12 @@ export interface components {
             monthly_emails: number;
             /** @enum {string} */
             role: "user" | "admin";
+            /** @description Present when bound to a WeChat user of the Official Account */
+            wechat?: components["schemas"]["MeWechat"];
+        };
+        MeWechat: {
+            /** Format: date-time */
+            bound_at: string;
         };
         SessionOutputBody: {
             /** @description Absent when not logged in */
@@ -952,6 +1015,12 @@ export interface components {
              * @description How long each article is watched
              */
             watch_days: number;
+            /** @description Present when users can use the Official Account */
+            wechat?: components["schemas"]["SiteWechat"];
+        };
+        SiteWechat: {
+            /** @description The account users follow */
+            name: string;
         };
         Snapshot: {
             /** Format: date-time */
@@ -1016,6 +1085,16 @@ export interface components {
             /** @description Empty while the backup is being made */
             snapshots: components["schemas"]["Snapshot"][];
             watch: components["schemas"]["Watch"];
+        };
+        WechatBindOutputBody: {
+            /** @description Why that article could not be watched */
+            submit_error?: string;
+            /** @description The article sent before binding, now watched */
+            watch_id?: string;
+        };
+        WechatTokenInputBody: {
+            /** @description From the link in a reply (after #t=) */
+            token: string;
         };
     };
     responses: never;
@@ -1588,6 +1667,33 @@ export interface operations {
             };
         };
     };
+    "wechat-unbind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "get-site": {
         parameters: {
             query?: never;
@@ -1824,6 +1930,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WatchDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "wechat-bind": {
+        parameters: {
+            query?: never;
+            header?: {
+                "User-Agent"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WechatTokenInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WechatBindOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "wechat-login": {
+        parameters: {
+            query?: never;
+            header?: {
+                "User-Agent"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WechatTokenInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: components["schemas"]["Cookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyOutputBody"];
                 };
             };
             /** @description Error */

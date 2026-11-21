@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/MamaShip/Observer/internal/auth"
+	"github.com/MamaShip/Observer/internal/mp"
 	"github.com/MamaShip/Observer/internal/notify"
 	"github.com/MamaShip/Observer/internal/snapserver"
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -58,18 +59,20 @@ type Deps struct {
 	TrustProxy  bool // take the client address from X-Forwarded-For (behind Caddy)
 	Limits      Limits
 	Site        Site
+	MP          *mp.Bot // the Official Account entry; nil when off
 }
 
 // Site is public information the web app needs before login.
 type Site struct {
-	ServiceName      string `json:"service_name"`
-	RegistrationMode string `json:"registration_mode" enum:"open,invite" doc:"invite: only addresses an admin invited receive login codes"`
-	WatchDays        int    `json:"watch_days" doc:"How long each article is watched"`
-	CodesPerDay      int    `json:"codes_per_day" doc:"Login codes one email can request per day (Beijing time)"`
-	CodeTTLMinutes   int    `json:"code_ttl_minutes"`
-	MaxOpenWatches   int    `json:"max_open_watches"`
-	MonthlyEmails    int    `json:"monthly_emails" doc:"Notification emails per account per month by default; 0 means no limit"`
-	Version          string `json:"version" doc:"The running release (v1.2.3), or a development build (git describe output, or dev)"`
+	ServiceName      string      `json:"service_name"`
+	RegistrationMode string      `json:"registration_mode" enum:"open,invite" doc:"invite: only addresses an admin invited receive login codes"`
+	WatchDays        int         `json:"watch_days" doc:"How long each article is watched"`
+	CodesPerDay      int         `json:"codes_per_day" doc:"Login codes one email can request per day (Beijing time)"`
+	CodeTTLMinutes   int         `json:"code_ttl_minutes"`
+	MaxOpenWatches   int         `json:"max_open_watches"`
+	MonthlyEmails    int         `json:"monthly_emails" doc:"Notification emails per account per month by default; 0 means no limit"`
+	Version          string      `json:"version" doc:"The running release (v1.2.3), or a development build (git describe output, or dev)"`
+	Wechat           *SiteWechat `json:"wechat,omitempty" doc:"Present when users can use the Official Account"`
 }
 
 type siteOutput struct{ Body Site }
@@ -119,6 +122,7 @@ func build(d Deps, all bool) (http.Handler, huma.API) {
 		h.registerWatches(g)
 		h.registerSnapshots(g)
 		h.registerAdmin(g)
+		h.registerWechat(g)
 	}
 	return d.middleware(mux), api
 }
