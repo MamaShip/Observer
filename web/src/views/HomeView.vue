@@ -26,7 +26,8 @@ const steps = [
           {{ session.site?.registration_mode === 'invite' ? '目前采用邀请制，受邀后可用邮箱验证码登录。' : '不需要密码，用邮箱验证码登录。' }}</p>
       </div>
       <aside class="hero-example" aria-label="观察和删除提醒示例">
-        <article class="zg-shard zg-watch">
+        <span class="example-label" aria-hidden="true">EXAMPLE · 示例</span>
+        <article class="zg-shard zg-watch example-card">
           <div class="zg-watch__top">
             <span class="zg-shard zg-tag zg-tag--watching"><i class="zg-tag__glyph" />观察中</span>
             <span class="zg-meta">观察示例</span>
@@ -36,7 +37,7 @@ const steps = [
           <div class="zg-watch__foot">
             <span class="zg-meta">最近检查 14:32</span><span class="zg-shard zg-tag zg-tag--archived"><i class="zg-tag__glyph" />已备份</span></div>
         </article>
-        <section class="zg-shard zg-notice">
+        <section class="zg-shard zg-notice example-card">
           <span class="zg-notice__kicker">DELETED · 提醒示例</span>
           <h2 class="zg-notice__title">这篇文章已被删除</h2>
           <p class="zg-notice__body">「县城青年的第三份工作」在最近一次检查中确认已删除。你提交时的版本还在，随时可以查看。</p>
@@ -46,7 +47,7 @@ const steps = [
         </section>
       </aside>
     </section>
-    <section>
+    <section class="how">
       <h2 class="zg-section-title">三件事</h2>
       <div class="zg-steps">
         <div v-for="([title, body], i) in steps" :key="title" class="zg-shard zg-step" :class="{ 'is-warm': i === 2 }">
@@ -94,11 +95,49 @@ const steps = [
     </section>
 </template>
 <style scoped>
-.hero-example { width: 100%; max-width: 420px; justify-self: end; display: grid; gap: var(--space-4); }
-.hero-example .zg-notice { margin-left: var(--space-6); }
-.scope { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-5); padding-bottom: var(--space-7); }
+/* The two cards beside the hero are specimens, not live content: they sit on
+   a dotted stage under an "example" label, tilted, lifted and gently floating. */
+.hero-example {
+  --example-shadow: rgba(15, 26, 46, 0.14);
+  position: relative; width: 100%; max-width: 420px; justify-self: end; display: grid; gap: var(--space-5);
+  padding: var(--space-7) var(--space-5) var(--space-6);
+  background-image: radial-gradient(var(--line-100) 1.2px, transparent 1.4px);
+  background-size: 14px 14px;
+  background-position: center;
+}
+:global(:root[data-theme="dark"]) .hero-example { --example-shadow: rgba(0, 0, 0, 0.55); }
+.example-label {
+  position: absolute; top: var(--space-3); left: var(--space-5);
+  font: 500 11px/16px var(--font-mono); letter-spacing: .08em; color: var(--ink-300);
+  padding: 2px var(--space-2); background: var(--surface-000); border: var(--border-hair) dashed var(--line-200);
+}
+.example-card {
+  --tilt: -1.5deg;
+  /* drop-shadow follows the cut corner; a box-shadow would square it off. */
+  filter: drop-shadow(0 14px 22px var(--example-shadow)) drop-shadow(0 2px 4px var(--example-shadow));
+  transform: rotate(var(--tilt));
+  animation: example-float 6s ease-in-out infinite;
+}
+.hero-example .zg-notice { --tilt: 1.2deg; margin-left: var(--space-6); box-shadow: none; animation-delay: -3s; }
+@keyframes example-float {
+  0%, 100% { transform: translateY(0) rotate(var(--tilt)); }
+  50% { transform: translateY(-6px) rotate(var(--tilt)); }
+}
+@media (prefers-reduced-motion: reduce) { .example-card { animation: none; } }
+
+/* 三件事 and 怎么用 are separate sections: a rule and space between them, and
+   flat tinted panels below so they do not read as a fourth and fifth step. */
+.how { padding-top: var(--space-4); }
+.scope {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-5);
+  margin-top: var(--space-4); padding: var(--space-7) 0; border-top: var(--border-hair) solid var(--line-100);
+}
+.scope .zg-panel { --_fill: var(--surface-200); --_edge: var(--surface-200); }
 .scope p, .start p { margin: 0; color: var(--ink-200); }
 .start { --_c: var(--chamfer-l); padding: var(--space-6); flex-flow: row wrap; align-items: center; justify-content: space-between; }
 .start h2 { margin-bottom: var(--space-2); }
-@media (max-width: 767px) { .hero-example { justify-self: start; } }
+@media (max-width: 767px) {
+  .hero-example { justify-self: stretch; max-width: none; padding: var(--space-7) var(--space-4) var(--space-5); }
+  .hero-example .zg-notice { margin-left: var(--space-4); }
+}
 </style>
