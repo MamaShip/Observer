@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,18 +63,15 @@ func (f *fakeAccounts) ForgetWechat(_ context.Context, openid string) (bool, err
 }
 
 type fakeWatches struct {
+	*fakeStore
 	sub   watch.Submission
 	err   error
 	calls []string
-	news  []db.TakeWechatNewsRow
-	since time.Time
 }
 
-func (f *fakeWatches) TakeDeletionNews(_ context.Context, _ uuid.UUID, since time.Time, _ int) ([]db.TakeWechatNewsRow, error) {
-	f.since = since
-	n := f.news
+func (f *fakeWatches) MarkDeletionNews(_ context.Context, _ uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error) {
 	f.news = nil
-	return n, nil
+	return ids, nil
 }
 
 func (f *fakeWatches) SubmitLink(_ context.Context, _ uuid.UUID, rawURL string, _ watch.Quota) (watch.Submission, error) {
@@ -82,12 +80,19 @@ func (f *fakeWatches) SubmitLink(_ context.Context, _ uuid.UUID, rawURL string, 
 }
 
 type fakeStore struct {
+	news     []db.ListWechatNewsRow
+	since    time.Time
 	article  db.Article
 	rows     []db.ListWatchesPageRow
 	open     int64
 	watch    db.Watch // what a resolving watch has become
 	watchErr error
 	polls    int
+}
+
+func (f *fakeStore) ListWechatNews(_ context.Context, p db.ListWechatNewsParams) ([]db.ListWechatNewsRow, error) {
+	f.since = p.Since
+	return f.news, nil
 }
 
 func (f *fakeStore) GetUserWatch(context.Context, db.GetUserWatchParams) (db.GetUserWatchRow, error) {
@@ -105,7 +110,8 @@ var now = time.Date(2026, 11, 21, 2, 0, 0, 0, time.UTC)
 
 func newBot() (*Bot, *fakeAccounts, *fakeWatches, *fakeStore) {
 	acc := &fakeAccounts{bound: map[string]db.User{}}
-	ws, st := &fakeWatches{}, &fakeStore{}
+	st := &fakeStore{}
+	ws := &fakeWatches{fakeStore: st}
 	b := NewBot(acc, ws, st, Config{BaseURL: "https://ob.test", ServiceName: "折光观察者", AccountName: "时间从来不回答", WatchDays: 60, MaxOpen: 50, MaxDaily: 30})
 	b.now = func() time.Time { return now }
 	return b, acc, ws, st
@@ -167,7 +173,7 @@ func TestParseAndEncode(t *testing.T) {
 	if err != nil || m.MsgType != "text" || m.FromUserName != "oA" || m.MsgID != 42 || m.Content != "https://mp.weixin.qq.com/s?a=1&b=2" {
 		t.Fatalf("parsed %+v, %v", m, err)
 	}
-	if m.dedupKey() != "m42" {
+	if m.dedupKey() != "moA:42" {
 		t.Errorf("key %s", m.dedupKey())
 	}
 	ev, _ := parseMessage([]byte(`<xml><ToUserName>gh_1</ToUserName><FromUserName>oA</FromUserName><CreateTime>7</CreateTime><MsgType>event</MsgType><Event>Subscribe</Event></xml>`))
@@ -236,7 +242,9 @@ func TestBoundSubmit(t *testing.T) {
 
 	ws.sub = watch.Submission{Watch: db.Watch{ID: id, ArticleID: &art, Status: "resolving", ExpiresAt: expires}}
 	r := handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh"))
-	mustContain(t, r, "正在备份", `<a href="https://ob.test/wx/go?to=/watches/`+id.String()+`#t=LOGINTOKEN">查看进度</a>`)
+	mustContain(t, r, "正在备份", `<a href="https://ob.test/wx/go?to=/watches#t=LOGINTOKEN">查看进度</a>`)
+	ws.sub.Existing = true
+	mustContain(t, handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")), "正在备份", "/watches#t=")
 
 	st.article = db.Article{Title: ptr("标题 <b>粗</b>")}
 	ws.sub = watch.Submission{Watch: db.Watch{ID: id, ArticleID: &art, Status: "active", ExpiresAt: expires}}
@@ -252,6 +260,12 @@ func TestBoundSubmit(t *testing.T) {
 	ws.sub = watch.Submission{Watch: db.Watch{ID: id, ArticleID: &art, Status: "failed", EndReason: ptr("invalid")}}
 	if r := handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh")); !strings.Contains(r, "打不开") || strings.Contains(r, "<a") {
 		t.Errorf("invalid: %s", r)
+	}
+	st.article.DeletedReasonCode = ptr("author_deleted")
+	r = handle(t, b, text("https://mp.weixin.qq.com/s/abcdefgh"))
+	mustContain(t, r, "已经被删除了", "该内容已被发布者删除")
+	if strings.Contains(r, "查看已有的备份") {
+		t.Error("promised a backup for a deleted first fetch")
 	}
 
 	// A link message works like a pasted link.
@@ -297,6 +311,9 @@ func TestBoundCommands(t *testing.T) {
 	acc.logins = 0
 	r := handle(t, b, text("我的"))
 	mustContain(t, r, "观察中 40 篇", "备份中", "已删除", "即将到期", "全部观察")
+	if strings.Contains(r, st.rows[0].ID.String()) {
+		t.Error("list links to a temporary resolving watch")
+	}
 	if len(r) > maxReplyBytes {
 		t.Errorf("reply is %d bytes", len(r))
 	}
@@ -348,13 +365,40 @@ func TestWaitsForTheFirstFetch(t *testing.T) {
 	}
 }
 
+type slowPoll struct{ *fakeStore }
+
+func (slowPoll) GetUserWatch(ctx context.Context, _ db.GetUserWatchParams) (db.GetUserWatchRow, error) {
+	<-ctx.Done()
+	return db.GetUserWatchRow{}, ctx.Err()
+}
+
+func TestSlowPollLeavesTimeForReply(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		b, _, _, st := newBot()
+		b.cfg.ResolveWait = replyTimeout
+		b.store = slowPoll{st}
+		ctx, cancel := context.WithTimeout(context.Background(), replyTimeout)
+		defer cancel()
+		start := time.Now()
+		w, gone := b.waitResolved(ctx, uuid.New(), uuid.New())
+		if w != nil || gone || time.Since(start) != replyTimeout-time.Second || ctx.Err() != nil {
+			t.Fatal("slow poll consumed the time reserved for the reply")
+		}
+	})
+}
+
 func TestDeletionNews(t *testing.T) {
 	b, acc, ws, _ := newBot()
 	bound := now.Add(-48 * time.Hour)
 	acc.bound["oA"] = db.User{ID: uuid.New(), Email: "alice@example.com", Status: "active"}
 	acc.binding = bound
 	id := uuid.New()
-	ws.news = []db.TakeWechatNewsRow{{ID: id, EndedAt: ptr(time.Date(2026, 11, 20, 17, 0, 0, 0, time.UTC)), Title: ptr("被删的文章")}}
+	ws.news = []db.ListWechatNewsRow{{ID: id, EndedAt: ptr(time.Date(2026, 11, 20, 17, 0, 0, 0, time.UTC)), Title: ptr("被删的文章")}}
+	ws.err = errors.New("temporary submission failure")
+	if _, err := b.Handle(context.Background(), text("https://mp.weixin.qq.com/s/abcdefgh")); err == nil {
+		t.Fatal("expected a failed reply")
+	}
+	ws.err = nil
 	r := handle(t, b, text("我的"))
 	if !strings.HasPrefix(r, "【删除提醒】你观察的《被删的文章》已于 11-21 被删除，") {
 		t.Errorf("news not first:\n%s", r)
@@ -378,9 +422,17 @@ func TestDeletionNews(t *testing.T) {
 	ws.since = time.Time{}
 	handle(t, b, text("解绑"))
 	acc.bound["oA"] = db.User{ID: uuid.New(), Status: "disabled"}
-	handle(t, b, text("我的"))
+	for _, command := range []string{"我的", "绑定", "帮助"} {
+		if reply := handle(t, b, text(command)); reply != "这个账号已停用。" {
+			t.Errorf("disabled user: %q", reply)
+		}
+	}
 	if !ws.since.IsZero() {
 		t.Error("news taken")
+	}
+	handle(t, b, text("解绑"))
+	if _, ok := acc.bound["oA"]; ok {
+		t.Error("disabled user is still bound")
 	}
 }
 
@@ -518,6 +570,29 @@ func TestHandlerReplies(t *testing.T) {
 	}
 }
 
+func TestConcurrentRetrySharesReply(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h, acc, b := newHandler(t)
+		acc.bound["oA"] = db.User{ID: uuid.New(), Status: "active"}
+		ws := b.watches.(*fakeWatches)
+		ws.sub.Watch = db.Watch{ID: uuid.New(), Status: "resolving"}
+		ws.watch = ws.sub.Watch
+		b.cfg.ResolveWait = time.Second
+		replies := make(chan string, 2)
+		send := func() {
+			rec := serve(h, http.MethodPost, signedURL("tok", nil), msgXML("oA", "gh_1", "https://mp.weixin.qq.com/s/abcdefgh", 1))
+			replies <- rec.Body.String()
+		}
+		go send()
+		synctest.Wait() // first request is waiting for the article
+		go send()
+		first, second := <-replies, <-replies
+		if first != second || !strings.Contains(first, "正在备份") || len(ws.calls) != 1 || acc.logins != 1 {
+			t.Fatal("overlapping deliveries did not share one submission and reply")
+		}
+	})
+}
+
 func TestHandlerRateLimit(t *testing.T) {
 	h, acc, _ := newHandler(t)
 	for i := range userBurst {
@@ -529,6 +604,12 @@ func TestHandlerRateLimit(t *testing.T) {
 	}
 	if len(acc.bindLinks) != userBurst {
 		t.Errorf("%d messages handled", len(acc.bindLinks))
+	}
+	acc.bound["oA"] = db.User{ID: uuid.New(), Status: "active"}
+	unsub := `<xml><ToUserName>gh_1</ToUserName><FromUserName>oA</FromUserName><CreateTime>1</CreateTime><MsgType>event</MsgType><Event>unsubscribe</Event></xml>`
+	rec = serve(h, http.MethodPost, signedURL("tok", nil), unsub)
+	if rec.Body.String() != "success" || len(acc.forgot) != 1 || len(acc.bound) != 0 {
+		t.Fatal("rate limit prevented unsubscribe cleanup")
 	}
 	// Another user is not affected.
 	rec = serve(h, http.MethodPost, signedURL("tok", nil), msgXML("oB", "gh_1", "hi", 98))

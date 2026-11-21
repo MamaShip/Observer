@@ -141,6 +141,9 @@ type Querier interface {
 	ListUserWatches(ctx context.Context, userID uuid.UUID) ([]ListUserWatchesRow, error)
 	// ListWatchesPage pages newest first by id (UUIDv7 ids sort by creation time).
 	ListWatchesPage(ctx context.Context, arg ListWatchesPageParams) ([]ListWatchesPageRow, error)
+	// A confirmation ends active watches and records its check at the same
+	// instant. A submission of an already deleted article has no such check.
+	ListWechatNews(ctx context.Context, arg ListWechatNewsParams) ([]ListWechatNewsRow, error)
 	// LockUser serialises one user's invitations so the monthly count holds.
 	LockUser(ctx context.Context, id uuid.UUID) (User, error)
 	LockUserWatch(ctx context.Context, arg LockUserWatchParams) (Watch, error)
@@ -152,6 +155,8 @@ type Querier interface {
 	MarkInviteMailed(ctx context.Context, id uuid.UUID) error
 	MarkUnwatchedArticlesDormant(ctx context.Context) (int64, error)
 	MarkWatchesNotified(ctx context.Context, arg MarkWatchesNotifiedParams) error
+	// Only the reply that first claims a notice includes it.
+	MarkWechatNews(ctx context.Context, arg MarkWechatNewsParams) ([]uuid.UUID, error)
 	MoveAliases(ctx context.Context, arg MoveAliasesParams) error
 	MoveCheckRuns(ctx context.Context, arg MoveCheckRunsParams) error
 	// MoveWatches is used when a pending article turns out to be a known one.
@@ -197,10 +202,6 @@ type Querier interface {
 	Stats(ctx context.Context) (StatsRow, error)
 	StopWatch(ctx context.Context, arg StopWatchParams) (int64, error)
 	SuspectArticleDeleted(ctx context.Context, arg SuspectArticleDeletedParams) error
-	// TakeWechatNews marks up to max_rows of the user's watches that ended with
-	// the article deleted after `since` and have not been mentioned in a reply,
-	// and returns them (in no particular order).
-	TakeWechatNews(ctx context.Context, arg TakeWechatNewsParams) ([]TakeWechatNewsRow, error)
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) error
 	UpsertUserByEmail(ctx context.Context, email string) (User, error)

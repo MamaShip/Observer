@@ -51,19 +51,21 @@ DELETE FROM wechat_tokens WHERE expires_at < sqlc.arg(now)::timestamptz;
 -- name: CountWechatBindings :one
 SELECT count(*)::int FROM wechat_bindings;
 
--- TakeWechatNews marks up to max_rows of the user's watches that ended with
--- the article deleted after `since` and have not been mentioned in a reply,
--- and returns them (in no particular order).
--- name: TakeWechatNews :many
-WITH picked AS (
-  SELECT t.id FROM watches t
-  WHERE t.user_id = sqlc.arg(user_id) AND t.end_reason = 'deleted' AND t.wechat_told_at IS NULL
-    AND t.ended_at > sqlc.arg(since)::timestamptz
-  ORDER BY t.ended_at
-  LIMIT sqlc.arg(max_rows)
-  FOR UPDATE SKIP LOCKED
-)
-UPDATE watches w SET wechat_told_at = sqlc.arg(now)::timestamptz
-FROM picked p, articles a
-WHERE w.id = p.id AND a.id = w.article_id
-RETURNING w.id, w.ended_at, a.title;
+-- A confirmation ends active watches and records its check at the same
+-- instant. A submission of an already deleted article has no such check.
+-- name: ListWechatNews :many
+SELECT w.id, w.ended_at, a.title
+FROM watches w JOIN articles a ON a.id = w.article_id
+WHERE w.user_id = sqlc.arg(user_id) AND w.end_reason = 'deleted' AND w.wechat_told_at IS NULL
+  AND w.ended_at > sqlc.arg(since)::timestamptz
+  AND EXISTS (SELECT 1 FROM check_runs c WHERE c.article_id = w.article_id
+              AND c.checked_at = w.ended_at AND c.result = 'deleted' AND c.state_change)
+ORDER BY w.ended_at, w.id
+LIMIT sqlc.arg(max_rows);
+
+-- Only the reply that first claims a notice includes it.
+-- name: MarkWechatNews :many
+UPDATE watches SET wechat_told_at = sqlc.arg(now)::timestamptz
+WHERE user_id = sqlc.arg(user_id) AND id = ANY(sqlc.arg(ids)::uuid[])
+  AND end_reason = 'deleted' AND wechat_told_at IS NULL
+RETURNING id;

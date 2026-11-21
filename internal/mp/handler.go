@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
 )
 
@@ -41,10 +42,11 @@ type Handler struct {
 	log     *slog.Logger
 	now     func() time.Time
 
-	mu      sync.Mutex
-	replies map[string]cached
-	users   map[string]*userBucket
-	swept   time.Time
+	inflight singleflight.Group
+	mu       sync.Mutex
+	replies  map[string]cached
+	users    map[string]*userBucket
+	swept    time.Time
 }
 
 type cached struct {
@@ -106,18 +108,29 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := m.dedupKey()
-	if b, ok := h.cached(key); ok {
-		write(w, b)
-		return
-	}
+	result, _, _ := h.inflight.Do(key, func() (any, error) {
+		if b, ok := h.cached(key); ok {
+			return b, nil
+		}
+		// Complete the shared reply even if the first connection drops.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), replyTimeout)
+		defer cancel()
+		b, err := h.reply(ctx, m)
+		if err == nil { // after a failure, a retry may do better
+			h.remember(key, b)
+		}
+		return b, err
+	})
+	write(w, result.([]byte))
+}
 
+func (h *Handler) reply(ctx context.Context, m Message) ([]byte, error) {
 	var content string
-	if !h.allow(m.FromUserName) {
+	var err error
+	if !m.isUnsubscribe() && !h.allow(m.FromUserName) {
 		content = tooManyText
 	} else {
-		ctx, cancel := context.WithTimeout(r.Context(), replyTimeout)
 		content, err = h.bot.Handle(ctx, m)
-		cancel()
 		if err != nil {
 			h.log.Error("handling message", "user", pseudonym(m.FromUserName), "type", m.MsgType, "err", err)
 			content = busyText
@@ -125,14 +138,10 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request) {
 	}
 	// "success" tells WeChat there is no reply (an empty body would too, but
 	// some clients then show "该公众号暂时无法提供服务").
-	b := []byte("success")
-	if content != "" {
-		b = encodeText(m.FromUserName, m.ToUserName, content, h.now())
+	if content == "" {
+		return []byte("success"), err
 	}
-	if err == nil { // after a failure, a retry may do better
-		h.remember(key, b)
-	}
-	write(w, b)
+	return encodeText(m.FromUserName, m.ToUserName, content, h.now()), err
 }
 
 func write(w http.ResponseWriter, b []byte) {

@@ -383,6 +383,20 @@ func TestDeletionNeedsConfirmation(t *testing.T) {
 	if wd := e.submit(e.user("dave@example.com"), shortURL); wd.Status != "ended" || deref(wd.EndReason) != "deleted" {
 		t.Errorf("late watcher = %s/%s", wd.Status, deref(wd.EndReason))
 	}
+
+	// Two replies can prepare the same notice; only one may include it.
+	var claims [2][]uuid.UUID
+	var errs [2]error
+	var group sync.WaitGroup
+	for i := range claims {
+		group.Go(func() {
+			claims[i], errs[i] = e.svc.MarkDeletionNews(e.ctx, w.UserID, []uuid.UUID{w.ID})
+		})
+	}
+	group.Wait()
+	if errs[0] != nil || errs[1] != nil || len(claims[0])+len(claims[1]) != 1 {
+		t.Errorf("concurrent claims = %v, errors = %v", claims, errs)
+	}
 }
 
 func TestDeletionNotConfirmed(t *testing.T) {

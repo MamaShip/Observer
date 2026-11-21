@@ -194,6 +194,51 @@ func (q *Queries) GetWechatBindingForUpdate(ctx context.Context, arg GetWechatBi
 	return i, err
 }
 
+const listWechatNews = `-- name: ListWechatNews :many
+SELECT w.id, w.ended_at, a.title
+FROM watches w JOIN articles a ON a.id = w.article_id
+WHERE w.user_id = $1 AND w.end_reason = 'deleted' AND w.wechat_told_at IS NULL
+  AND w.ended_at > $2::timestamptz
+  AND EXISTS (SELECT 1 FROM check_runs c WHERE c.article_id = w.article_id
+              AND c.checked_at = w.ended_at AND c.result = 'deleted' AND c.state_change)
+ORDER BY w.ended_at, w.id
+LIMIT $3
+`
+
+type ListWechatNewsParams struct {
+	UserID  uuid.UUID
+	Since   time.Time
+	MaxRows int32
+}
+
+type ListWechatNewsRow struct {
+	ID      uuid.UUID
+	EndedAt *time.Time
+	Title   *string
+}
+
+// A confirmation ends active watches and records its check at the same
+// instant. A submission of an already deleted article has no such check.
+func (q *Queries) ListWechatNews(ctx context.Context, arg ListWechatNewsParams) ([]ListWechatNewsRow, error) {
+	rows, err := q.db.Query(ctx, listWechatNews, arg.UserID, arg.Since, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWechatNewsRow{}
+	for rows.Next() {
+		var i ListWechatNewsRow
+		if err := rows.Scan(&i.ID, &i.EndedAt, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockWechatOpenID = `-- name: LockWechatOpenID :exec
 SELECT pg_advisory_xact_lock(hashtextextended('wechat:' || $1::text, 0))
 `
@@ -205,55 +250,33 @@ func (q *Queries) LockWechatOpenID(ctx context.Context, openid string) error {
 	return err
 }
 
-const takeWechatNews = `-- name: TakeWechatNews :many
-WITH picked AS (
-  SELECT t.id FROM watches t
-  WHERE t.user_id = $2 AND t.end_reason = 'deleted' AND t.wechat_told_at IS NULL
-    AND t.ended_at > $3::timestamptz
-  ORDER BY t.ended_at
-  LIMIT $4
-  FOR UPDATE SKIP LOCKED
-)
-UPDATE watches w SET wechat_told_at = $1::timestamptz
-FROM picked p, articles a
-WHERE w.id = p.id AND a.id = w.article_id
-RETURNING w.id, w.ended_at, a.title
+const markWechatNews = `-- name: MarkWechatNews :many
+UPDATE watches SET wechat_told_at = $1::timestamptz
+WHERE user_id = $2 AND id = ANY($3::uuid[])
+  AND end_reason = 'deleted' AND wechat_told_at IS NULL
+RETURNING id
 `
 
-type TakeWechatNewsParams struct {
-	Now     time.Time
-	UserID  uuid.UUID
-	Since   time.Time
-	MaxRows int32
+type MarkWechatNewsParams struct {
+	Now    time.Time
+	UserID uuid.UUID
+	Ids    []uuid.UUID
 }
 
-type TakeWechatNewsRow struct {
-	ID      uuid.UUID
-	EndedAt *time.Time
-	Title   *string
-}
-
-// TakeWechatNews marks up to max_rows of the user's watches that ended with
-// the article deleted after `since` and have not been mentioned in a reply,
-// and returns them (in no particular order).
-func (q *Queries) TakeWechatNews(ctx context.Context, arg TakeWechatNewsParams) ([]TakeWechatNewsRow, error) {
-	rows, err := q.db.Query(ctx, takeWechatNews,
-		arg.Now,
-		arg.UserID,
-		arg.Since,
-		arg.MaxRows,
-	)
+// Only the reply that first claims a notice includes it.
+func (q *Queries) MarkWechatNews(ctx context.Context, arg MarkWechatNewsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, markWechatNews, arg.Now, arg.UserID, arg.Ids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TakeWechatNewsRow{}
+	items := []uuid.UUID{}
 	for rows.Next() {
-		var i TakeWechatNewsRow
-		if err := rows.Scan(&i.ID, &i.EndedAt, &i.Title); err != nil {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

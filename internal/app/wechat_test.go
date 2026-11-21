@@ -252,6 +252,14 @@ func TestWechatFlow(t *testing.T) {
 	if reply := wx.text("我的"); strings.Contains(reply, "删除提醒") {
 		t.Errorf("told twice: %s", reply)
 	}
+	// Submitting the deleted article again gives access to its backup.
+	// It does not create a new deletion event.
+	if reply := wx.text(watchtest.AliveURL); !strings.Contains(reply, "已经被删除") {
+		t.Errorf("previously deleted submission: %s", reply)
+	}
+	if reply := wx.text("我的"); strings.Contains(reply, "删除提醒") {
+		t.Errorf("new notice for an old deletion: %s", reply)
+	}
 
 	// Unfollowing forgets the binding.
 	if r := wx.event("unsubscribe"); r != "" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -30,7 +31,7 @@ type Accounts interface {
 // Watches is the part of watch.Service the bot uses.
 type Watches interface {
 	SubmitLink(ctx context.Context, userID uuid.UUID, rawURL string, quota watch.Quota) (watch.Submission, error)
-	TakeDeletionNews(ctx context.Context, userID uuid.UUID, since time.Time, n int) ([]db.TakeWechatNewsRow, error)
+	MarkDeletionNews(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error)
 }
 
 // Store is the part of db.Queries the bot reads.
@@ -39,6 +40,7 @@ type Store interface {
 	GetUserWatch(ctx context.Context, arg db.GetUserWatchParams) (db.GetUserWatchRow, error)
 	ListWatchesPage(ctx context.Context, arg db.ListWatchesPageParams) ([]db.ListWatchesPageRow, error)
 	CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error)
+	ListWechatNews(ctx context.Context, arg db.ListWechatNewsParams) ([]db.ListWechatNewsRow, error)
 }
 
 // Config configures the bot.
@@ -96,15 +98,19 @@ type reply struct {
 	openid  string
 	binding *auth.WechatBinding
 	token   string
-	links   bool
-	news    strings.Builder
+	news    []deletionNotice
 	sb      strings.Builder
+}
+
+type deletionNotice struct {
+	id   uuid.UUID
+	line string
 }
 
 // Handle returns the reply to m, or "" for none.
 func (b *Bot) Handle(ctx context.Context, m Message) (string, error) {
 	openid := m.FromUserName
-	if m.MsgType == "event" && m.Event == "unsubscribe" {
+	if m.isUnsubscribe() {
 		_, err := b.acc.ForgetWechat(ctx, openid)
 		return "", err
 	}
@@ -120,7 +126,10 @@ func (b *Bot) Handle(ctx context.Context, m Message) (string, error) {
 
 	text := strings.TrimSpace(m.Content)
 	unbinding := m.MsgType == "text" && in(text, cmdUnbind)
-	if r.binding != nil && r.binding.User.Status == "active" && !unbinding {
+	if r.binding != nil && !unbinding {
+		if r.binding.User.Status != "active" {
+			return "这个账号已停用。", nil
+		}
 		if err := r.deletionNews(); err != nil {
 			return "", err
 		}
@@ -155,7 +164,7 @@ func (b *Bot) Handle(ctx context.Context, m Message) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return r.String(), nil
+	return r.finish()
 }
 
 func in(s string, set []string) bool {
@@ -169,12 +178,33 @@ func in(s string, set []string) bool {
 
 func (r *reply) line(s string) { r.sb.WriteString(s + "\n") }
 
-func (r *reply) String() string {
-	s := r.news.String() + r.sb.String()
-	if r.links {
+func (r *reply) finish() (string, error) {
+	var prefix strings.Builder
+	if len(r.news) > 0 {
+		ids := make([]uuid.UUID, 0, len(r.news))
+		for _, n := range r.news {
+			ids = append(ids, n.id)
+		}
+		// All links and the command's reply are ready. A failed command
+		// never reaches this update, and concurrent replies share no IDs.
+		marked, err := r.b.watches.MarkDeletionNews(r.ctx, r.binding.User.ID, ids)
+		if err != nil {
+			return "", err
+		}
+		for _, n := range r.news {
+			if slices.Contains(marked, n.id) {
+				prefix.WriteString(n.line)
+			}
+		}
+		if prefix.Len() > 0 {
+			prefix.WriteByte('\n')
+		}
+	}
+	s := prefix.String() + r.sb.String()
+	if strings.Contains(s, `<a href="`) {
 		s = strings.TrimRight(s, "\n") + "\n\n" + r.b.linkNote()
 	}
-	return strings.TrimRight(s, "\n")
+	return strings.TrimRight(s, "\n"), nil
 }
 
 // linkNote says where the links lead. Without an ICP filing WeChat may warn
@@ -201,7 +231,6 @@ func (r *reply) a(path, text string) (string, error) {
 		}
 		r.token = t
 	}
-	r.links = true
 	return `<a href="` + r.b.cfg.BaseURL + "/wx/go?to=" + path + "#t=" + r.token + `">` + text + "</a>", nil
 }
 
@@ -211,7 +240,6 @@ func (r *reply) bindLink(pending string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	r.links = true
 	return `<a href="` + r.b.cfg.BaseURL + "/wx/bind#t=" + t + `">绑定邮箱</a>（` + minutes(auth.WechatBindTTL) + "内有效）", nil
 }
 
@@ -280,10 +308,6 @@ func (r *reply) submit(link string) error {
 		return r.askToBind(link, "第一次使用请先绑定邮箱，绑定后会自动开始观察这篇文章：")
 	}
 	u := r.binding.User
-	if u.Status != "active" {
-		r.line("这个账号已停用。")
-		return nil
-	}
 	s, err := r.b.watches.SubmitLink(r.ctx, u.ID, link, watch.QuotaFor(u.Role, r.b.cfg.MaxOpen, r.b.cfg.MaxDaily))
 	if msg := SubmitErrorText(err, r.b.cfg.MaxOpen, r.b.cfg.MaxDaily); msg != "" {
 		r.line(msg)
@@ -309,7 +333,7 @@ func (r *reply) submit(link string) error {
 		}
 	}
 	var art db.Article
-	if w.ArticleID != nil {
+	if w.Status != "resolving" && w.ArticleID != nil {
 		if art, err = r.b.store.GetArticle(r.ctx, *w.ArticleID); err != nil {
 			return err
 		}
@@ -318,36 +342,51 @@ func (r *reply) submit(link string) error {
 	if art.Title != nil && *art.Title != "" {
 		title = "《" + clip(*art.Title, 40) + "》"
 	}
+	endReason := ""
+	if w.EndReason != nil {
+		endReason = *w.EndReason
+	}
 	view := "查看备份"
 	switch {
-	case s.Existing:
-		r.line(title + "已经在观察中，到 " + day(w.ExpiresAt) + " 结束。")
-		view = "查看"
 	case w.Status == "resolving":
 		r.line(fmt.Sprintf("已收到，正在备份，通常 1 分钟内完成。之后观察 %d 天，文章被删除时会发邮件通知你。", r.b.cfg.WatchDays))
 		view = "查看进度"
+	case s.Existing:
+		r.line(title + "已经在观察中，到 " + day(w.ExpiresAt) + " 结束。")
+		view = "查看"
 	case w.Status == "active":
 		r.line("已开始观察" + title + "，到 " + day(w.ExpiresAt) + " 结束。文章被删除时会发邮件通知你。")
-	case w.EndReason != nil && *w.EndReason == "deleted":
+	case endReason == "deleted" || (endReason == "invalid" && art.DeletedReasonCode != nil):
 		msg := title + "已经被删除了"
 		if art.DeletedReasonText != nil && *art.DeletedReasonText != "" {
 			msg += "（页面显示：" + clip(*art.DeletedReasonText, 40) + "）"
 		}
 		r.line(msg + "。")
+		if endReason == "invalid" { // already gone at the first fetch
+			return nil
+		}
 		view = "查看已有的备份"
-	case w.EndReason != nil && *w.EndReason == "unreachable":
+	case endReason == "unreachable":
 		r.line("暂时打不开这篇文章，没能开始观察。请稍后再发送一次。")
 		return nil
 	default: // failed: invalid at first fetch
 		r.line("这个链接打不开（已失效或参数错误），没能开始观察。")
 		return nil
 	}
-	l, err := r.a("/watches/"+w.ID.String(), view)
+	l, err := r.a(watchPath(w.ID, w.Status), view)
 	if err != nil {
 		return err
 	}
 	r.line(l)
 	return nil
+}
+
+// A resolving watch can disappear when its article is merged into another.
+func watchPath(id uuid.UUID, status string) string {
+	if status == "resolving" {
+		return "/watches"
+	}
+	return "/watches/" + id.String()
 }
 
 // waitResolved waits a little for the first fetch of a new watch's article
@@ -362,15 +401,17 @@ func (b *Bot) waitResolved(ctx context.Context, userID, id uuid.UUID) (w *db.Wat
 	if d, ok := ctx.Deadline(); ok && d.Add(-time.Second).Before(stop) {
 		stop = d.Add(-time.Second)
 	}
+	pollCtx, cancel := context.WithDeadline(ctx, stop)
+	defer cancel()
 	t := time.NewTicker(b.poll)
 	defer t.Stop()
-	for time.Now().Before(stop) {
+	for {
 		select {
-		case <-ctx.Done():
+		case <-pollCtx.Done():
 			return nil, false
 		case <-t.C:
 		}
-		row, err := b.store.GetUserWatch(ctx, db.GetUserWatchParams{ID: id, UserID: userID})
+		row, err := b.store.GetUserWatch(pollCtx, db.GetUserWatchParams{ID: id, UserID: userID})
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			return nil, true
@@ -380,7 +421,6 @@ func (b *Bot) waitResolved(ctx context.Context, userID, id uuid.UUID) (w *db.Wat
 			return &row.Watch, false
 		}
 	}
-	return nil, false
 }
 
 // newsSize is how many deletions one reply mentions; newsDays is how far
@@ -396,7 +436,7 @@ func (r *reply) deletionNews() error {
 	if r.binding.Since.After(since) {
 		since = r.binding.Since
 	}
-	rows, err := r.b.watches.TakeDeletionNews(r.ctx, r.binding.User.ID, since, newsSize)
+	rows, err := r.b.store.ListWechatNews(r.ctx, db.ListWechatNewsParams{UserID: r.binding.User.ID, Since: since, MaxRows: newsSize})
 	if err != nil || len(rows) == 0 {
 		return err
 	}
@@ -413,9 +453,8 @@ func (r *reply) deletionNews() error {
 		if err != nil {
 			return err
 		}
-		r.news.WriteString("【删除提醒】你观察的《" + title + "》已" + when + "被删除，" + l + "\n")
+		r.news = append(r.news, deletionNotice{id: w.ID, line: "【删除提醒】你观察的《" + title + "》已" + when + "被删除，" + l + "\n"})
 	}
-	r.news.WriteString("\n")
 	return nil
 }
 
@@ -466,13 +505,16 @@ func (r *reply) list() error {
 	}
 	r.line("")
 	// Stop before the reply would pass WeChat's limit.
-	budget := maxReplyBytes - len(all) - r.news.Len() - r.sb.Len() - len(r.b.linkNote()) - 16
+	budget := maxReplyBytes - len(all) - r.sb.Len() - len(r.b.linkNote()) - 16
+	for _, n := range r.news {
+		budget -= len(n.line)
+	}
 	for _, w := range rows {
 		title := "（标题未知）"
 		if w.Title != nil && *w.Title != "" {
 			title = clip(*w.Title, 24)
 		}
-		l, err := r.a("/watches/"+w.ID.String(), title)
+		l, err := r.a(watchPath(w.ID, w.Status), title)
 		if err != nil {
 			return err
 		}

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -363,20 +362,9 @@ func truncate(s string, n int) string {
 	return s + "…"
 }
 
-// TakeDeletionNews returns up to n of the user's watches whose article was
-// deleted after since and that no Official Account reply has mentioned yet,
-// oldest first, and marks them mentioned (plan.md §6.7). We cannot push to
-// WeChat, so the next reply carries the news; the email is sent anyway.
-func (s *Service) TakeDeletionNews(ctx context.Context, userID uuid.UUID, since time.Time, n int) ([]db.TakeWechatNewsRow, error) {
-	rows, err := s.q.TakeWechatNews(ctx, db.TakeWechatNewsParams{Now: s.now(), UserID: userID, Since: since, MaxRows: int32(n)})
-	if err != nil {
-		return nil, err
-	}
-	slices.SortFunc(rows, func(a, b db.TakeWechatNewsRow) int {
-		if a.EndedAt == nil || b.EndedAt == nil {
-			return 0
-		}
-		return a.EndedAt.Compare(*b.EndedAt)
-	})
-	return rows, nil
+// MarkDeletionNews claims notices for a completed Official Account reply.
+// Concurrent replies may have prepared the same notices; only include the
+// IDs this update marked.
+func (s *Service) MarkDeletionNews(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error) {
+	return s.q.MarkWechatNews(ctx, db.MarkWechatNewsParams{Now: s.now(), UserID: userID, Ids: ids})
 }

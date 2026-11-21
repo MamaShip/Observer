@@ -43,10 +43,14 @@ func parseMessage(body []byte) (Message, error) {
 	return m, nil
 }
 
+func (m Message) isUnsubscribe() bool {
+	return m.MsgType == "event" && m.Event == "unsubscribe"
+}
+
 // dedupKey identifies a message across WeChat's retries.
 func (m Message) dedupKey() string {
 	if m.MsgID != 0 {
-		return "m" + strconv.FormatInt(m.MsgID, 10)
+		return "m" + m.FromUserName + ":" + strconv.FormatInt(m.MsgID, 10)
 	}
 	return "e" + m.FromUserName + ":" + strconv.FormatInt(m.CreateTime, 10) + ":" + m.Event
 }

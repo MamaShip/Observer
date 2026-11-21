@@ -102,7 +102,7 @@ func readLines(path string) ([]string, error) {
 func runMPSim(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("mpsim", flag.ExitOnError)
 	base := fs.String("url", "http://localhost:8080", "the service's site origin")
-	token := fs.String("token", os.Getenv("WECHAT_TOKEN"), "WECHAT_TOKEN of the service")
+	token := fs.String("token", "", "the service's token (defaults to WECHAT_TOKEN)")
 	account := fs.String("account", envOr("WECHAT_ACCOUNT_ID", "gh_mpsim"), "the Official Account's original ID")
 	openid := fs.String("openid", "oMPSimUser", "the follower sending the message")
 	event := fs.String("event", "", "send an event instead of text: subscribe or unsubscribe")
@@ -111,6 +111,9 @@ func runMPSim(ctx context.Context, args []string) error {
 		fs.PrintDefaults()
 	}
 	fs.Parse(args)
+	if *token == "" {
+		*token = os.Getenv("WECHAT_TOKEN")
+	}
 	if *token == "" {
 		return fmt.Errorf("set -token or WECHAT_TOKEN")
 	}
