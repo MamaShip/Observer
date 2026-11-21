@@ -5,7 +5,7 @@ DEV_PG_PORT ?= 55432
 DEV_DATABASE_URL ?= postgres://observer:observer@127.0.0.1:$(DEV_PG_PORT)/observer?sslmode=disable
 COMPOSE_DEV := docker compose -f deploy/compose.dev.yaml
 
-.PHONY: dev dev-db dev-down test test-unit lint sqlc sqlc-check build dist clean web web-dev web-test openapi openapi-check image
+.PHONY: dev dev-db dev-down test test-unit lint sqlc sqlc-check build dist clean web web-dev web-test web-fonts openapi openapi-check image
 
 ## dev: start Postgres and run the service on http://localhost:8080 (with the
 ## web app as last built by `make web`). Override HTTP_ADDR, BASE_URL and
@@ -56,6 +56,10 @@ web-dev: web/node_modules
 ## web-test: type-check and unit-test the web app
 web-test: web/node_modules
 	cd web && npm run typecheck && npm test
+
+## web-fonts: re-cut the display font to the interface text (needs fonttools and brotli)
+web-fonts:
+	python3 -I web/scripts/subset-font.py
 
 ## openapi: regenerate the web client's API types from the Go handlers
 openapi: web/node_modules

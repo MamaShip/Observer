@@ -116,6 +116,25 @@ func TestInvitations(t *testing.T) {
 		t.Errorf("admin's invitee = %+v", dave)
 	}
 
+	// Bob has logged in, so his invitation is accepted and stays; the one to
+	// the existing account is pending and can be withdrawn, freeing its place.
+	alice.api(http.MethodGet, "/invites", nil, 200, &invs)
+	status := map[string]api.Invitation{}
+	for _, i := range invs.Items {
+		status[i.Email] = i
+	}
+	if status["bob@example.com"].Status != "accepted" || status["member@example.com"].Status != "pending" {
+		t.Errorf("statuses = %+v", invs.Items)
+	}
+	alice.api(http.MethodDelete, "/invites/"+status["bob@example.com"].ID.String(), nil, http.StatusConflict, nil)
+	ops.api(http.MethodDelete, "/invites/"+status["member@example.com"].ID.String(), nil, http.StatusNotFound, nil)
+	alice.api(http.MethodDelete, "/invites/"+status["member@example.com"].ID.String(), nil, http.StatusNoContent, nil)
+	invs.Items = nil
+	alice.api(http.MethodGet, "/invites", nil, 200, &invs)
+	if invs.UsedThisMonth != 1 || len(invs.Items) != 1 {
+		t.Errorf("after revoking = %+v", invs)
+	}
+
 	// Alice deletes her account: Bob is still marked as invited, by nobody
 	// who still exists.
 	alice.api(http.MethodDelete, "/me", nil, http.StatusNoContent, nil)

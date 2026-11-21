@@ -17,8 +17,10 @@ UPDATE captures SET status = 'failed', error_code = sqlc.arg(error_code), error 
                     updated_at = sqlc.arg(now)::timestamptz
 WHERE id = sqlc.arg(id) AND status <> 'done';
 
+-- RetryCapture queues a failed capture's build again and marks it rebuilt.
 -- name: RetryCapture :exec
-UPDATE captures SET status = 'pending', error_code = NULL, error = NULL, updated_at = sqlc.arg(now)::timestamptz
+UPDATE captures SET status = 'pending', error_code = NULL, error = NULL, updated_at = sqlc.arg(now)::timestamptz,
+                    rebuilt_at = sqlc.arg(now)::timestamptz
 WHERE id = sqlc.arg(id);
 
 -- name: ListCaptures :many

@@ -342,6 +342,27 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	return i, err
 }
 
+const getUserByEmailForUpdate = `-- name: GetUserByEmailForUpdate :one
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE email = $1 FOR UPDATE
+`
+
+// GetUserByEmailForUpdate holds the account while a login completes, so a
+// revoked invitation cannot remove it halfway.
+func (q *Queries) GetUserByEmailForUpdate(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmailForUpdate, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.LastLoginAt,
+		&i.MonthlyEmailLimit,
+	)
+	return i, err
+}
+
 const releaseLoginRequest = `-- name: ReleaseLoginRequest :exec
 UPDATE login_requests SET sent = greatest(sent - 1, 0)
 WHERE email = $1 AND day = $2::date

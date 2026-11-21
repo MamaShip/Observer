@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { api, call, messageOf, type WatchDetail } from '@/api/client'
 import PrintHelp from '@/components/PrintHelp.vue'
+import ZgIcon from '@/components/ZgIcon.vue'
 import { formatDateTime } from '@/lib/format'
 import { useSnapshotLinks } from '@/lib/snapshotLinks'
 import { inWeChat } from '@/lib/device'
@@ -39,7 +40,7 @@ function changeVersion(e: Event) {
 <template>
     <header class="zg-pagehead">
       <div>
-        <RouterLink :to="{ name: 'watch', params: { id: watchId } }" class="zg-pagehead__back">← 返回观察详情</RouterLink>
+        <RouterLink :to="{ name: 'watch', params: { id: watchId } }" class="zg-pagehead__back back"><ZgIcon name="arrow-left" />观察详情</RouterLink>
         <h1 class="zg-pagehead__title zg-pagehead__title--article">{{ detail?.watch.article?.title || '文章备份' }}</h1>
       </div>
     </header>
@@ -56,9 +57,8 @@ function changeVersion(e: Event) {
           <label class="zg-shard zg-select zg-select--sm"><select aria-label="备份版本" :value="selected.id" @change="changeVersion">
               <option v-for="(s, i) in detail.snapshots" :key="s.id" :value="s.id">版本 v{{ detail.snapshots.length - i }}</option>
             </select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></label>
-          <button class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :disabled="downloading" @click="download">下载 HTML</button>
-          <button class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :aria-expanded="printHelp" @click="printHelp = !printHelp">打印为
-            PDF</button>
+          <button type="button" class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :disabled="downloading" @click="download"><ZgIcon name="download" />下载离线 HTML</button>
+          <button type="button" class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :aria-expanded="printHelp" @click="printHelp = !printHelp"><ZgIcon name="printer" />打印为 PDF</button>
         </div>
       </div>
       <p v-if="inWeChat" class="notice notice-warn">微信内置浏览器不能下载文件或打印。请使用系统浏览器打开。</p>
@@ -71,6 +71,7 @@ function changeVersion(e: Event) {
 </template>
 
 <style scoped>
+.back { display: inline-flex; align-items: center; gap: var(--space-1); }
 .reader-actions { flex-wrap: wrap; }
 .reader-frame { display: block; margin-top: var(--space-4); width: 100%; height: 80vh; border: 1px solid var(--line-100); }
 @media (max-width: 767px) { .reader-actions { width: 100%; margin-left: 0; } }

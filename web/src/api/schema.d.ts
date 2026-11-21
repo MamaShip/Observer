@@ -248,6 +248,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an invitation
+         * @description Withdraws an invitation that has not been accepted and returns its place in this month's allowance. The address can no longer log in unless someone else invited it too.
+         */
+        delete: operations["revoke-invite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -438,7 +458,17 @@ export interface components {
         };
         AdminArticlesOutputBody: {
             items: components["schemas"]["AdminArticle"][];
+            /**
+             * Format: int64
+             * @description Articles matching the filters; on the first page only
+             */
+            matched?: number;
             next_cursor?: string;
+            /**
+             * Format: int64
+             * @description All articles; on the first page only
+             */
+            total?: number;
         };
         AdminCapture: {
             /** Format: date-time */
@@ -448,6 +478,11 @@ export interface components {
             error_code?: string;
             /** @description Also the snapshot's id once built */
             id: string;
+            /**
+             * Format: date-time
+             * @description When an administrator last rebuilt it from the stored page
+             */
+            rebuilt_at?: string;
             /** @enum {string} */
             status: "pending" | "done" | "failed";
             /** Format: date-time */
@@ -547,6 +582,11 @@ export interface components {
             missing_images: number;
             /** Format: int64 */
             size_bytes?: number;
+            /**
+             * @description fetch: built when the page was fetched; rebuild: rebuilt later from the stored page
+             * @enum {string}
+             */
+            source?: "fetch" | "rebuild";
             /**
              * Format: int64
              * @description Characters of text; absent for backups made before it was recorded
@@ -817,6 +857,12 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             email: string;
+            id: string;
+            /**
+             * @description accepted once the account this invitation created has logged in; it can no longer be revoked
+             * @enum {string}
+             */
+            status: "pending" | "accepted";
         };
         Invitations: {
             /** @description False when registration is open or invitations are only for admins */
@@ -986,6 +1032,8 @@ export interface operations {
                 status?: "pending" | "alive" | "deleted" | "invalid" | "dormant";
                 /** @description Only articles whose backup looks incomplete */
                 issues?: boolean;
+                /** @description Only articles with this problem */
+                issue?: "backup_failed" | "no_snapshot" | "missing_images" | "short_text" | "failing_checks";
                 /** @description Part of the title or account name */
                 search?: string;
                 cursor?: string;
@@ -1442,6 +1490,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InviteOutputBody"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revoke-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

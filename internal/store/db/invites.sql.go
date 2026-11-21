@@ -54,6 +54,28 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Inv
 	return i, err
 }
 
+const deleteInvite = `-- name: DeleteInvite :exec
+DELETE FROM invites WHERE id = $1
+`
+
+func (q *Queries) DeleteInvite(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteInvite, id)
+	return err
+}
+
+const deleteUnusedAccount = `-- name: DeleteUnusedAccount :execrows
+DELETE FROM users WHERE id = $1 AND last_login_at IS NULL
+`
+
+// DeleteUnusedAccount removes an account that has never logged in.
+func (q *Queries) DeleteUnusedAccount(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUnusedAccount, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const forgetInvites = `-- name: ForgetInvites :exec
 DELETE FROM invites
 WHERE email = $1 OR (inviter_id = $2 AND invitee_id IS NULL)
@@ -94,6 +116,28 @@ func (q *Queries) GetInviteByInviter(ctx context.Context, arg GetInviteByInviter
 	return i, err
 }
 
+const getInviteForUpdate = `-- name: GetInviteForUpdate :one
+SELECT id, inviter_id, email, invitee_id, created_at FROM invites WHERE id = $1 AND inviter_id = $2 FOR UPDATE
+`
+
+type GetInviteForUpdateParams struct {
+	ID        uuid.UUID
+	InviterID *uuid.UUID
+}
+
+func (q *Queries) GetInviteForUpdate(ctx context.Context, arg GetInviteForUpdateParams) (Invite, error) {
+	row := q.db.QueryRow(ctx, getInviteForUpdate, arg.ID, arg.InviterID)
+	var i Invite
+	err := row.Scan(
+		&i.ID,
+		&i.InviterID,
+		&i.Email,
+		&i.InviteeID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertUser = `-- name: InsertUser :one
 INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit
 `
@@ -115,24 +159,35 @@ func (q *Queries) InsertUser(ctx context.Context, email string) (User, error) {
 }
 
 const listInvitesByInviter = `-- name: ListInvitesByInviter :many
-SELECT id, inviter_id, email, invitee_id, created_at FROM invites WHERE inviter_id = $1 ORDER BY created_at DESC LIMIT 100
+SELECT i.id, i.email, i.created_at, (u.last_login_at IS NOT NULL)::bool AS accepted
+FROM invites i LEFT JOIN users u ON u.id = i.invitee_id
+WHERE i.inviter_id = $1 ORDER BY i.created_at DESC LIMIT 100
 `
 
-func (q *Queries) ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID) ([]Invite, error) {
+type ListInvitesByInviterRow struct {
+	ID        uuid.UUID
+	Email     string
+	CreatedAt time.Time
+	Accepted  bool
+}
+
+// ListInvitesByInviter says, for each invitation, whether the account it
+// created has logged in. An invitation to an address that already had an
+// account created none and so never counts as accepted.
+func (q *Queries) ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID) ([]ListInvitesByInviterRow, error) {
 	rows, err := q.db.Query(ctx, listInvitesByInviter, inviterID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Invite{}
+	items := []ListInvitesByInviterRow{}
 	for rows.Next() {
-		var i Invite
+		var i ListInvitesByInviterRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.InviterID,
 			&i.Email,
-			&i.InviteeID,
 			&i.CreatedAt,
+			&i.Accepted,
 		); err != nil {
 			return nil, err
 		}
@@ -162,4 +217,25 @@ func (q *Queries) LockUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.MonthlyEmailLimit,
 	)
 	return i, err
+}
+
+const passInvitee = `-- name: PassInvitee :execrows
+UPDATE invites SET invitee_id = $1
+WHERE id = (SELECT o.id FROM invites o WHERE o.email = $2 AND o.invitee_id IS NULL
+            ORDER BY o.created_at LIMIT 1)
+`
+
+type PassInviteeParams struct {
+	InviteeID *uuid.UUID
+	Email     string
+}
+
+// PassInvitee hands an account to the oldest other invitation of its
+// address, once the invitation that created it is withdrawn.
+func (q *Queries) PassInvitee(ctx context.Context, arg PassInviteeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, passInvitee, arg.InviteeID, arg.Email)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -108,10 +108,12 @@ func (s *Service) RebuildCapture(ctx context.Context, captureID uuid.UUID) error
 		if c.Status == "done" {
 			return ErrCaptureDone
 		}
-		if err := q.RetryCapture(ctx, db.RetryCaptureParams{ID: c.ID, Now: s.now()}); err != nil {
+		now := s.now()
+		if err := q.RetryCapture(ctx, db.RetryCaptureParams{ID: c.ID, Now: now}); err != nil {
 			return err
 		}
-		_, err = s.jobs.InsertTx(ctx, tx, SnapshotArgs{ArticleID: c.ArticleID, SnapshotID: c.ID, URL: c.Url, CapturedAt: c.CapturedAt}, nil)
+		_, err = s.jobs.InsertTx(ctx, tx, SnapshotArgs{ArticleID: c.ArticleID, SnapshotID: c.ID, URL: c.Url, CapturedAt: c.CapturedAt,
+			Rebuild: now.UnixNano()}, nil)
 		if err == nil {
 			s.log.Info("snapshot rebuild queued", "article", c.ArticleID, "capture", c.ID)
 		}

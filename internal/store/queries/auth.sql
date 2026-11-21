@@ -37,6 +37,11 @@ UPDATE login_codes SET used_at = sqlc.arg(now)::timestamptz WHERE id = sqlc.arg(
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
 
+-- GetUserByEmailForUpdate holds the account while a login completes, so a
+-- revoked invitation cannot remove it halfway.
+-- name: GetUserByEmailForUpdate :one
+SELECT * FROM users WHERE email = $1 FOR UPDATE;
+
 -- name: GetUser :one
 SELECT * FROM users WHERE id = $1;
 

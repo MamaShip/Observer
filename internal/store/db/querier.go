@@ -18,12 +18,14 @@ type Querier interface {
 	ActivateResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
 	AdminArticleWatchers(ctx context.Context, articleID *uuid.UUID) ([]AdminArticleWatchersRow, error)
 	AdminCheckRuns(ctx context.Context, arg AdminCheckRunsParams) ([]AdminCheckRunsRow, error)
+	AdminCountArticles(ctx context.Context) (int32, error)
 	// AdminDailyCounts is one row per metric and Beijing day that has any.
 	AdminDailyCounts(ctx context.Context, since time.Time) ([]AdminDailyCountsRow, error)
 	// AdminListArticles lists articles with their latest snapshot. With
 	// issues_only, only those whose backup looks incomplete (keep in step with
 	// api.articleIssues): no snapshot although the page was fetched, images that
 	// could not be stored, under 100 characters of text, or repeated failed checks.
+	// issue keeps only one kind of problem, by the same rules.
 	AdminListArticles(ctx context.Context, arg AdminListArticlesParams) ([]AdminListArticlesRow, error)
 	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
 	// Queries for the admin console (plan.md §10.1). Months and days are counted
@@ -63,12 +65,15 @@ type Querier interface {
 	DeleteArticle(ctx context.Context, id uuid.UUID) error
 	DeleteExpiredLoginCodes(ctx context.Context, before time.Time) (int64, error)
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	DeleteInvite(ctx context.Context, id uuid.UUID) error
 	DeleteLoginCodesFor(ctx context.Context, email string) error
 	DeleteOldCheckRuns(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldEmailLog(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldLoginRequests(ctx context.Context, before time.Time) (int64, error)
 	DeleteResolvingWatches(ctx context.Context, articleID uuid.UUID) (int64, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
+	// DeleteUnusedAccount removes an account that has never logged in.
+	DeleteUnusedAccount(ctx context.Context, id uuid.UUID) (int64, error)
 	// Sessions and watches go with the user (ON DELETE CASCADE).
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DeleteUserSessions(ctx context.Context, userID uuid.UUID) (int64, error)
@@ -91,12 +96,16 @@ type Querier interface {
 	GetCapture(ctx context.Context, id uuid.UUID) (Capture, error)
 	GetCaptureForUpdate(ctx context.Context, id uuid.UUID) (Capture, error)
 	GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (Invite, error)
+	GetInviteForUpdate(ctx context.Context, arg GetInviteForUpdateParams) (Invite, error)
 	GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error)
 	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
 	GetSession(ctx context.Context, arg GetSessionParams) (GetSessionRow, error)
 	GetSnapshot(ctx context.Context, id uuid.UUID) (Snapshot, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
+	// GetUserByEmailForUpdate holds the account while a login completes, so a
+	// revoked invitation cannot remove it halfway.
+	GetUserByEmailForUpdate(ctx context.Context, email string) (User, error)
 	GetUserWatch(ctx context.Context, arg GetUserWatchParams) (GetUserWatchRow, error)
 	InsertAsset(ctx context.Context, arg InsertAssetParams) error
 	InsertCheckRun(ctx context.Context, arg InsertCheckRunParams) error
@@ -107,7 +116,10 @@ type Querier interface {
 	InsertUser(ctx context.Context, email string) (User, error)
 	ListArticles(ctx context.Context, maxRows int32) ([]ListArticlesRow, error)
 	ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capture, error)
-	ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID) ([]Invite, error)
+	// ListInvitesByInviter says, for each invitation, whether the account it
+	// created has logged in. An invitation to an address that already had an
+	// account created none and so never counts as accepted.
+	ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID) ([]ListInvitesByInviterRow, error)
 	ListRecentCheckRuns(ctx context.Context, arg ListRecentCheckRunsParams) ([]ListRecentCheckRunsRow, error)
 	ListSnapshots(ctx context.Context, articleID uuid.UUID) ([]Snapshot, error)
 	ListUserWatches(ctx context.Context, userID uuid.UUID) ([]ListUserWatchesRow, error)
@@ -126,6 +138,9 @@ type Querier interface {
 	// A pending article never has active watches, so the one-active-watch
 	// index cannot conflict.
 	MoveWatches(ctx context.Context, arg MoveWatchesParams) error
+	// PassInvitee hands an account to the oldest other invitation of its
+	// address, once the invitation that created it is withdrawn.
+	PassInvitee(ctx context.Context, arg PassInviteeParams) (int64, error)
 	PendingNotifications(ctx context.Context, userID uuid.UUID) ([]PendingNotificationsRow, error)
 	// PostponeConfirmation keeps the first deleted answer and looks again once
 	// the confirmation delay after it is over.
@@ -141,6 +156,7 @@ type Querier interface {
 	// extended, an expired or stopped one is watched again.
 	RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, error)
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
+	// RetryCapture queues a failed capture's build again and marks it rebuilt.
 	RetryCapture(ctx context.Context, arg RetryCaptureParams) error
 	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
 	// forgets the address.

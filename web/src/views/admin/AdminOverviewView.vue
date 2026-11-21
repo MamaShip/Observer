@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { api, call, messageOf, type AdminArticle, type AdminDay, type AdminOverview } from '@/api/client'
 import ActivityTrend from '@/components/admin/ActivityTrend.vue'
-import { issueLabel } from '@/lib/admin'
+import ZgIcon from '@/components/ZgIcon.vue'
+import { articleStatusText, issueLabel, issueTone } from '@/lib/admin'
 import BarChart from '@/components/admin/BarChart.vue'
 import StatTile from '@/components/admin/StatTile.vue'
 import { formatBytes, formatDate, formatNumber, formatPercent, formatRelative } from '@/lib/format'
@@ -58,7 +59,7 @@ const healthy = computed(() => o.value?.health.status === 'ok')
         <h1 class="zg-pagehead__title">后台概览</h1>
         <div v-if="o" class="zg-pagehead__meta">服务版本 {{ o.health.version }}</div>
       </div>
-      <button class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :disabled="loading" @click="load(); loadIssues()">刷新</button>
+      <button type="button" class="zg-shard zg-btn zg-btn--secondary zg-btn--sm" :disabled="loading" @click="load(); loadIssues()"><ZgIcon name="refresh" />刷新</button>
     </header>
     <p v-if="error" class="notice notice-danger" role="alert">
       {{ error }} <button type="button" class="btn-link" @click="load">重试</button>
@@ -96,13 +97,14 @@ const healthy = computed(() => o.value?.health.status === 'ok')
       <section class="zg-shard zg-panel queue">
         <div class="zg-panel__head">
           <h2 class="zg-panel__title">需要处理</h2>
-          <RouterLink class="zg-link small" to="/admin/articles?filter=issues">查看全部 →</RouterLink>
+          <RouterLink class="zg-link small" to="/admin/articles?filter=issues">查看全部</RouterLink>
         </div>
         <p v-if="issuesError" class="notice notice-danger" role="alert">{{ issuesError }} <button class="btn-link"
             @click="loadIssues">重试</button></p>
         <div v-for="a in issues" :key="a.id" class="zg-setrow">
           <RouterLink :to="{ name: 'admin-article', params: { id: a.id } }" class="zg-link">{{ a.title || '（无标题）' }}</RouterLink>
-          <span class="zg-meta">{{ a.issues.map(issueLabel).join(' · ') }}</span>
+          <span class="issue-tags"><span v-for="i in a.issues" :key="i" class="zg-shard zg-tag" :class="'zg-tag--' + issueTone(i)"><i
+            class="zg-tag__glyph" />{{ issueLabel(i) }}</span></span>
         </div>
         <p v-if="!issues.length && !issuesError && !issuesLoading" class="muted small">暂无需要处理的文章。</p>
       </section>
@@ -130,7 +132,7 @@ const healthy = computed(() => o.value?.health.status === 'ok')
             :note="`30 天内登录 ${o.totals.active_users_30d}${o.totals.disabled_users ? ` · 已停用 ${o.totals.disabled_users}` : ''}`" />
           <StatTile label="观察中" :value="formatNumber(o.totals.open_watches)" :note="`累计 ${o.totals.watches} 个观察`" />
           <StatTile label="文章" :value="formatNumber(o.totals.articles)"
-            :note="`在线 ${o.totals.articles_alive} · 已删除 ${o.totals.articles_deleted} · 休眠 ${o.totals.articles_dormant} · 无效 ${o.totals.articles_invalid}${o.totals.articles_pending ? ` · 解析中 ${o.totals.articles_pending}` : ''}`" />
+            :note="`${articleStatusText('alive')} ${o.totals.articles_alive} · ${articleStatusText('deleted')} ${o.totals.articles_deleted} · ${articleStatusText('dormant')} ${o.totals.articles_dormant} · ${articleStatusText('invalid')} ${o.totals.articles_invalid}${o.totals.articles_pending ? ` · ${articleStatusText('pending')} ${o.totals.articles_pending}` : ''}`" />
           <StatTile label="备份" :value="formatNumber(o.totals.snapshots)" :note="`图片 ${formatNumber(o.totals.images)} 张`" />
           <StatTile label="对象存储" :value="formatBytes(o.totals.image_bytes + o.totals.snapshot_bytes)"
             :note="`图片 ${formatBytes(o.totals.image_bytes)} · 页面 ${formatBytes(o.totals.snapshot_bytes)}（不含原始页面与数据库备份）`" />
@@ -164,6 +166,7 @@ const healthy = computed(() => o.value?.health.status === 'ok')
 </template>
 
 <style scoped>
+.issue-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 h2 { margin: var(--space-5) 0 var(--space-3); font-size: 16px; }
 .zg-panel__head h2 { margin: 0; }
 .summary, .queue, .additional { margin-top: var(--space-5); }

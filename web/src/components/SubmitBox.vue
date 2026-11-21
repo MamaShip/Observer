@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { api, call, messageOf, type WatchDetail } from '@/api/client'
 import { session } from '@/session'
+import ZgIcon from '@/components/ZgIcon.vue'
 import { extractLink } from '@/lib/link'
 import { ref } from 'vue'
 
@@ -16,7 +17,7 @@ async function submit() {
   const url = extractLink(text.value)
   if (!url) {
     error.value = text.value.trim()
-      ? '没有找到公众号文章链接。链接应以 https://mp.weixin.qq.com/ 开头。'
+      ? '这不是公众号文章链接。请在微信里打开文章，点右上角「···」复制链接。'
       : '请先粘贴文章链接。'
     return
   }
@@ -48,7 +49,7 @@ async function submit() {
         </div>
         <button class="zg-shard zg-btn" type="submit" :disabled="busy">
           <span v-if="busy" class="spinner" aria-hidden="true" />
-          <svg v-else class="zg-icon zg-icon--16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 12c5-10 15-10 20 0-5 10-15 10-20 0Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <ZgIcon v-else name="eye" />
           开始观察
         </button>
       </div>

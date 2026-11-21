@@ -95,7 +95,7 @@ describe('renewing a watch', () => {
       'POST /api/v1/watches/w1/renew': () => ({ status: 429, body: { detail: '同时观察的文章已达上限（50 篇），请先停止一些观察。' } }),
     }
     const w = await mountDetail()
-    const button = w.findAll('button').find((b) => b.text() === '重新观察')!
+    const button = w.findAll('button').find((b) => b.text() === '重新开始观察')!
     expect(button).toBeDefined()
     await button.trigger('click')
     await flushPromises()
@@ -111,6 +111,6 @@ describe('renewing a watch', () => {
       }),
     }
     const w = await mountDetail()
-    expect(w.findAll('button').some((b) => ['重新观察', '延长观察'].includes(b.text()))).toBe(false)
+    expect(w.findAll('button').some((b) => ['重新开始观察', '延长观察'].includes(b.text()))).toBe(false)
   })
 })

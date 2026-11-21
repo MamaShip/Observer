@@ -19,8 +19,30 @@ RETURNING *;
 -- name: InsertUser :one
 INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING *;
 
+-- ListInvitesByInviter says, for each invitation, whether the account it
+-- created has logged in. An invitation to an address that already had an
+-- account created none and so never counts as accepted.
 -- name: ListInvitesByInviter :many
-SELECT * FROM invites WHERE inviter_id = $1 ORDER BY created_at DESC LIMIT 100;
+SELECT i.id, i.email, i.created_at, (u.last_login_at IS NOT NULL)::bool AS accepted
+FROM invites i LEFT JOIN users u ON u.id = i.invitee_id
+WHERE i.inviter_id = $1 ORDER BY i.created_at DESC LIMIT 100;
+
+-- name: GetInviteForUpdate :one
+SELECT * FROM invites WHERE id = sqlc.arg(id) AND inviter_id = sqlc.arg(inviter_id) FOR UPDATE;
+
+-- name: DeleteInvite :exec
+DELETE FROM invites WHERE id = $1;
+
+-- PassInvitee hands an account to the oldest other invitation of its
+-- address, once the invitation that created it is withdrawn.
+-- name: PassInvitee :execrows
+UPDATE invites SET invitee_id = sqlc.arg(invitee_id)
+WHERE id = (SELECT o.id FROM invites o WHERE o.email = sqlc.arg(email) AND o.invitee_id IS NULL
+            ORDER BY o.created_at LIMIT 1);
+
+-- DeleteUnusedAccount removes an account that has never logged in.
+-- name: DeleteUnusedAccount :execrows
+DELETE FROM users WHERE id = $1 AND last_login_at IS NULL;
 
 -- ForgetInvites runs when an account is deleted: rows carrying its address
 -- go, and so do the rows it sent that created no account.

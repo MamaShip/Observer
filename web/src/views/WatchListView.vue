@@ -3,14 +3,14 @@ import { api, call, messageOf, type Watch, type WatchDetail } from '@/api/client
 import StatusBadge from '@/components/StatusBadge.vue'
 import SubmitBox from '@/components/SubmitBox.vue'
 import { formatShort } from '@/lib/format'
-import { daysLeft, endingSoonDays, isOpen } from '@/lib/status'
+import { daysLeft, endedText, endingSoonDays, isOpen } from '@/lib/status'
 import { session } from '@/session'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const filters = [
   { key: 'all', label: '全部' }, { key: 'active', label: '观察中' }, { key: 'soon', label: '即将到期' },
-  { key: 'deleted', label: '已删除' }, { key: 'ended', label: '已结束' }, { key: 'failed', label: '提交失败' },
+  { key: 'deleted', label: '已删除' }, { key: 'ended', label: '已结束' },
 ] as const
 type Filter = typeof filters[number]['key']
 type Sort = 'recent' | 'expiry'
@@ -34,8 +34,8 @@ function matches(w: Watch, key: Filter) {
     case 'active': return isOpen(w)
     case 'soon': return w.status === 'active' && daysLeft(w) <= endingSoonDays
     case 'deleted': return w.end_reason === 'deleted'
-    case 'ended': return w.status === 'ended' && w.end_reason !== 'deleted'
-    case 'failed': return w.status === 'failed'
+    // Links that never opened end at once, so they are among the ended.
+    case 'ended': return (w.status === 'ended' && w.end_reason !== 'deleted') || w.status === 'failed'
   }
 }
 const counts = computed(() => filters.map(f => items.value.filter(w => matches(w, f.key)).length))
@@ -120,7 +120,7 @@ function onSubmitted(d: WatchDetail) {
       </header>
       <SubmitBox @submitted="onSubmitted">
         <div v-if="submitted" class="zg-shard zg-msg zg-msg--success" role="status">
-          <i class="zg-msg__glyph" />已提交{{ submitted.watch.article?.title ? '「' + submitted.watch.article.title + '」' : '文章链接' }}。
+          <i class="zg-msg__glyph" />已开始观察{{ submitted.watch.article?.title ? '「' + submitted.watch.article.title + '」' : '这篇文章' }}{{ submitted.watch.status === 'resolving' ? '，正在保存当前版本' : '' }}。
           <RouterLink class="zg-link zg-msg__action" :to="{ name: 'watch', params: { id: submitted.watch.id } }">查看</RouterLink>
         </div>
       </SubmitBox>
@@ -150,8 +150,8 @@ function onSubmitted(d: WatchDetail) {
           <div class="zg-watch__top">
             <StatusBadge :watch="w" />
             <span class="zg-meta" v-if="w.status === 'active'">还剩 {{ daysLeft(w) }} 天</span>
-            <span class="zg-meta" v-else-if="w.ended_at">{{ w.end_reason === 'deleted' ? '确认删除' : '结束于' }}
-            {{ formatShort(w.ended_at) }}</span>
+            <span class="zg-meta" v-else-if="w.status === 'failed'">{{ endedText(w) }}</span>
+            <span class="zg-meta" v-else-if="w.ended_at">{{ endedText(w) }} {{ formatShort(w.ended_at) }}</span>
           </div>
           <h2 class="zg-watch__title">{{ w.article?.title || (w.status === 'resolving' ? '正在获取文章…' : w.submitted_url) }}</h2>
           <div v-if="w.article?.account_name" class="zg-watch__source">来自公众号「{{ w.article.account_name }}」</div>

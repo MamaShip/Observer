@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 
 	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -18,8 +19,10 @@ import (
 
 // Invitation is one address a user invited.
 type Invitation struct {
+	ID        uuid.UUID `json:"id"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
+	Status    string    `json:"status" enum:"pending,accepted" doc:"accepted once the account this invitation created has logged in; it can no longer be revoked"`
 }
 
 // Invitations are the user's invitations and this month's allowance.
@@ -80,7 +83,11 @@ func (h *handlers) registerInvites(g huma.API) {
 			Items: []Invitation{}, CanInvite: limit >= 0, UsedThisMonth: quota.Used, MonthlyLimit: max(limit, 0),
 		}}
 		for _, r := range rows {
-			out.Body.Items = append(out.Body.Items, Invitation{Email: r.Email, CreatedAt: r.CreatedAt})
+			status := "pending"
+			if r.Accepted {
+				status = "accepted"
+			}
+			out.Body.Items = append(out.Body.Items, Invitation{ID: r.ID, Email: r.Email, CreatedAt: r.CreatedAt, Status: status})
 		}
 		return out, nil
 	})
@@ -111,8 +118,26 @@ func (h *handlers) registerInvites(g huma.API) {
 			return nil, err
 		}
 		out := &inviteOutput{}
-		out.Body.Invitation = Invitation{Email: inv.Email, CreatedAt: inv.CreatedAt}
+		out.Body.Invitation = Invitation{ID: inv.ID, Email: inv.Email, CreatedAt: inv.CreatedAt, Status: "pending"}
 		out.Body.UsedThisMonth, out.Body.MonthlyLimit = quota.Used, quota.Limit
 		return out, nil
+	})
+
+	huma.Register(g, huma.Operation{
+		OperationID: "revoke-invite", Method: http.MethodDelete, Path: "/invites/{id}",
+		Summary: "Revoke an invitation", Tags: tags, Security: loggedIn, DefaultStatus: http.StatusNoContent,
+		Description: "Withdraws an invitation that has not been accepted and returns its place in this month's allowance. " +
+			"The address can no longer log in unless someone else invited it too.",
+	}, func(ctx context.Context, in *idInput) (*struct{}, error) {
+		err := h.d.Auth.RevokeInvite(ctx, principalFrom(ctx).User.ID, in.ID)
+		switch {
+		case errors.Is(err, auth.ErrInviteNotFound):
+			return nil, huma.Error404NotFound("没有找到这个邀请。")
+		case errors.Is(err, auth.ErrInviteAccepted):
+			return nil, huma.Error409Conflict("对方已经登录，不能撤回这个邀请。")
+		case err != nil:
+			return nil, err
+		}
+		return nil, nil
 	})
 }

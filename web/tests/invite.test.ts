@@ -57,7 +57,7 @@ describe('inviting from the settings page', () => {
       sent = b
       return {
         status: 201,
-        body: { invitation: { email: 'bob@example.com', created_at: '2026-11-20T01:00:00Z' }, used_this_month: 5, monthly_limit: 5 },
+        body: { invitation: { id: 'i1', email: 'bob@example.com', created_at: '2026-11-20T01:00:00Z', status: 'pending' }, used_this_month: 5, monthly_limit: 5 },
       }
     }
     const w = await mountSettings()
@@ -70,7 +70,30 @@ describe('inviting from the settings page', () => {
     expect(w.find('.invite-text').text()).toContain('/login')
     expect(w.text()).toContain('本月还可以邀请 0 人')
     expect(w.find('.invite-form button').attributes('disabled')).toBeDefined()
-    expect(w.find('details').text()).toContain('bob@example.com')
+    expect(w.text()).toContain('剩余 0 / 5 个名额')
+    expect(w.find('.invite-email').text()).toContain('bob@example.com')
+  })
+
+  it('withdraws a pending invitation, but not an accepted one', async () => {
+    let list = [
+      { id: 'i1', email: 'bob@example.com', created_at: '2026-11-20T01:00:00Z', status: 'pending' },
+      { id: 'i2', email: 'carol@example.com', created_at: '2026-11-19T01:00:00Z', status: 'accepted' },
+    ]
+    routes['GET /api/v1/invites'] = () => ({ status: 200, body: invitations({ items: list }) })
+    let revoked = ''
+    routes['DELETE /api/v1/invites/i1'] = () => {
+      revoked = 'i1'
+      list = list.slice(1)
+      return { status: 204 }
+    }
+    const w = await mountSettings()
+    const rows = w.findAll('.zg-setrow').filter(r => r.find('.invite-email').exists())
+    expect(rows.map(r => r.text())).toEqual([expect.stringContaining('待接受'), expect.stringContaining('已注册')])
+    expect(rows[1]!.find('button').exists()).toBe(false)
+    await rows[0]!.find('button').trigger('click')
+    await flushPromises()
+    expect(revoked).toBe('i1')
+    expect(w.text()).not.toContain('bob@example.com')
   })
 
   it("shows the server's refusal", async () => {

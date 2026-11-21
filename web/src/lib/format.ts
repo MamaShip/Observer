@@ -1,12 +1,3 @@
-const dateFmt = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
-const dateTimeFmt = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: 'long',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
 const two = (n: number) => String(n).padStart(2, '0')
 
 function parse(v: string | Date | undefined | null): Date | null {
@@ -15,16 +6,16 @@ function parse(v: string | Date | undefined | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-/** 2026年11月20日 */
+/** 2026-11-20 (local time) */
 export function formatDate(v: string | Date | undefined | null): string {
   const d = parse(v)
-  return d ? dateFmt.format(d) : ''
+  return d ? `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}` : ''
 }
 
-/** 2026年11月20日 14:05 */
+/** 2026-11-20 14:05 (local time, 24-hour clock) */
 export function formatDateTime(v: string | Date | undefined | null): string {
   const d = parse(v)
-  return d ? dateTimeFmt.format(d) : ''
+  return d ? `${formatDate(d)} ${two(d.getHours())}:${two(d.getMinutes())}` : ''
 }
 
 /** Local time today, month/day and time this year, otherwise an ISO date. */

@@ -92,6 +92,7 @@ UPDATE users SET role = sqlc.arg(role) WHERE email = sqlc.arg(email);
 -- issues_only, only those whose backup looks incomplete (keep in step with
 -- api.articleIssues): no snapshot although the page was fetched, images that
 -- could not be stored, under 100 characters of text, or repeated failed checks.
+-- issue keeps only one kind of problem, by the same rules.
 -- name: AdminListArticles :many
 SELECT a.id, a.status, a.title, a.account_name, a.first_seen_at, a.last_checked_at, a.deleted_at,
   a.deleted_reason_code, a.consecutive_failures,
@@ -105,7 +106,9 @@ SELECT a.id, a.status, a.title, a.account_name, a.first_seen_at, a.last_checked_
   coalesce(ls.asset_count, 0)::int AS asset_count,
   coalesce(ls.missing_assets, 0)::int AS missing_assets,
   ls.text_runes,
-  coalesce(lc.status, '')::text AS capture_status
+  coalesce(lc.status, '')::text AS capture_status,
+  -- Rows matching the filters from the cursor on: all of them on the first page.
+  (count(*) OVER ())::int AS matched
 FROM articles a
 LEFT JOIN (
   SELECT DISTINCT ON (s.article_id) s.article_id, s.id, s.captured_at, s.asset_count, s.missing_assets, s.text_runes
@@ -122,11 +125,21 @@ WHERE (sqlc.narg(status)::text IS NULL OR a.status = sqlc.narg(status)::text)
        OR ls.text_runes < 100
        OR a.consecutive_failures >= 3
        OR lc.status = 'failed')
+  AND (sqlc.narg(issue)::text IS NULL
+       OR (sqlc.narg(issue)::text = 'backup_failed' AND lc.status = 'failed')
+       OR (sqlc.narg(issue)::text = 'no_snapshot' AND ls.id IS NULL AND lc.status IS DISTINCT FROM 'failed'
+           AND a.status IN ('alive', 'deleted', 'dormant'))
+       OR (sqlc.narg(issue)::text = 'missing_images' AND ls.missing_assets > 0)
+       OR (sqlc.narg(issue)::text = 'short_text' AND ls.text_runes < 100)
+       OR (sqlc.narg(issue)::text = 'failing_checks' AND a.consecutive_failures >= 3))
   AND (sqlc.narg(search)::text IS NULL OR a.title ILIKE '%' || sqlc.narg(search)::text || '%'
        OR a.account_name ILIKE '%' || sqlc.narg(search)::text || '%')
   AND (sqlc.narg(before)::uuid IS NULL OR a.id < sqlc.narg(before)::uuid)
 ORDER BY a.id DESC
 LIMIT sqlc.arg(max_rows)::int;
+
+-- name: AdminCountArticles :one
+SELECT count(*)::int FROM articles;
 
 -- name: AdminArticleWatchers :many
 SELECT w.id, w.status, w.end_reason, w.created_at, w.ended_at, u.email

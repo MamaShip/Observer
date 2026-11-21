@@ -1,4 +1,4 @@
-Smiley Sans
+Smiley Sans (served as a subset of the characters this site uses)
 Copyright © 2022–2024 atelierAnchor. All rights reserved.
 
 JetBrains Mono

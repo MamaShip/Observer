@@ -19,3 +19,12 @@ it('paginates matching rows across API cursors, including pages with no matches'
   await pages.go(0)
   expect(pages.items.value).toHaveLength(20)
 })
+
+it('takes the counts the API reports with the first page', async () => {
+  const pages = useAdminPages<number>(async cursor => cursor
+    ? { items: [3], matched: 99 }
+    : { items: [1, 2], next_cursor: 'b', matched: 3, total: 10 }, () => true)
+  await pages.reset()
+  expect(pages.matchCount.value).toBe(3)
+  expect(pages.total.value).toBe(10)
+})

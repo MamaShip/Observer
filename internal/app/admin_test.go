@@ -152,9 +152,14 @@ func TestAdminConsole(t *testing.T) {
 
 	// Articles and their completeness.
 	var arts struct {
-		Items []api.AdminArticle `json:"items"`
+		Items   []api.AdminArticle `json:"items"`
+		Matched *int               `json:"matched"`
+		Total   *int               `json:"total"`
 	}
 	alice.api(http.MethodGet, "/admin/articles", nil, 200, &arts)
+	if arts.Matched == nil || *arts.Matched != 1 || arts.Total == nil || *arts.Total != 1 {
+		t.Errorf("counts = %v / %v", arts.Matched, arts.Total)
+	}
 	if len(arts.Items) != 1 || arts.Items[0].Latest == nil || arts.Items[0].Latest.Images != 8 ||
 		arts.Items[0].Latest.TextRunes == nil || *arts.Items[0].Latest.TextRunes < 100 || len(arts.Items[0].Issues) != 0 ||
 		arts.Items[0].Watchers != 1 {
@@ -225,6 +230,11 @@ func TestAdminConsole(t *testing.T) {
 	if len(arts.Items) != 1 || !strings.Contains(strings.Join(arts.Items[0].Issues, ","), "backup_failed") {
 		t.Errorf("failed backup not flagged: %+v", arts.Items)
 	}
+	arts.Items = nil
+	alice.api(http.MethodGet, "/admin/articles?issue=backup_failed", nil, 200, &arts)
+	if len(arts.Items) != 1 || *arts.Matched != 1 {
+		t.Errorf("backup_failed filter: %+v", arts.Items)
+	}
 	alice.api(http.MethodPost, "/admin/captures/"+failed.String()+"/rebuild", nil, http.StatusAccepted, nil)
 	d.Captures[0].Status = "" // fields absent from a response keep their old values
 	for deadline := time.Now().Add(30 * time.Second); d.Captures[0].Status != "done"; {
@@ -235,6 +245,14 @@ func TestAdminConsole(t *testing.T) {
 		alice.api(http.MethodGet, "/admin/articles/"+articleID.String(), nil, 200, &d)
 	}
 	alice.api(http.MethodPost, "/admin/captures/"+failed.String()+"/rebuild", nil, http.StatusConflict, nil)
+	if d.Snapshots[0].ID != failed || d.Snapshots[0].Source != "rebuild" || d.Snapshots[1].Source != "fetch" {
+		t.Errorf("sources = %+v", d.Snapshots)
+	}
+	arts.Items = nil
+	alice.api(http.MethodGet, "/admin/articles?issue=missing_images", nil, 200, &arts)
+	if len(arts.Items) != 0 || *arts.Matched != 0 || *arts.Total != 1 {
+		t.Errorf("missing images = %+v, %d / %d", arts.Items, *arts.Matched, *arts.Total)
+	}
 	alice.api(http.MethodPost, "/admin/captures/"+articleID.String()+"/rebuild", nil, http.StatusNotFound, nil)
 
 	// A watch whose article could not be backed up says so, instead of

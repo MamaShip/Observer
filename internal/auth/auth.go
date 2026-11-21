@@ -233,7 +233,7 @@ func (s *Service) Verify(ctx context.Context, email, code, userAgent string) (Se
 		if n == 0 {
 			return ErrInvalidCode // used concurrently
 		}
-		user, err := q.GetUserByEmail(ctx, email)
+		user, err := q.GetUserByEmailForUpdate(ctx, email)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows) && s.cfg.Mode == ModeOpen:
 			user, err = q.CreateUser(ctx, email)

@@ -296,6 +296,7 @@ type AdminSnapshot struct {
 	MissingImages int       `json:"missing_images"`
 	TextRunes     *int      `json:"text_runes,omitempty" doc:"Characters of text; absent for backups made before it was recorded"`
 	SizeBytes     int64     `json:"size_bytes,omitempty"`
+	Source        string    `json:"source,omitempty" enum:"fetch,rebuild" doc:"fetch: built when the page was fetched; rebuild: rebuilt later from the stored page"`
 }
 
 // AdminArticle is an article as the console lists it.
@@ -352,6 +353,7 @@ func intPtr(p *int32) *int {
 type adminArticlesInput struct {
 	Status string `query:"status" enum:"pending,alive,deleted,invalid,dormant" required:"false"`
 	Issues bool   `query:"issues" doc:"Only articles whose backup looks incomplete"`
+	Issue  string `query:"issue" enum:"backup_failed,no_snapshot,missing_images,short_text,failing_checks" required:"false" doc:"Only articles with this problem"`
 	Search string `query:"search" maxLength:"200" doc:"Part of the title or account name"`
 	Cursor string `query:"cursor"`
 	Limit  int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
@@ -361,6 +363,8 @@ type adminArticlesOutput struct {
 	Body struct {
 		Items      []AdminArticle `json:"items"`
 		NextCursor string         `json:"next_cursor,omitempty"`
+		Matched    *int           `json:"matched,omitempty" doc:"Articles matching the filters; on the first page only"`
+		Total      *int           `json:"total,omitempty" doc:"All articles; on the first page only"`
 	}
 }
 
@@ -400,12 +404,13 @@ type AdminArticleDetail struct {
 
 // AdminCapture is a page fetched to be backed up, and what became of it.
 type AdminCapture struct {
-	ID         uuid.UUID `json:"id" doc:"Also the snapshot's id once built"`
-	CapturedAt time.Time `json:"captured_at"`
-	Status     string    `json:"status" enum:"pending,done,failed"`
-	ErrorCode  string    `json:"error_code,omitempty" doc:"no_content (no article body: picture or video posts) or error"`
-	Error      string    `json:"error,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID         uuid.UUID  `json:"id" doc:"Also the snapshot's id once built"`
+	CapturedAt time.Time  `json:"captured_at"`
+	Status     string     `json:"status" enum:"pending,done,failed"`
+	ErrorCode  string     `json:"error_code,omitempty" doc:"no_content (no article body: picture or video posts) or error"`
+	Error      string     `json:"error,omitempty"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	RebuiltAt  *time.Time `json:"rebuilt_at,omitempty" doc:"When an administrator last rebuilt it from the stored page"`
 }
 
 type adminArticleOutput struct{ Body AdminArticleDetail }
@@ -559,6 +564,9 @@ func (h *handlers) registerAdmin(g huma.API) {
 		if in.Search != "" {
 			p.Search = &in.Search
 		}
+		if in.Issue != "" {
+			p.Issue = &in.Issue
+		}
 		if in.Cursor != "" {
 			c, err := uuid.Parse(in.Cursor)
 			if err != nil {
@@ -572,6 +580,18 @@ func (h *handlers) registerAdmin(g huma.API) {
 		}
 		out := &adminArticlesOutput{}
 		out.Body.Items = []AdminArticle{}
+		if in.Cursor == "" {
+			total, err := h.d.Queries.AdminCountArticles(ctx)
+			if err != nil {
+				return nil, err
+			}
+			matched := 0
+			if len(rows) > 0 {
+				matched = int(rows[0].Matched)
+			}
+			t := int(total)
+			out.Body.Matched, out.Body.Total = &matched, &t
+		}
 		for i, r := range rows {
 			if i == in.Limit {
 				out.Body.NextCursor = rows[i-1].ID.String()
@@ -627,17 +647,27 @@ func (h *handlers) registerAdmin(g huma.API) {
 			d.Snapshots = append(d.Snapshots, AdminSnapshot{ID: s.ID, CapturedAt: s.CapturedAt, Images: int(s.AssetCount),
 				MissingImages: int(s.MissingAssets), TextRunes: intPtr(s.TextRunes), SizeBytes: s.SizeBytes})
 		}
-		var latest *AdminSnapshot
-		if len(d.Snapshots) > 0 {
-			latest = &d.Snapshots[0]
-		}
 		caps, err := q.ListCaptures(ctx, art.ID)
 		if err != nil {
 			return nil, err
 		}
+		rebuilt := map[uuid.UUID]bool{}
 		for _, c := range caps {
 			d.Captures = append(d.Captures, AdminCapture{ID: c.ID, CapturedAt: c.CapturedAt, Status: c.Status,
-				ErrorCode: str(c.ErrorCode), Error: str(c.Error), UpdatedAt: c.UpdatedAt})
+				ErrorCode: str(c.ErrorCode), Error: str(c.Error), UpdatedAt: c.UpdatedAt, RebuiltAt: c.RebuiltAt})
+			rebuilt[c.ID] = c.RebuiltAt != nil
+		}
+		for i := range d.Snapshots {
+			// A snapshot's id is its capture's; captures older than the
+			// newest 50 count as fetched.
+			d.Snapshots[i].Source = "fetch"
+			if rebuilt[d.Snapshots[i].ID] {
+				d.Snapshots[i].Source = "rebuild"
+			}
+		}
+		var latest *AdminSnapshot
+		if len(d.Snapshots) > 0 {
+			latest = &d.Snapshots[0]
 		}
 		captureStatus := ""
 		if len(caps) > 0 {

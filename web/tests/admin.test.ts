@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import BarChart from '@/components/admin/BarChart.vue'
-import { articleStatusText, captureStateText, issueDetail, issueLabel, shortDay } from '@/lib/admin'
+import { articleStatusText, articleStatusTone, captureStateText, issueDetail, issueLabel, issueTone, shortDay } from '@/lib/admin'
 import { formatBytes, formatPercent } from '@/lib/format'
 
 describe('format', () => {
@@ -24,7 +24,11 @@ describe('format', () => {
 
 describe('admin wording', () => {
   it('names statuses and issues', () => {
-    expect(articleStatusText('dormant')).toBe('休眠')
+    expect(articleStatusText('dormant')).toBe('已结束')
+    expect(articleStatusTone('invalid')).toBe('unreachable')
+    expect(articleStatusTone('new-state')).toBe('ended')
+    expect(issueTone('missing_images')).toBe('partial')
+    expect(issueTone('failing_checks')).toBe('failed')
     expect(articleStatusText('new-state')).toBe('new-state')
     for (const code of ['backup_failed', 'no_snapshot', 'missing_images', 'short_text', 'failing_checks']) {
       expect(issueLabel(code)).not.toBe(code)

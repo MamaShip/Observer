@@ -69,6 +69,10 @@ type SnapshotArgs struct {
 	SnapshotID uuid.UUID `json:"snapshot_id" river:"unique"`
 	URL        string    `json:"url"` // article link, sent as Referer for images
 	CapturedAt time.Time `json:"captured_at"`
+	// Rebuild is set (Unix nanoseconds) when an administrator rebuilds the
+	// capture. It keeps the rebuild from being taken for a duplicate of the
+	// earlier job, which river may not have marked finished yet.
+	Rebuild int64 `json:"rebuild,omitempty" river:"unique"`
 }
 
 func (SnapshotArgs) Kind() string { return "snapshot" }

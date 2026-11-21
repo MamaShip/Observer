@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Watch } from '@/api/client'
-import { formatRelative, formatShort } from '@/lib/format'
+import { formatDate, formatDateTime, formatRelative, formatShort } from '@/lib/format'
 import { extractLink } from '@/lib/link'
-import { daysLeft, deletedReasonText, isOpen, renewedUntil, watchBadge, watchSummary } from '@/lib/status'
+import { daysLeft, deletedReasonText, endedText, isOpen, renewedUntil, watchBadge, watchSummary } from '@/lib/status'
 import { sourceURL } from '@/lib/version'
 import { safeNext } from '@/router'
 
@@ -52,16 +52,25 @@ describe('watch period', () => {
 })
 
 describe('watch status', () => {
+  const now = Date.parse('2026-11-21T00:00:00Z')
   it.each<[Partial<Watch>, string, string]>([
-    [{ status: 'resolving' }, '备份中', 'info'],
-    [{ status: 'active' }, '观察中', 'ok'],
-    [{ status: 'failed', end_reason: 'invalid' }, '提交失败', 'warn'],
-    [{ status: 'ended', end_reason: 'deleted' }, '已删除', 'danger'],
-    [{ status: 'ended', end_reason: 'expired' }, '已到期', 'muted'],
-    [{ status: 'ended', end_reason: 'user_stopped' }, '已停止', 'muted'],
-    [{ status: 'ended', end_reason: 'something-new' }, '已结束', 'muted'],
-  ])('%j → %s', (patch, label, tone) => {
-    expect(watchBadge({ ...base, ...patch })).toEqual({ label, tone })
+    [{ status: 'resolving' }, '备份中', 'archiving'],
+    [{ status: 'active' }, '观察中', 'watching'],
+    [{ status: 'active', expires_at: '2026-11-25T00:00:00Z' }, '即将到期', 'expiring'],
+    [{ status: 'failed', end_reason: 'invalid' }, '无法访问', 'unreachable'],
+    [{ status: 'ended', end_reason: 'deleted' }, '已删除', 'deleted'],
+    [{ status: 'ended', end_reason: 'unreachable' }, '无法访问', 'unreachable'],
+    [{ status: 'ended', end_reason: 'expired' }, '已结束', 'ended'],
+    [{ status: 'ended', end_reason: 'user_stopped' }, '已结束', 'ended'],
+    [{ status: 'ended', end_reason: 'something-new' }, '已结束', 'ended'],
+  ])('%j → %s', (patch, label, tag) => {
+    expect(watchBadge({ ...base, ...patch }, now)).toEqual({ label, tag })
+  })
+
+  it('says how a watch ended', () => {
+    expect(endedText({ ...base, status: 'ended', end_reason: 'expired' })).toBe('到期于')
+    expect(endedText({ ...base, status: 'ended', end_reason: 'user_stopped' })).toBe('停止于')
+    expect(endedText({ ...base, status: 'failed' })).toBe('没能开始观察')
   })
 
   it('explains every state in a sentence', () => {
@@ -105,6 +114,12 @@ describe('format', () => {
   it('short dates drop this year', () => {
     expect(formatShort('2026-11-21T12:00:00+08:00', now)).not.toContain('2026')
     expect(formatShort('2027-01-19T12:00:00+08:00', now)).toContain('2027')
+  })
+  it('writes full dates as the design system does', () => {
+    const d = new Date(2026, 0, 5, 9, 7)
+    expect(formatDate(d)).toBe('2026-01-05')
+    expect(formatDateTime(d)).toBe('2026-01-05 09:07')
+    expect(formatDateTime('nope')).toBe('')
   })
 })
 

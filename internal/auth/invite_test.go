@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestMonthStart(t *testing.T) {
@@ -142,13 +145,106 @@ func TestCreateInvited(t *testing.T) {
 	if _, created, err := s.CreateInvited(ctx, nil, "cli@example.com"); err != nil || !created {
 		t.Errorf("without inviter: %v, %v", created, err)
 	}
-	rows, err := q.ListInvitesByInviter(ctx, &admin.ID)
-	if err != nil || len(rows) != 1 || rows[0].InviteeID == nil || *rows[0].InviteeID != u.ID {
-		t.Errorf("recorded = %+v, %v", rows, err)
+	var invitee uuid.UUID
+	if err := s.pool.QueryRow(ctx, "SELECT invitee_id FROM invites WHERE inviter_id = $1", admin.ID).Scan(&invitee); err != nil || invitee != u.ID {
+		t.Errorf("recorded invitee = %v, %v", invitee, err)
 	}
 	var n int
 	_ = s.pool.QueryRow(ctx, "SELECT count(*) FROM invites").Scan(&n)
 	if n != 1 {
 		t.Errorf("%d invitations recorded", n)
+	}
+}
+
+func TestRevokeInvite(t *testing.T) {
+	ctx := context.Background()
+	s, sender, q, _ := newService(t, ModeInvite)
+	alice, _ := q.CreateUser(ctx, "alice@example.com")
+	carol, _ := q.CreateUser(ctx, "carol@example.com")
+	if _, err := q.CreateUser(ctx, "member@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	const limit = 3
+	status := func(inviter uuid.UUID) map[string]bool {
+		rows, err := q.ListInvitesByInviter(ctx, &inviter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]bool{}
+		for _, r := range rows {
+			m[r.Email] = r.Accepted
+		}
+		return m
+	}
+
+	bob, _, err := s.Invite(ctx, alice.ID, "bob@example.com", limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, _, err := s.Invite(ctx, alice.ID, "member@example.com", limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := status(alice.ID); len(got) != 2 || got["bob@example.com"] || got["member@example.com"] {
+		t.Errorf("before login: %v", got)
+	}
+
+	// Someone else's invitation is not found.
+	if err := s.RevokeInvite(ctx, carol.ID, bob.ID); !errors.Is(err, ErrInviteNotFound) {
+		t.Errorf("other inviter: %v", err)
+	}
+	// An invitation to an existing account goes, and the account stays.
+	if err := s.RevokeInvite(ctx, alice.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.GetUserByEmail(ctx, "member@example.com"); err != nil {
+		t.Errorf("existing account: %v", err)
+	}
+	if quota, _ := s.InviteQuotaOf(ctx, alice.ID, limit); quota.Used != 1 {
+		t.Errorf("allowance after revoking: %+v", quota)
+	}
+
+	// Carol invites bob too; when alice withdraws, carol's invitation holds
+	// the account.
+	carolsBob, _, err := s.Invite(ctx, carol.ID, "bob@example.com", limit)
+	if err != nil || carolsBob.InviteeID != nil {
+		t.Fatalf("second invitation: %+v, %v", carolsBob, err)
+	}
+	if err := s.RevokeInvite(ctx, alice.ID, bob.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.GetUserByEmail(ctx, "bob@example.com"); err != nil {
+		t.Fatalf("bob's account went although carol invited him: %v", err)
+	}
+
+	// Bob logs in: carol's invitation is accepted and cannot be revoked.
+	if _, err := s.RequestCode(ctx, "bob@example.com", ip); err != nil {
+		t.Fatal(err)
+	}
+	_, code := sender.last(t)
+	if _, err := s.Verify(ctx, "bob@example.com", code, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := status(carol.ID); !got["bob@example.com"] {
+		t.Errorf("after login: %v", got)
+	}
+	if err := s.RevokeInvite(ctx, carol.ID, carolsBob.ID); !errors.Is(err, ErrInviteAccepted) {
+		t.Errorf("accepted: %v", err)
+	}
+
+	// The only invitation of an address that never logged in takes the
+	// account with it.
+	dave, _, err := s.Invite(ctx, alice.ID, "dave@example.com", limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RevokeInvite(ctx, alice.ID, dave.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.GetUserByEmail(ctx, "dave@example.com"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("dave's account: %v", err)
+	}
+	if err := s.RevokeInvite(ctx, alice.ID, dave.ID); !errors.Is(err, ErrInviteNotFound) {
+		t.Errorf("twice: %v", err)
 	}
 }

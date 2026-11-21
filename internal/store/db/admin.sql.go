@@ -106,6 +106,17 @@ func (q *Queries) AdminCheckRuns(ctx context.Context, arg AdminCheckRunsParams) 
 	return items, nil
 }
 
+const adminCountArticles = `-- name: AdminCountArticles :one
+SELECT count(*)::int FROM articles
+`
+
+func (q *Queries) AdminCountArticles(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountArticles)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const adminDailyCounts = `-- name: AdminDailyCounts :many
 SELECT t.metric::text AS metric, t.day::date AS day, t.n::int AS n FROM (
   SELECT 'watches' AS metric, ((created_at AT TIME ZONE 'UTC') + interval '8 hours')::date AS day, count(*) AS n
@@ -172,7 +183,9 @@ SELECT a.id, a.status, a.title, a.account_name, a.first_seen_at, a.last_checked_
   coalesce(ls.asset_count, 0)::int AS asset_count,
   coalesce(ls.missing_assets, 0)::int AS missing_assets,
   ls.text_runes,
-  coalesce(lc.status, '')::text AS capture_status
+  coalesce(lc.status, '')::text AS capture_status,
+  -- Rows matching the filters from the cursor on: all of them on the first page.
+  (count(*) OVER ())::int AS matched
 FROM articles a
 LEFT JOIN (
   SELECT DISTINCT ON (s.article_id) s.article_id, s.id, s.captured_at, s.asset_count, s.missing_assets, s.text_runes
@@ -189,16 +202,24 @@ WHERE ($1::text IS NULL OR a.status = $1::text)
        OR ls.text_runes < 100
        OR a.consecutive_failures >= 3
        OR lc.status = 'failed')
-  AND ($3::text IS NULL OR a.title ILIKE '%' || $3::text || '%'
-       OR a.account_name ILIKE '%' || $3::text || '%')
-  AND ($4::uuid IS NULL OR a.id < $4::uuid)
+  AND ($3::text IS NULL
+       OR ($3::text = 'backup_failed' AND lc.status = 'failed')
+       OR ($3::text = 'no_snapshot' AND ls.id IS NULL AND lc.status IS DISTINCT FROM 'failed'
+           AND a.status IN ('alive', 'deleted', 'dormant'))
+       OR ($3::text = 'missing_images' AND ls.missing_assets > 0)
+       OR ($3::text = 'short_text' AND ls.text_runes < 100)
+       OR ($3::text = 'failing_checks' AND a.consecutive_failures >= 3))
+  AND ($4::text IS NULL OR a.title ILIKE '%' || $4::text || '%'
+       OR a.account_name ILIKE '%' || $4::text || '%')
+  AND ($5::uuid IS NULL OR a.id < $5::uuid)
 ORDER BY a.id DESC
-LIMIT $5::int
+LIMIT $6::int
 `
 
 type AdminListArticlesParams struct {
 	Status     *string
 	IssuesOnly bool
+	Issue      *string
 	Search     *string
 	Before     *uuid.UUID
 	MaxRows    int32
@@ -223,16 +244,19 @@ type AdminListArticlesRow struct {
 	MissingAssets       int32
 	TextRunes           *int32
 	CaptureStatus       string
+	Matched             int32
 }
 
 // AdminListArticles lists articles with their latest snapshot. With
 // issues_only, only those whose backup looks incomplete (keep in step with
 // api.articleIssues): no snapshot although the page was fetched, images that
 // could not be stored, under 100 characters of text, or repeated failed checks.
+// issue keeps only one kind of problem, by the same rules.
 func (q *Queries) AdminListArticles(ctx context.Context, arg AdminListArticlesParams) ([]AdminListArticlesRow, error) {
 	rows, err := q.db.Query(ctx, adminListArticles,
 		arg.Status,
 		arg.IssuesOnly,
+		arg.Issue,
 		arg.Search,
 		arg.Before,
 		arg.MaxRows,
@@ -263,6 +287,7 @@ func (q *Queries) AdminListArticles(ctx context.Context, arg AdminListArticlesPa
 			&i.MissingAssets,
 			&i.TextRunes,
 			&i.CaptureStatus,
+			&i.Matched,
 		); err != nil {
 			return nil, err
 		}

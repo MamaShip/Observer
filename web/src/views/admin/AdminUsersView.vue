@@ -4,6 +4,7 @@ import { formatDate, formatRelative } from '@/lib/format'
 import { session } from '@/session'
 import { useAdminPages } from '@/lib/adminPages'
 import ResultPager from '@/components/admin/ResultPager.vue'
+import ZgIcon from '@/components/ZgIcon.vue'
 import { computed, ref, watch } from 'vue'
 
 const search = ref('')
@@ -102,7 +103,7 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
 <template>
   <header class="zg-pagehead"><div><h1 class="zg-pagehead__title">账户管理</h1>
     <div v-if="session.site" class="zg-pagehead__meta">{{ session.site.registration_mode === 'invite' ? '邀请制已开启' : '开放注册' }}</div></div>
-    <button class="zg-shard zg-btn" :aria-expanded="inviteOpen" @click="inviteOpen = !inviteOpen">邀请用户</button>
+    <button type="button" class="zg-shard zg-btn" :aria-expanded="inviteOpen" @click="inviteOpen = !inviteOpen"><ZgIcon name="user-plus" />邀请用户</button>
   </header>
   <form v-if="inviteOpen" class="zg-toolbar" @submit.prevent="invite">
     <label class="zg-shard zg-input zg-input--text"><input v-model="inviteEmail" type="email" placeholder="邀请邮箱" aria-label="邀请邮箱" required></label>

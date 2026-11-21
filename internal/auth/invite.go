@@ -21,6 +21,12 @@ var (
 	ErrNoInvitesLeft = errors.New("no invitations left this month")
 )
 
+// Errors from RevokeInvite.
+var (
+	ErrInviteNotFound = errors.New("no such invitation")
+	ErrInviteAccepted = errors.New("the invited person has already logged in")
+)
+
 // MonthStart is the start of t's calendar month in Beijing time, when the
 // monthly allowances (notification emails, invitations) reset.
 func MonthStart(t time.Time) time.Time {
@@ -87,6 +93,53 @@ func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string,
 		return nil
 	})
 	return inv, quota, err
+}
+
+// RevokeInvite withdraws one of the user inviterID's invitations that has not
+// been accepted, and gives its place in this month's allowance back. The
+// account it created goes too, unless another invitation of the address is
+// waiting: that invitation then holds the account. An invitation to an
+// address that already had an account is simply removed, so the answer is the
+// same either way.
+func (s *Service) RevokeInvite(ctx context.Context, inviterID, inviteID uuid.UUID) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if _, err := q.LockUser(ctx, inviterID); err != nil {
+			return err
+		}
+		inv, err := q.GetInviteForUpdate(ctx, db.GetInviteForUpdateParams{ID: inviteID, InviterID: &inviterID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if inv.InviteeID != nil {
+			invitee, err := q.LockUser(ctx, *inv.InviteeID)
+			if err != nil {
+				return err
+			}
+			if invitee.LastLoginAt != nil {
+				return ErrInviteAccepted
+			}
+		}
+		if err := q.DeleteInvite(ctx, inv.ID); err != nil {
+			return err
+		}
+		if inv.InviteeID != nil {
+			passed, err := q.PassInvitee(ctx, db.PassInviteeParams{InviteeID: inv.InviteeID, Email: inv.Email})
+			if err != nil {
+				return err
+			}
+			if passed == 0 {
+				if _, err := q.DeleteUnusedAccount(ctx, *inv.InviteeID); err != nil {
+					return err
+				}
+			}
+		}
+		s.log.Info("invitation revoked", "inviter", inviterID, "account_created", inv.InviteeID != nil)
+		return nil
+	})
 }
 
 // InviteQuotaOf counts a user's invitations this month.

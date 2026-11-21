@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ZgIcon from '@/components/ZgIcon.vue'
 import { session } from '@/session'
 
 const steps = [
@@ -16,7 +17,7 @@ const steps = [
         <p class="zg-hero__lede">提交一篇公众号文章，我们立即保存当前版本，之后定期回来看它。一旦确认原文被删除，就发邮件告诉你，备份随时可以打开。</p>
         <div class="zg-hero__cta">
           <RouterLink :to="session.user ? '/watches' : '/login'" class="zg-shard zg-btn">
-            <svg v-if="!session.user" class="zg-icon zg-icon--16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="4" width="20" height="16"/><path d="m2 7 10 6 10-6"/></svg>
+            <ZgIcon v-if="!session.user" name="mail" />
             {{ session.user ? '进入我的观察' : '邮箱登录' }}
           </RouterLink>
           <RouterLink to="/about" class="zg-shard zg-btn zg-btn--ghost">了解如何工作</RouterLink>

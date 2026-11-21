@@ -48,6 +48,7 @@ type Capture struct {
 	ErrorCode  *string
 	Error      *string
 	UpdatedAt  time.Time
+	RebuiltAt  *time.Time
 }
 
 type CheckRun struct {

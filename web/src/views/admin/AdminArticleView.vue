@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ApiError, api, call, messageOf, type AdminArticleDetail, type AdminSnapshot } from '@/api/client'
-import { articleStatusText, captureStateText, issueDetail, issueLabel } from '@/lib/admin'
-import { formatBytes, formatDate, formatDateTime, formatNumber, formatRelative } from '@/lib/format'
+import ZgIcon from '@/components/ZgIcon.vue'
+import { articleStatusText, articleStatusTone, captureStateText, issueDetail, issueLabel, issueTone } from '@/lib/admin'
+import { formatBytes, formatDate, formatDateTime, formatNumber, formatRelative, formatShort } from '@/lib/format'
 import { deletedReasonText } from '@/lib/status'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -121,7 +122,7 @@ async function rebuild(captureId: string) {
 </script>
 
 <template>
-    <RouterLink :to="{ name: 'admin-articles' }" class="zg-pagehead__back">← 文章管理</RouterLink>
+    <RouterLink :to="{ name: 'admin-articles' }" class="zg-pagehead__back back"><ZgIcon name="arrow-left" />文章管理</RouterLink>
     <p v-if="notFound" class="notice notice-info">没有这篇文章。</p>
     <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
     <p v-if="!d && !error && !notFound" class="muted" role="status">加载中…</p>
@@ -130,14 +131,14 @@ async function rebuild(captureId: string) {
         <div>
           <h1 class="zg-pagehead__title zg-pagehead__title--article">{{ d.article.title || '（无标题）' }}</h1>
           <div class="zg-pagehead__meta">
-            <span class="zg-shard zg-tag" :class="d.article.status === 'deleted' ? 'zg-tag--deleted' : 'zg-tag--watching'"><i class="zg-tag__glyph" />{{ articleStatusText(d.article.status) }}</span>
+            <span class="zg-shard zg-tag" :class="'zg-tag--' + articleStatusTone(d.article.status)"><i class="zg-tag__glyph" />{{ articleStatusText(d.article.status) }}</span>
             <span>{{ [d.article.account_name, d.article.author].filter(Boolean).join(' · ') }}</span>
             <span v-if="d.article.published_at" class="zg-meta">发布于 {{ formatDate(d.article.published_at) }}</span>
           </div>
         </div>
         <button v-if="d.can_resnapshot" type="button" class="zg-shard zg-btn zg-btn--secondary" :disabled="resnapshotting"
           @click="resnapshot">
-          <span v-if="resnapshotting" class="spinner" aria-hidden="true" /> 重新备份
+          <span v-if="resnapshotting" class="spinner" aria-hidden="true" /><ZgIcon v-else name="refresh" />重新备份
         </button>
       </header>
       <div v-if="d.article.status === 'deleted'" class="notice deletion small">
@@ -145,7 +146,8 @@ async function rebuild(captureId: string) {
         <template v-if="d.article.deleted_message">。微信显示：「{{ d.article.deleted_message }}」</template>
       </div>
       <div v-if="d.issues.length" class="notice notice-warn small">
-        <p v-for="i in d.issues" :key="i"><strong>{{ issueLabel(i) }}</strong>：{{ issueDetail(i) }}</p>
+        <p v-for="i in d.issues" :key="i"><span class="zg-shard zg-tag" :class="'zg-tag--' + issueTone(i)"><i class="zg-tag__glyph" />{{ issueLabel(i) }}</span>
+          {{ issueDetail(i) }}</p>
       </div>
       <div class="zg-detail">
         <div class="zg-stack">
@@ -162,6 +164,7 @@ async function rebuild(captureId: string) {
                   <tr>
                     <th>版本</th>
                     <th>时间</th>
+                    <th>来源</th>
                     <th class="num">图片</th>
                     <th class="num">缺失</th>
                     <th class="num">正文字数</th>
@@ -172,7 +175,8 @@ async function rebuild(captureId: string) {
                 <tbody>
                   <tr v-for="(s, i) in d.snapshots" :key="s.id">
                     <td class="is-mono">v{{ d.snapshots.length - i }}</td>
-                    <td>{{ formatDateTime(s.captured_at) }}</td>
+                    <td class="is-mono">{{ formatDateTime(s.captured_at) }}</td>
+                    <td>{{ s.source === 'rebuild' ? '原始内容重建' : '抓取' }}</td>
                     <td class="num">{{ s.images }}</td>
                     <td class="num" :class="{ warn: s.missing_images }">{{ s.missing_images }}</td>
                     <td class="num" :class="{ warn: s.text_runes != null && s.text_runes < 100 }">
@@ -214,7 +218,7 @@ async function rebuild(captureId: string) {
                     <td>{{ formatDateTime(c.checked_at) }}</td>
                     <td>{{ c.mode }}</td>
                     <td :class="`r-${c.result}`">{{ checkResults[c.result] ?? c.result }}</td>
-                    <td class="muted">{{ [c.rule, c.reason].filter(Boolean).join(' / ') || '—' }}</td>
+                    <td class="muted is-mono">{{ [c.rule, c.reason].filter(Boolean).join(' / ') || '—' }}</td>
                     <td class="num">{{ c.http_status ?? '—' }}</td>
                     <td class="num">{{ c.wire_bytes != null ? formatBytes(c.wire_bytes) : '—' }}</td>
                     <td class="num">{{ c.duration_ms != null ? `${c.duration_ms} ms` : '—' }}</td>
@@ -257,7 +261,8 @@ async function rebuild(captureId: string) {
                 <tbody>
                   <tr v-for="c in d.captures" :key="c.id">
                     <td>{{ formatDateTime(c.captured_at) }}</td>
-                    <td :class="{ warn: c.status === 'failed' }">{{ captureStateText(c.status, c.error_code) }}</td>
+                    <td :class="{ warn: c.status === 'failed' }">{{ captureStateText(c.status, c.error_code) }}<span v-if="c.rebuilt_at"
+                        class="zg-table__sub">重建于 {{ formatShort(c.rebuilt_at) }}</span></td>
                     <td class="muted detail" :title="c.error">
                       {{ c.error || (c.status === 'pending' ? `更新于 ${formatRelative(c.updated_at)}` : '—') }}</td>
                     <td>
@@ -285,6 +290,7 @@ async function rebuild(captureId: string) {
     </template>
 </template>
 <style scoped>
+.back { display: inline-flex; align-items: center; gap: var(--space-1); }
 .deletion { background: var(--status-deleted-soft); color: var(--ember-ink); }
 .zg-table th, .zg-table td { white-space: nowrap; padding: var(--space-2); }
 .zg-table .detail { white-space: normal; min-width: 8em; font-family: var(--font-mono); }

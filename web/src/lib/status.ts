@@ -1,10 +1,11 @@
 import type { Check, Watch } from '@/api/client'
 
-export type Tone = 'info' | 'ok' | 'danger' | 'muted' | 'warn'
+/** Tag is a zg-tag modifier: the design system's status words. */
+export type Tag = 'watching' | 'expiring' | 'ended' | 'deleted' | 'unreachable' | 'archiving'
 
 export interface Badge {
   label: string
-  tone: Tone
+  tag: Tag
 }
 
 const deletedReasons: Record<string, string> = {
@@ -20,29 +21,39 @@ export function deletedReasonText(code: string | undefined): string {
   return (code && deletedReasons[code]) || deletedReasons.unknown!
 }
 
-/** watchBadge is the one-word state of a watch, as the list shows it. */
-export function watchBadge(w: Watch): Badge {
+/**
+ * watchBadge is the state of a watch in the design system's words only:
+ * 观察中, 即将到期, 已结束, 已删除, 无法访问, and 备份中 while the first
+ * backup is made. How a watch ended is told in words elsewhere.
+ */
+export function watchBadge(w: Watch, now = Date.now()): Badge {
   switch (w.status) {
     case 'resolving':
-      return { label: '备份中', tone: 'info' }
+      return { label: '备份中', tag: 'archiving' }
     case 'active':
-      return { label: '观察中', tone: 'ok' }
+      return daysLeft(w, now) <= endingSoonDays ? { label: '即将到期', tag: 'expiring' } : { label: '观察中', tag: 'watching' }
     case 'failed':
-      return { label: '提交失败', tone: 'warn' }
+      return { label: '无法访问', tag: 'unreachable' }
   }
   switch (w.end_reason) {
     case 'deleted':
-      return { label: '已删除', tone: 'danger' }
-    case 'expired':
-      return { label: '已到期', tone: 'muted' }
-    case 'user_stopped':
-      return { label: '已停止', tone: 'muted' }
+      return { label: '已删除', tag: 'deleted' }
     case 'invalid':
-      return { label: '链接失效', tone: 'warn' }
     case 'unreachable':
-      return { label: '无法访问', tone: 'warn' }
+      return { label: '无法访问', tag: 'unreachable' }
     default:
-      return { label: '已结束', tone: 'muted' }
+      return { label: '已结束', tag: 'ended' }
+  }
+}
+
+/** endedText says how and when a finished watch ended, for its card. */
+export function endedText(w: Watch): string {
+  if (w.status === 'failed') return '没能开始观察'
+  switch (w.end_reason) {
+    case 'deleted': return '确认删除'
+    case 'expired': return '到期于'
+    case 'user_stopped': return '停止于'
+    default: return '结束于'
   }
 }
 
@@ -89,11 +100,11 @@ export function watchSummary(w: Watch): string {
 }
 
 const checkResults: Record<Check['result'], string> = {
-  alive: '正常',
-  deleted: '已删除',
+  alive: '在线',
+  deleted: '确认已删除',
   invalid: '链接无效',
-  blocked: '被微信拦截',
-  error: '检查出错',
+  blocked: '无法访问，稍后复查',
+  error: '检查出错，稍后复查',
 }
 
 export function checkResultText(c: Check): string {

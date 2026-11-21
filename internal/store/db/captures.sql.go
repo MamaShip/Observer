@@ -98,7 +98,7 @@ func (q *Queries) FinishCapture(ctx context.Context, arg FinishCaptureParams) er
 }
 
 const getCapture = `-- name: GetCapture :one
-SELECT id, article_id, raw_key, url, captured_at, status, error_code, error, updated_at FROM captures WHERE id = $1
+SELECT id, article_id, raw_key, url, captured_at, status, error_code, error, updated_at, rebuilt_at FROM captures WHERE id = $1
 `
 
 func (q *Queries) GetCapture(ctx context.Context, id uuid.UUID) (Capture, error) {
@@ -114,12 +114,13 @@ func (q *Queries) GetCapture(ctx context.Context, id uuid.UUID) (Capture, error)
 		&i.ErrorCode,
 		&i.Error,
 		&i.UpdatedAt,
+		&i.RebuiltAt,
 	)
 	return i, err
 }
 
 const getCaptureForUpdate = `-- name: GetCaptureForUpdate :one
-SELECT id, article_id, raw_key, url, captured_at, status, error_code, error, updated_at FROM captures WHERE id = $1 FOR UPDATE
+SELECT id, article_id, raw_key, url, captured_at, status, error_code, error, updated_at, rebuilt_at FROM captures WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetCaptureForUpdate(ctx context.Context, id uuid.UUID) (Capture, error) {
@@ -135,12 +136,13 @@ func (q *Queries) GetCaptureForUpdate(ctx context.Context, id uuid.UUID) (Captur
 		&i.ErrorCode,
 		&i.Error,
 		&i.UpdatedAt,
+		&i.RebuiltAt,
 	)
 	return i, err
 }
 
 const listCaptures = `-- name: ListCaptures :many
-SELECT id, article_id, raw_key, url, captured_at, status, error_code, error, updated_at FROM captures WHERE article_id = $1 ORDER BY captured_at DESC, id DESC LIMIT 50
+SELECT id, article_id, raw_key, url, captured_at, status, error_code, error, updated_at, rebuilt_at FROM captures WHERE article_id = $1 ORDER BY captured_at DESC, id DESC LIMIT 50
 `
 
 func (q *Queries) ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capture, error) {
@@ -162,6 +164,7 @@ func (q *Queries) ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capt
 			&i.ErrorCode,
 			&i.Error,
 			&i.UpdatedAt,
+			&i.RebuiltAt,
 		); err != nil {
 			return nil, err
 		}
@@ -174,7 +177,8 @@ func (q *Queries) ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capt
 }
 
 const retryCapture = `-- name: RetryCapture :exec
-UPDATE captures SET status = 'pending', error_code = NULL, error = NULL, updated_at = $1::timestamptz
+UPDATE captures SET status = 'pending', error_code = NULL, error = NULL, updated_at = $1::timestamptz,
+                    rebuilt_at = $1::timestamptz
 WHERE id = $2
 `
 
@@ -183,6 +187,7 @@ type RetryCaptureParams struct {
 	ID  uuid.UUID
 }
 
+// RetryCapture queues a failed capture's build again and marks it rebuilt.
 func (q *Queries) RetryCapture(ctx context.Context, arg RetryCaptureParams) error {
 	_, err := q.db.Exec(ctx, retryCapture, arg.Now, arg.ID)
 	return err
