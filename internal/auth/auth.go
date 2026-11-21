@@ -22,7 +22,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
 	"golang.org/x/time/rate"
 
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -83,7 +82,7 @@ type Service struct {
 	cfg    Config
 	log    *slog.Logger
 	now    func() time.Time
-	jobs   *river.Client[pgx.Tx]
+	jobs   JobInserter
 	ips    *ipLimiter
 }
 

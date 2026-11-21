@@ -47,6 +47,7 @@ type Querier interface {
 	ConsumeInviteToken(ctx context.Context, arg ConsumeInviteTokenParams) (int64, error)
 	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
+	// CountInvitesSince also counts revoked invitations that had queued an email.
 	CountInvitesSince(ctx context.Context, arg CountInvitesSinceParams) (int32, error)
 	CountOpenWatches(ctx context.Context, userID uuid.UUID) (int64, error)
 	// CountUserNotificationsSince counts the notification emails (not login
@@ -171,12 +172,17 @@ type Querier interface {
 	ReactivateArticle(ctx context.Context, arg ReactivateArticleParams) error
 	RecordArticleAlive(ctx context.Context, arg RecordArticleAliveParams) error
 	RecordArticleFailure(ctx context.Context, arg RecordArticleFailureParams) (int32, error)
+	RecordRevokedInvite(ctx context.Context, arg RecordRevokedInviteParams) error
 	// ReleaseLoginRequest gives back a claim whose email could not be sent.
 	ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error
 	// RenewWatch makes a watch active until expires_at: an active one is
 	// extended, an expired or stopped one is watched again.
 	RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, error)
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
+	// RequeueExpiredInviteMail lets a repeated invitation send a fresh link once
+	// the last one expired unused. It looks only at the invitation, so the answer
+	// is the same whether or not the address has an account.
+	RequeueExpiredInviteMail(ctx context.Context, arg RequeueExpiredInviteMailParams) (int64, error)
 	// ReserveInvitedAccount locks the address through a concurrent invite or revocation.
 	// PostgreSQL 18 exposes the old row on conflict and NULL on insert.
 	ReserveInvitedAccount(ctx context.Context, email string) (ReserveInvitedAccountRow, error)

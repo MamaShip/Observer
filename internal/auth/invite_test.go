@@ -192,8 +192,27 @@ func TestInvitationLinks(t *testing.T) {
 		t.Fatalf("concurrent acceptance: %v, %v", a, b)
 	}
 	_, expired := invite("expired@example.com")
+	jobs := func() (n int) {
+		t.Helper()
+		if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE kind = 'email_invite'").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	queued := jobs()
+	if _, _, err := s.Invite(ctx, owner.ID, "expired@example.com", 0); err != nil || jobs() != queued {
+		t.Fatalf("repeat while the link is valid: %d jobs, %v", jobs()-queued, err)
+	}
 	clk.advance(InviteLinkTTL)
 	assertGone(expired)
+	// Repeating the invitation once the link expired sends a fresh one.
+	_, fresh := invite("expired@example.com")
+	if fresh == expired || jobs() != queued+1 {
+		t.Fatalf("no fresh link: %d jobs", jobs()-queued)
+	}
+	if _, err := s.AcceptInvite(ctx, fresh, ""); err != nil {
+		t.Fatalf("fresh link: %v", err)
+	}
 	_, disabled := invite("disabled@example.com")
 	if _, err := q.SetUserStatus(ctx, db.SetUserStatusParams{Email: "disabled@example.com", Status: "disabled"}); err != nil {
 		t.Fatal(err)
@@ -255,8 +274,26 @@ func TestRevokeInvite(t *testing.T) {
 	if _, err := q.GetUserByEmail(ctx, "member@example.com"); err != nil {
 		t.Errorf("existing account: %v", err)
 	}
-	if quota, _ := s.InviteQuotaOf(ctx, alice.ID, limit); quota.Used != 1 {
+	// Its email was queued, so its place stays counted.
+	if quota, _ := s.InviteQuotaOf(ctx, alice.ID, limit); quota.Used != 2 {
 		t.Errorf("allowance after revoking: %+v", quota)
+	}
+	// An invitation from before invitation emails gives its place back.
+	if _, err := q.CreateUser(ctx, "early@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	var early uuid.UUID
+	if err := s.pool.QueryRow(ctx, "INSERT INTO invites (inviter_id, email) VALUES ($1, 'early@example.com') RETURNING id", alice.ID).Scan(&early); err != nil {
+		t.Fatal(err)
+	}
+	if quota, _ := s.InviteQuotaOf(ctx, alice.ID, limit); quota.Used != 3 {
+		t.Errorf("allowance with the early invitation: %+v", quota)
+	}
+	if err := s.RevokeInvite(ctx, alice.ID, early); err != nil {
+		t.Fatal(err)
+	}
+	if quota, _ := s.InviteQuotaOf(ctx, alice.ID, limit); quota.Used != 2 {
+		t.Errorf("allowance after revoking the early invitation: %+v", quota)
 	}
 
 	// Carol invites bob too; when alice withdraws, carol's invitation holds

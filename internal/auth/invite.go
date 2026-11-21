@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/MamaShip/Observer/internal/mail"
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -27,8 +28,13 @@ func (InviteMailArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{Queue: mail.Queue, MaxAttempts: 8}
 }
 
+// JobInserter queues invitation emails in the caller's transaction.
+type JobInserter interface {
+	InsertTx(ctx context.Context, tx pgx.Tx, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error)
+}
+
 // SetJobs connects the transactional invitation queue before accepting requests.
-func (s *Service) SetJobs(j *river.Client[pgx.Tx]) { s.jobs = j }
+func (s *Service) SetJobs(j JobInserter) { s.jobs = j }
 
 // Errors from Invite.
 var (
@@ -83,7 +89,7 @@ func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string,
 		if inviter.Email == email {
 			return ErrInviteSelf
 		}
-		used, err := q.CountInvitesSince(ctx, db.CountInvitesSinceParams{InviterID: &inviterID, Since: MonthStart(s.now())})
+		used, err := q.CountInvitesSince(ctx, db.CountInvitesSinceParams{InviterID: inviterID, Since: MonthStart(s.now())})
 		if err != nil {
 			return err
 		}
@@ -118,7 +124,8 @@ func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string,
 }
 
 // RevokeInvite withdraws one of the user inviterID's invitations that has not
-// been accepted, and gives its place in this month's allowance back. The
+// been accepted. Its place in this month's allowance is given back only if it
+// never queued an email, which does not depend on the address. The
 // account it created goes too, unless another invitation of the address is
 // waiting: that invitation then holds the account. An invitation to an
 // address that already had an account is simply removed, so the answer is the
@@ -158,6 +165,13 @@ func (s *Service) RevokeInvite(ctx context.Context, inviterID, inviteID uuid.UUI
 		if err := q.DeleteInvite(ctx, inv.ID); err != nil {
 			return err
 		}
+		if inv.MailQueued {
+			// Keep it counted, or inviting and revoking in turn would email
+			// any number of addresses.
+			if err := q.RecordRevokedInvite(ctx, db.RecordRevokedInviteParams{InviterID: inviterID, InvitedAt: inv.CreatedAt}); err != nil {
+				return err
+			}
+		}
 		if inv.InviteeID != nil {
 			passed, err := q.PassInvitee(ctx, db.PassInviteeParams{InviteeID: inv.InviteeID, Email: inv.Email})
 			if err != nil {
@@ -176,7 +190,7 @@ func (s *Service) RevokeInvite(ctx context.Context, inviterID, inviteID uuid.UUI
 
 // InviteQuotaOf counts a user's invitations this month.
 func (s *Service) InviteQuotaOf(ctx context.Context, userID uuid.UUID, limit int) (InviteQuota, error) {
-	used, err := s.q.CountInvitesSince(ctx, db.CountInvitesSinceParams{InviterID: &userID, Since: MonthStart(s.now())})
+	used, err := s.q.CountInvitesSince(ctx, db.CountInvitesSinceParams{InviterID: userID, Since: MonthStart(s.now())})
 	return InviteQuota{Used: int(used), Limit: limit}, err
 }
 
@@ -206,10 +220,19 @@ func (s *Service) InviteFromCLI(ctx context.Context, email string) error {
 	})
 }
 
+// queueInvite queues an invitation's first email, or a fresh link when the
+// invitation is repeated after its last link expired unused.
 func (s *Service) queueInvite(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
-	n, err := s.q.WithTx(tx).QueueInviteMailOnce(ctx, id)
-	if err != nil || n == 0 {
+	q := s.q.WithTx(tx)
+	n, err := q.QueueInviteMailOnce(ctx, id)
+	if err != nil {
 		return err
+	}
+	if n == 0 {
+		n, err = q.RequeueExpiredInviteMail(ctx, db.RequeueExpiredInviteMailParams{ID: id, Now: s.now()})
+		if err != nil || n == 0 {
+			return err
+		}
 	}
 	_, err = s.jobs.InsertTx(ctx, tx, InviteMailArgs{InviteID: id}, nil)
 	return err
@@ -234,7 +257,9 @@ func (s *Service) DeliverInvite(ctx context.Context, id uuid.UUID) error {
 	if err := s.sender.SendInvite(ctx, email, token, InviteLinkTTL); err != nil {
 		return err
 	}
-	return s.q.MarkInviteMailed(ctx, id)
+	// A retry would replace the token in the email just sent, so record
+	// the delivery even if the job's context ends now.
+	return s.q.MarkInviteMailed(context.WithoutCancel(ctx), id)
 }
 
 // AcceptInvite uses proof of mailbox ownership to complete registration. A

@@ -109,7 +109,7 @@ func (SweepArgs) Kind() string { return "notify_sweep" }
 // provider limit; everything else stops at 90% so people can still sign in
 // after a burst of notifications.
 func (n *Notifier) limitFor(kind string) int {
-	if kind == "login" || (kind == "invite" && n.cfg.DailyLimit == 1) {
+	if kind == "login" {
 		return n.cfg.DailyLimit
 	}
 	return n.cfg.DailyLimit * 9 / 10

@@ -32,15 +32,18 @@ func (q *Queries) ConsumeInviteToken(ctx context.Context, arg ConsumeInviteToken
 }
 
 const countInvitesSince = `-- name: CountInvitesSince :one
-SELECT count(*)::int FROM invites
-WHERE inviter_id = $1 AND created_at >= $2::timestamptz
+SELECT ((SELECT count(*) FROM invites
+         WHERE inviter_id = $1::uuid AND created_at >= $2::timestamptz)
+      + (SELECT count(*) FROM revoked_invites
+         WHERE inviter_id = $1::uuid AND invited_at >= $2::timestamptz))::int
 `
 
 type CountInvitesSinceParams struct {
-	InviterID *uuid.UUID
+	InviterID uuid.UUID
 	Since     time.Time
 }
 
+// CountInvitesSince also counts revoked invitations that had queued an email.
 func (q *Queries) CountInvitesSince(ctx context.Context, arg CountInvitesSinceParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countInvitesSince, arg.InviterID, arg.Since)
 	var column_1 int32
@@ -338,6 +341,41 @@ UPDATE invites SET mail_queued = true WHERE id = $1 AND NOT mail_queued
 
 func (q *Queries) QueueInviteMailOnce(ctx context.Context, id uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, queueInviteMailOnce, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordRevokedInvite = `-- name: RecordRevokedInvite :exec
+INSERT INTO revoked_invites (inviter_id, invited_at) VALUES ($1, $2)
+`
+
+type RecordRevokedInviteParams struct {
+	InviterID uuid.UUID
+	InvitedAt time.Time
+}
+
+func (q *Queries) RecordRevokedInvite(ctx context.Context, arg RecordRevokedInviteParams) error {
+	_, err := q.db.Exec(ctx, recordRevokedInvite, arg.InviterID, arg.InvitedAt)
+	return err
+}
+
+const requeueExpiredInviteMail = `-- name: RequeueExpiredInviteMail :execrows
+UPDATE invites SET token_hash = NULL, token_expires_at = NULL, mail_sent_at = NULL
+WHERE id = $1 AND token_expires_at <= $2::timestamptz
+`
+
+type RequeueExpiredInviteMailParams struct {
+	ID  uuid.UUID
+	Now time.Time
+}
+
+// RequeueExpiredInviteMail lets a repeated invitation send a fresh link once
+// the last one expired unused. It looks only at the invitation, so the answer
+// is the same whether or not the address has an account.
+func (q *Queries) RequeueExpiredInviteMail(ctx context.Context, arg RequeueExpiredInviteMailParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requeueExpiredInviteMail, arg.ID, arg.Now)
 	if err != nil {
 		return 0, err
 	}

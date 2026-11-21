@@ -112,7 +112,8 @@ func (h *handlers) registerInvites(g huma.API) {
 	huma.Register(g, huma.Operation{
 		OperationID: "revoke-invite", Method: http.MethodDelete, Path: "/invites/{id}",
 		Summary: "Revoke an invitation", Tags: tags, Security: loggedIn, DefaultStatus: http.StatusNoContent,
-		Description: "Withdraws an invitation that has not been accepted and returns its place in this month's allowance. " +
+		Description: "Withdraws an invitation that has not been accepted. Its place in this month's allowance " +
+			"comes back only if it never queued an email. " +
 			"The address can no longer log in unless someone else invited it too.",
 	}, func(ctx context.Context, in *idInput) (*struct{}, error) {
 		err := h.d.Auth.RevokeInvite(ctx, principalFrom(ctx).User.ID, in.ID)

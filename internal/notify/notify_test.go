@@ -143,7 +143,7 @@ func TestDailyLimit(t *testing.T) {
 }
 
 func TestInvitationMailLimits(t *testing.T) {
-	e := newEnv(t, 1)
+	e := newEnv(t, 2) // invitations may use 1 of 2, like notifications
 	const recipient = "guest@example.com"
 	const validity = 7 * 24 * time.Hour
 	now := time.Date(2026, 11, 21, 3, 0, 0, 0, time.UTC)

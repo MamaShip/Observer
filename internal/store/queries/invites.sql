@@ -2,9 +2,12 @@
 -- name: LockUser :one
 SELECT * FROM users WHERE id = $1 FOR UPDATE;
 
+-- CountInvitesSince also counts revoked invitations that had queued an email.
 -- name: CountInvitesSince :one
-SELECT count(*)::int FROM invites
-WHERE inviter_id = sqlc.arg(inviter_id) AND created_at >= sqlc.arg(since)::timestamptz;
+SELECT ((SELECT count(*) FROM invites
+         WHERE inviter_id = sqlc.arg(inviter_id)::uuid AND created_at >= sqlc.arg(since)::timestamptz)
+      + (SELECT count(*) FROM revoked_invites
+         WHERE inviter_id = sqlc.arg(inviter_id)::uuid AND invited_at >= sqlc.arg(since)::timestamptz))::int;
 
 -- name: GetInviteByInviter :one
 SELECT sqlc.embed(i), (u.last_login_at IS NOT NULL)::bool AS accepted
@@ -40,6 +43,9 @@ SELECT * FROM invites WHERE id = sqlc.arg(id) AND inviter_id = sqlc.arg(inviter_
 -- name: DeleteInvite :exec
 DELETE FROM invites WHERE id = $1;
 
+-- name: RecordRevokedInvite :exec
+INSERT INTO revoked_invites (inviter_id, invited_at) VALUES (sqlc.arg(inviter_id), sqlc.arg(invited_at));
+
 -- PassInvitee hands an account to the oldest other invitation of its
 -- address, once the invitation that created it is withdrawn.
 -- name: PassInvitee :execrows
@@ -59,6 +65,13 @@ WHERE email = sqlc.arg(email) OR (inviter_id = sqlc.arg(user_id) AND invitee_id 
 
 -- name: QueueInviteMailOnce :execrows
 UPDATE invites SET mail_queued = true WHERE id = $1 AND NOT mail_queued;
+
+-- RequeueExpiredInviteMail lets a repeated invitation send a fresh link once
+-- the last one expired unused. It looks only at the invitation, so the answer
+-- is the same whether or not the address has an account.
+-- name: RequeueExpiredInviteMail :execrows
+UPDATE invites SET token_hash = NULL, token_expires_at = NULL, mail_sent_at = NULL
+WHERE id = sqlc.arg(id) AND token_expires_at <= sqlc.arg(now)::timestamptz;
 
 -- name: PrepareInviteMail :one
 UPDATE invites i SET token_hash = sqlc.arg(token_hash), token_expires_at = sqlc.arg(expires_at)::timestamptz

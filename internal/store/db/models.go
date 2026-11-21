@@ -109,6 +109,12 @@ type LoginRequest struct {
 	LastAt time.Time
 }
 
+type RevokedInvite struct {
+	ID        uuid.UUID
+	InviterID uuid.UUID
+	InvitedAt time.Time
+}
+
 type Session struct {
 	ID         uuid.UUID
 	UserID     uuid.UUID

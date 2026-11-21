@@ -7,7 +7,9 @@ import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
 const error = ref('')
-const confirmSwitch = ref(false)
+// Wait for a click: mail scanners that run scripts must not spend the
+// one-time link (and receive the session).
+const ready = ref(false)
 let token = ''
 
 onMounted(async () => {
@@ -15,15 +17,13 @@ onMounted(async () => {
   if (route.hash) await router.replace({ path: '/invite' })
   if (!token) {
     error.value = '邀请链接不完整，请重新打开邮件中的链接。'
-  } else if (session.user) {
-    confirmSwitch.value = true
   } else {
-    await accept()
+    ready.value = true
   }
 })
 
 async function accept() {
-  confirmSwitch.value = false
+  ready.value = false
   try {
     const r = await call(api.POST('/api/v1/auth/accept-invite', { body: { token } }))
     setUser(r.user)
@@ -41,10 +41,11 @@ async function accept() {
       <p class="notice notice-danger" role="alert">{{ error }}</p>
       <div class="zg-actions"><RouterLink to="/login" class="zg-shard zg-btn">邮箱登录</RouterLink></div>
     </template>
-    <template v-else-if="confirmSwitch">
-      <p>当前登录的邮箱是 {{ session.user?.email }}。接受邀请后，此浏览器将使用受邀账号。</p>
-      <div class="zg-actions"><button class="zg-shard zg-btn" @click="accept">切换账号并接受邀请</button>
-        <RouterLink to="/watches" class="zg-shard zg-btn zg-btn--secondary">保留当前账号</RouterLink></div>
+    <template v-else-if="ready">
+      <p v-if="session.user">当前登录的邮箱是 {{ session.user.email }}。接受邀请后，此浏览器将使用受邀账号。</p>
+      <p v-else>点击下方按钮，完成注册并登录。</p>
+      <div class="zg-actions"><button class="zg-shard zg-btn" @click="accept">{{ session.user ? '切换账号并接受邀请' : '接受邀请并注册' }}</button>
+        <RouterLink v-if="session.user" to="/watches" class="zg-shard zg-btn zg-btn--secondary">保留当前账号</RouterLink></div>
     </template>
     <p v-else class="muted" role="status"><span class="spinner" aria-hidden="true" /> 正在完成注册…</p>
   </section>

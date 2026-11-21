@@ -122,11 +122,17 @@ describe('opening the invitation email', () => {
     return w
   }
 
-  it('signs a visitor in with the token and opens their watches', async () => {
+  it('signs a visitor in after a click and opens their watches', async () => {
     session.user = null
     const accept = vi.fn(() => ({ status: 200, body: { user } }))
     routes['POST /api/v1/auth/accept-invite'] = accept
     const w = await openLink()
+    // Opening the link alone (as a mail scanner might) spends nothing.
+    expect(accept).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe('/invite')
+    expect(w.find('a').exists()).toBe(false)
+    await w.get('button').trigger('click')
+    await flushPromises()
     expect(accept).toHaveBeenCalledExactlyOnceWith({ token })
     expect(router.currentRoute.value.fullPath).toBe('/watches')
     expect(session.user).toMatchObject({ email: user.email })

@@ -203,7 +203,7 @@ async function deleteAccount() {
         <span class="zg-field__hint">
           <template v-if="invitesLeft !== null">本月还可以邀请 {{ invitesLeft }} 人，每月 1 日恢复。</template>
           <template v-else>本月已邀请 {{ invites.used_this_month }} 人。</template>
-          对方登录前可以撤回，撤回后名额退还。</span>
+          对方登录前可以撤回。已发出邀请邮件的，撤回后名额不退还。</span>
       </form>
       <p v-if="inviteError" class="notice notice-danger" role="alert">{{ inviteError }}</p>
       <p v-if="invited" class="notice notice-ok" role="status">已邀请 <strong>{{ invited }}</strong>。首次注册的朋友可以从邮件中接受邀请。</p>

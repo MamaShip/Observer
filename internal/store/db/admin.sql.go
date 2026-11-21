@@ -310,7 +310,8 @@ SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly
   i.inviter_id AS inviter_id,
   coalesce(inv.email, '')::text AS inviter_email,
   (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.invitee_id IS NOT NULL)::int AS invitees,
-  (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= $1::timestamptz)::int AS invites_this_month,
+  ((SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= $1::timestamptz)
+    + (SELECT count(*) FROM revoked_invites r WHERE r.inviter_id = u.id AND r.invited_at >= $1::timestamptz))::int AS invites_this_month,
   wb.created_at AS wechat_bound_at
 FROM users u
 LEFT JOIN invites i ON i.invitee_id = u.id

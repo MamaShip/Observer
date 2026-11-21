@@ -277,7 +277,7 @@ export interface paths {
         post?: never;
         /**
          * Revoke an invitation
-         * @description Withdraws an invitation that has not been accepted and returns its place in this month's allowance. The address can no longer log in unless someone else invited it too.
+         * @description Withdraws an invitation that has not been accepted. Its place in this month's allowance comes back only if it never queued an email. The address can no longer log in unless someone else invited it too.
          */
         delete: operations["revoke-invite"];
         options?: never;

@@ -133,7 +133,8 @@ func TestInvitations(t *testing.T) {
 	}
 
 	// Bob has logged in, so his invitation is accepted and stays; the one to
-	// the existing account is pending and can be withdrawn, freeing its place.
+	// the existing account is pending and can be withdrawn. Its email was
+	// queued, so its place stays used.
 	alice.api(http.MethodGet, "/invites", nil, 200, &invs)
 	status := map[string]api.Invitation{}
 	for _, i := range invs.Items {
@@ -147,8 +148,13 @@ func TestInvitations(t *testing.T) {
 	alice.api(http.MethodDelete, "/invites/"+status["member@example.com"].ID.String(), nil, http.StatusNoContent, nil)
 	invs.Items = nil
 	alice.api(http.MethodGet, "/invites", nil, 200, &invs)
-	if invs.UsedThisMonth != 1 || len(invs.Items) != 1 {
+	if invs.UsedThisMonth != 2 || len(invs.Items) != 1 {
 		t.Errorf("after revoking = %+v", invs)
+	}
+	users.Items = nil
+	ops.api(http.MethodGet, "/admin/users?search=alice", nil, 200, &users)
+	if len(users.Items) != 1 || users.Items[0].InvitesThisMonth != 2 {
+		t.Errorf("alice after revoking = %+v", users.Items)
 	}
 
 	// Alice deletes her account: Bob is still marked as invited, by nobody
