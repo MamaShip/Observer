@@ -210,7 +210,7 @@ function changeEmail() {
       </li>
     </ol>
       <p v-if="session.site?.registration_mode === 'invite'" class="notice notice-info">
-        目前处于邀请测试阶段，只有受邀的邮箱能收到验证码。已经在用的朋友可以在「设置」里邀请你。
+        目前处于邀请测试阶段，朋友可以在「设置」里邀请你。首次注册时，点击邀请邮件中的链接即可；之后在这里用邮箱验证码登录。
       </p>
   </aside>
   </div>

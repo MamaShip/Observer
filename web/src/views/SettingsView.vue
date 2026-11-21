@@ -51,21 +51,14 @@ const inviteEmail = ref('')
 const inviting = ref(false)
 const inviteError = ref('')
 const invited = ref('') // the address just invited
-const copied = ref(false)
 const invitesLeft = computed(() =>
   invites.value && invites.value.monthly_limit > 0 ? Math.max(invites.value.monthly_limit - invites.value.used_this_month, 0) : null,
 )
-const loginURL = `${location.origin}/login`
-const inviteText = computed(
-  () => `我邀请你使用${serviceName()}：打开 ${loginURL} ，用 ${invited.value} 获取验证码登录即可。`,
-)
-
 async function invite() {
   if (!invites.value) return
   inviting.value = true
   inviteError.value = ''
   invited.value = ''
-  copied.value = false
   try {
     const r = await call(api.POST('/api/v1/invites', { body: { email: inviteEmail.value.trim() } }))
     invited.value = r.invitation.email
@@ -85,6 +78,7 @@ async function revoke(id: string) {
   inviteError.value = ''
   try {
     await call(api.DELETE('/api/v1/invites/{id}', { params: { path: { id } } }))
+    invited.value = ''
     invites.value = await call(api.GET('/api/v1/invites'))
   } catch (e) {
     inviteError.value = messageOf(e)
@@ -93,14 +87,6 @@ async function revoke(id: string) {
   }
 }
 
-async function copyInvite() {
-  try {
-    await navigator.clipboard.writeText(inviteText.value)
-    copied.value = true
-  } catch {
-    // Some in-app browsers refuse; the text is on screen to copy by hand.
-  }
-}
 const error = ref('')
 const loggingOut = ref(false)
 const confirmDelete = ref(false)
@@ -202,7 +188,7 @@ async function deleteAccount() {
       <div class="zg-panel__head"><h2 class="zg-panel__title">邀请朋友</h2>
         <span class="zg-meta">{{ invitesLeft !== null ? `剩余 ${invitesLeft} / ${invites.monthly_limit} 个名额` : '管理员不限名额' }}</span></div>
       <p class="muted small">
-        现在只有受邀的邮箱才能登录。填写对方的邮箱后，对方就可以用这个邮箱获取验证码登录。我们不会给对方发邮件，请你自己告诉对方。
+        填写朋友的邮箱，我们会发送邀请邮件。对方点击邮件中的链接即可注册并登录。
       </p>
       <form class="zg-field invite-form" @submit.prevent="invite">
         <label for="invite-email" class="zg-field__label">朋友的邮箱</label>
@@ -216,11 +202,7 @@ async function deleteAccount() {
           对方登录前可以撤回，撤回后名额退还。</span>
       </form>
       <p v-if="inviteError" class="notice notice-danger" role="alert">{{ inviteError }}</p>
-      <div v-if="invited" class="notice notice-ok stack" role="status">
-        <p>已邀请 <strong>{{ invited }}</strong>。把下面这段话发给对方：</p>
-        <p class="invite-text">{{ inviteText }}</p>
-        <p><button type="button" class="zg-shard zg-btn zg-btn--secondary" @click="copyInvite">{{ copied ? '已复制' : '复制' }}</button></p>
-      </div>
+      <p v-if="invited" class="notice notice-ok" role="status">已邀请 <strong>{{ invited }}</strong>。首次注册的朋友可以从邮件中接受邀请。</p>
       <div v-if="invites.items.length">
         <h3 class="invite-head">邀请记录</h3>
         <div v-for="i in invites.items" :key="i.id" class="zg-setrow">
@@ -264,7 +246,6 @@ async function deleteAccount() {
 </template>
 <style scoped>
 .invite-form { max-width: none; }
-.invite-text { user-select: all; }
 .invite-head { margin: 0; padding-bottom: var(--space-2); border-bottom: var(--border-hair) solid var(--line-100); font: 500 12px/18px var(--font-sans); color: var(--ink-300); }
 .invite-head + .zg-setrow { padding-top: var(--space-3); }
 .invite-email { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }

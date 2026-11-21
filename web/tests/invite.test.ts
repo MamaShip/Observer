@@ -51,7 +51,7 @@ beforeEach(() => {
 })
 
 describe('inviting from the settings page', () => {
-  it('shows what is left, then the message to send', async () => {
+  it('shows the remaining quota and confirms the email invitation', async () => {
     let sent: Record<string, unknown> = {}
     routes['POST /api/v1/invites'] = (b) => {
       sent = b
@@ -67,7 +67,7 @@ describe('inviting from the settings page', () => {
     await flushPromises()
     expect(sent).toEqual({ email: 'Bob@Example.com' })
     expect(w.find('[role=status]').text()).toContain('已邀请 bob@example.com')
-    expect(w.find('.invite-text').text()).toContain('/login')
+    expect(w.find('[role=status]').text()).toContain('从邮件中接受邀请')
     expect(w.text()).toContain('本月还可以邀请 0 人')
     expect(w.find('.invite-form button').attributes('disabled')).toBeDefined()
     expect(w.text()).toContain('剩余 0 / 5 个名额')
@@ -109,5 +109,41 @@ describe('inviting from the settings page', () => {
     routes['GET /api/v1/invites'] = () => ({ status: 200, body: invitations({ can_invite: false, monthly_limit: 0 }) })
     const w = await mountSettings()
     expect(w.text()).not.toContain('邀请朋友')
+  })
+})
+
+describe('opening the invitation email', () => {
+  const token = 't'.repeat(43)
+  async function openLink() {
+    await router.push('/invite#t=' + token)
+    const InviteView = (await import('@/views/InviteView.vue')).default
+    const w = mount(InviteView, { global: { plugins: [router] } })
+    await flushPromises()
+    return w
+  }
+
+  it('signs a visitor in with the token and opens their watches', async () => {
+    session.user = null
+    const accept = vi.fn(() => ({ status: 200, body: { user } }))
+    routes['POST /api/v1/auth/accept-invite'] = accept
+    const w = await openLink()
+    expect(accept).toHaveBeenCalledExactlyOnceWith({ token })
+    expect(router.currentRoute.value.fullPath).toBe('/watches')
+    expect(session.user).toMatchObject({ email: user.email })
+    w.unmount()
+  })
+
+  it('protects the current session and offers email login for a spent link', async () => {
+    session.user = user as never
+    const accept = vi.fn(() => ({ status: 410, body: { detail: '邀请链接已失效。' } }))
+    routes['POST /api/v1/auth/accept-invite'] = accept
+    const w = await openLink()
+    expect(accept).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe('/invite')
+    await w.get('button').trigger('click')
+    await flushPromises()
+    expect(w.get('[role=alert]').text()).toContain('已失效')
+    expect(w.get('a').attributes('href')).toBe('/login')
+    w.unmount()
   })
 })

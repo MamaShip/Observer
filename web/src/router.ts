@@ -25,6 +25,7 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    { path: '/invite', name: 'invite', component: () => import('./views/InviteView.vue'), meta: { title: '接受邀请' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: '登录', guest: true } },
     { path: '/watches', name: 'watches', component: WatchListView, meta: { title: '我的观察', auth: true } },
     { path: '/watches/:id', name: 'watch', component: WatchDetailView, meta: { title: '观察详情', auth: true } },

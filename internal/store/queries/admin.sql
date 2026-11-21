@@ -23,6 +23,7 @@ SELECT
 SELECT
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND sent_at >= sqlc.arg(since)::timestamptz)::int AS emails,
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind = 'login' AND sent_at >= sqlc.arg(since)::timestamptz)::int AS login_emails,
+  (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind = 'invite' AND sent_at >= sqlc.arg(since)::timestamptz)::int AS invite_emails,
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind IN ('deleted', 'expired') AND sent_at >= sqlc.arg(since)::timestamptz)::int AS notification_emails,
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind = 'alert' AND sent_at >= sqlc.arg(since)::timestamptz)::int AS alert_emails,
   (SELECT count(*) FROM email_log WHERE status = 'failed' AND created_at >= sqlc.arg(since)::timestamptz)::int AS failed_emails,

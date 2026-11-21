@@ -59,6 +59,7 @@ type AdminTotals struct {
 type AdminUsage struct {
 	Emails             int   `json:"emails"`
 	LoginEmails        int   `json:"login_emails"`
+	InviteEmails       int   `json:"invite_emails"`
 	NotificationEmails int   `json:"notification_emails"`
 	AlertEmails        int   `json:"alert_emails"`
 	FailedEmails       int   `json:"failed_emails"`
@@ -109,7 +110,7 @@ type adminOverviewOutput struct{ Body AdminOverview }
 
 func usageFrom(r db.AdminUsageRow) AdminUsage {
 	return AdminUsage{
-		Emails: int(r.Emails), LoginEmails: int(r.LoginEmails), NotificationEmails: int(r.NotificationEmails),
+		Emails: int(r.Emails), LoginEmails: int(r.LoginEmails), InviteEmails: int(r.InviteEmails), NotificationEmails: int(r.NotificationEmails),
 		AlertEmails: int(r.AlertEmails), FailedEmails: int(r.FailedEmails), Checks: int(r.Checks),
 		Blocked: int(r.Blocked), Errors: int(r.Errors), PageBytes: r.PageBytes, NewImageBytes: r.NewAssetBytes,
 		NewUsers: int(r.NewUsers), NewWatches: int(r.NewWatches), NewArticles: int(r.NewArticles),
@@ -269,12 +270,6 @@ type adminUsersOutput struct {
 type adminUserOutput struct {
 	Status int
 	Body   AdminUser
-}
-
-type adminInviteInput struct {
-	Body struct {
-		Email string `json:"email" maxLength:"254"`
-	}
 }
 
 type adminPatchUserInput struct {
@@ -476,28 +471,13 @@ func (h *handlers) registerAdmin(g huma.API) {
 
 	huma.Register(g, huma.Operation{
 		OperationID: "admin-invite-user", Method: http.MethodPost, Path: "/admin/users",
-		Summary: "Invite an email address (create the account)", Tags: tags, Security: loggedIn,
+		Summary: "Invite an email address by email", Tags: tags, Security: loggedIn,
 		DefaultStatus: http.StatusCreated,
-	}, func(ctx context.Context, in *adminInviteInput) (*adminUserOutput, error) {
+	}, func(ctx context.Context, in *inviteInput) (*inviteOutput, error) {
 		if err := requireAdmin(ctx); err != nil {
 			return nil, err
 		}
-		u, created, err := h.d.Auth.CreateInvited(ctx, &principalFrom(ctx).User.ID, in.Body.Email)
-		if errors.Is(err, auth.ErrInvalidEmail) {
-			return nil, huma.Error422UnprocessableEntity("邮箱地址格式不正确。")
-		}
-		if err != nil {
-			return nil, err
-		}
-		status := http.StatusOK // already there
-		if created {
-			status = http.StatusCreated
-		}
-		au, err := h.getAdminUser(ctx, u.ID)
-		if err != nil {
-			return nil, err
-		}
-		return &adminUserOutput{Status: status, Body: *au}, nil
+		return h.invite(ctx, in.Body.Email, 0)
 	})
 
 	huma.Register(g, huma.Operation{

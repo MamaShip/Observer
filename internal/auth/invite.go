@@ -7,16 +7,32 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
 
+	"github.com/MamaShip/Observer/internal/mail"
 	"github.com/MamaShip/Observer/internal/store/db"
 )
 
-// Invitations (plan.md §6.1). In invite mode only existing accounts receive
-// login codes, so inviting an address means creating its account. Nobody is
-// emailed: the inviter tells the person, who then logs in as usual.
+// InviteLinkTTL starts when the worker prepares the email.
+const InviteLinkTTL = 7 * 24 * time.Hour
+
+// InviteMailArgs contains only a database ID. The worker generates the
+// credential just before sending it, keeping it out of the job history.
+type InviteMailArgs struct {
+	InviteID uuid.UUID `json:"invite_id"`
+}
+
+func (InviteMailArgs) Kind() string { return "email_invite" }
+func (InviteMailArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{Queue: mail.Queue, MaxAttempts: 8}
+}
+
+// SetJobs connects the transactional invitation queue before accepting requests.
+func (s *Service) SetJobs(j *river.Client[pgx.Tx]) { s.jobs = j }
 
 // Errors from Invite.
 var (
+	ErrInviteLink    = errors.New("invitation link is no longer valid")
 	ErrInviteSelf    = errors.New("that is the inviter's own address")
 	ErrNoInvitesLeft = errors.New("no invitations left this month")
 )
@@ -40,17 +56,23 @@ type InviteQuota struct {
 	Limit int // 0: no limit
 }
 
+// Invitation includes the same acceptance status as the inviter's list.
+type Invitation struct {
+	db.Invite
+	Accepted bool
+}
+
 // Invite lets email log in, on behalf of the user inviterID, who may send
 // limit invitations per Beijing month (0: no limit). Every invitation counts,
 // whether or not the address already had an account, and the result is the
 // same either way; only repeating one of the user's own invitations is free.
 // An existing account is never changed.
-func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string, limit int) (db.Invite, InviteQuota, error) {
+func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string, limit int) (Invitation, InviteQuota, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
-		return db.Invite{}, InviteQuota{}, err
+		return Invitation{}, InviteQuota{}, err
 	}
-	var inv db.Invite
+	var inv Invitation
 	quota := InviteQuota{Limit: limit}
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
@@ -66,9 +88,10 @@ func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string,
 			return err
 		}
 		quota.Used = int(used)
-		inv, err = q.GetInviteByInviter(ctx, db.GetInviteByInviterParams{InviterID: &inviterID, Email: email})
+		prior, err := q.GetInviteByInviter(ctx, db.GetInviteByInviterParams{InviterID: &inviterID, Email: email})
 		if err == nil {
-			return nil // already invited by this user
+			inv = Invitation{Invite: prior.Invite, Accepted: prior.Accepted}
+			return s.queueInvite(ctx, tx, inv.ID) // includes invitations from before email delivery
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
@@ -77,20 +100,19 @@ func (s *Service) Invite(ctx context.Context, inviterID uuid.UUID, email string,
 			return ErrNoInvitesLeft
 		}
 		var invitee *uuid.UUID
-		u, err := q.InsertUser(ctx, email)
-		switch {
-		case err == nil:
-			invitee = &u.ID
-		case !errors.Is(err, pgx.ErrNoRows):
+		u, err := q.ReserveInvitedAccount(ctx, email)
+		if err != nil {
 			return err
 		}
-		inv, err = q.CreateInvite(ctx, db.CreateInviteParams{InviterID: &inviterID, Email: email, InviteeID: invitee})
+		if u.Created {
+			invitee = &u.ID
+		}
+		inv.Invite, err = q.CreateInvite(ctx, db.CreateInviteParams{InviterID: &inviterID, Email: email, InviteeID: invitee})
 		if err != nil {
 			return err
 		}
 		quota.Used++
-		s.log.Info("invitation sent", "inviter", inviterID, "new_account", invitee != nil)
-		return nil
+		return s.queueInvite(ctx, tx, inv.ID)
 	})
 	return inv, quota, err
 }
@@ -107,6 +129,22 @@ func (s *Service) RevokeInvite(ctx context.Context, inviterID, inviteID uuid.UUI
 		if _, err := q.LockUser(ctx, inviterID); err != nil {
 			return err
 		}
+		email, err := q.GetOwnedInviteEmail(ctx, db.GetOwnedInviteEmailParams{ID: inviteID, InviterID: &inviterID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteNotFound
+		}
+		if err != nil {
+			return err
+		}
+		// Lock the account before changing any invitation, including one
+		// that may inherit this account from another inviter.
+		invitee, err := q.GetUserByEmailForUpdate(ctx, email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteNotFound
+		}
+		if err != nil {
+			return err
+		}
 		inv, err := q.GetInviteForUpdate(ctx, db.GetInviteForUpdateParams{ID: inviteID, InviterID: &inviterID})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrInviteNotFound
@@ -114,14 +152,8 @@ func (s *Service) RevokeInvite(ctx context.Context, inviterID, inviteID uuid.UUI
 		if err != nil {
 			return err
 		}
-		if inv.InviteeID != nil {
-			invitee, err := q.LockUser(ctx, *inv.InviteeID)
-			if err != nil {
-				return err
-			}
-			if invitee.LastLoginAt != nil {
-				return ErrInviteAccepted
-			}
+		if inv.InviteeID != nil && invitee.LastLoginAt != nil {
+			return ErrInviteAccepted
 		}
 		if err := q.DeleteInvite(ctx, inv.ID); err != nil {
 			return err
@@ -148,32 +180,103 @@ func (s *Service) InviteQuotaOf(ctx context.Context, userID uuid.UUID, limit int
 	return InviteQuota{Used: int(used), Limit: limit}, err
 }
 
-// CreateInvited creates the account for email unless it exists, as an admin
-// does it: the answer says whether the account is new. With an inviter, a
-// new account is recorded as invited by them; nothing is counted.
-func (s *Service) CreateInvited(ctx context.Context, inviterID *uuid.UUID, email string) (db.User, bool, error) {
+// InviteFromCLI provisions an address without attributing it to a user.
+func (s *Service) InviteFromCLI(ctx context.Context, email string) error {
 	email, err := NormalizeEmail(email)
 	if err != nil {
-		return db.User{}, false, err
+		return err
 	}
-	var u db.User
-	created := false
-	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		u, err = q.InsertUser(ctx, email)
-		if errors.Is(err, pgx.ErrNoRows) {
-			u, err = q.GetUserByEmail(ctx, email)
+		if _, err := q.CreateUser(ctx, email); err != nil {
 			return err
+		}
+		prior, err := q.GetInviteByInviter(ctx, db.GetInviteByInviterParams{Email: email})
+		if err == nil {
+			return s.queueInvite(ctx, tx, prior.Invite.ID)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		inv, err := q.CreateInvite(ctx, db.CreateInviteParams{Email: email})
+		if err != nil {
+			return err
+		}
+		return s.queueInvite(ctx, tx, inv.ID)
+	})
+}
+
+func (s *Service) queueInvite(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	n, err := s.q.WithTx(tx).QueueInviteMailOnce(ctx, id)
+	if err != nil || n == 0 {
+		return err
+	}
+	_, err = s.jobs.InsertTx(ctx, tx, InviteMailArgs{InviteID: id}, nil)
+	return err
+}
+
+// DeliverInvite prepares a single-use credential for an active account's first login.
+// Revocation deletes the invitation, so even a message already in transit is harmless.
+func (s *Service) DeliverInvite(ctx context.Context, id uuid.UUID) error {
+	token, hash, err := newToken()
+	if err != nil {
+		return err
+	}
+	email, err := s.q.PrepareInviteMail(ctx, db.PrepareInviteMailParams{
+		ID: id, TokenHash: hash, ExpiresAt: s.now().Add(InviteLinkTTL),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.sender.SendInvite(ctx, email, token, InviteLinkTTL); err != nil {
+		return err
+	}
+	return s.q.MarkInviteMailed(ctx, id)
+}
+
+// AcceptInvite uses proof of mailbox ownership to complete registration. A
+// concurrent first login (by code or another invitation) invalidates this link.
+func (s *Service) AcceptInvite(ctx context.Context, token, userAgent string) (Session, error) {
+	hash, ok := hashToken(token)
+	if !ok {
+		return Session{}, ErrInviteLink
+	}
+	var sess Session
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		inv, err := q.GetInviteByToken(ctx, hash)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteLink
 		}
 		if err != nil {
 			return err
 		}
-		created = true
-		if inviterID == nil {
-			return nil
+		u, err := q.GetUserByEmailForUpdate(ctx, inv.Email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInviteLink
 		}
-		_, err = q.CreateInvite(ctx, db.CreateInviteParams{InviterID: inviterID, Email: email, InviteeID: &u.ID})
+		if err != nil {
+			return err
+		}
+		if u.Status != "active" || u.LastLoginAt != nil {
+			return ErrInviteLink
+		}
+		now := s.now()
+		n, err := q.ConsumeInviteToken(ctx, db.ConsumeInviteTokenParams{ID: inv.ID, TokenHash: hash, Now: now})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrInviteLink
+		}
+		if err := q.TouchUserLogin(ctx, db.TouchUserLoginParams{ID: u.ID, Now: now}); err != nil {
+			return err
+		}
+		sess, err = s.newSession(ctx, q, u, userAgent)
 		return err
 	})
-	return u, created, err
+	return sess, err
 }

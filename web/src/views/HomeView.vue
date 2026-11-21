@@ -23,7 +23,7 @@ const steps = [
           <RouterLink to="/about" class="zg-shard zg-btn zg-btn--ghost">了解如何工作</RouterLink>
         </div>
         <p v-if="!session.user" class="zg-footnote">
-          {{ session.site?.registration_mode === 'invite' ? '目前采用邀请制，受邀后可用邮箱验证码登录。' : '不需要密码，用邮箱验证码登录。' }}</p>
+          {{ session.site?.registration_mode === 'invite' ? '目前采用邀请制，点击邀请邮件中的链接即可注册。' : '不需要密码，用邮箱验证码登录。' }}</p>
       </div>
       <aside class="hero-example" aria-label="观察和删除提醒示例">
         <span class="example-label" aria-hidden="true">EXAMPLE · 示例</span>

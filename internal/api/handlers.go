@@ -56,6 +56,13 @@ type verifyOutput struct {
 	}
 }
 
+type acceptInviteInput struct {
+	UserAgent string `header:"User-Agent"`
+	Body      struct {
+		Token string `json:"token" maxLength:"64" doc:"One-time credential from the invitation email"`
+	}
+}
+
 type sessionOutput struct {
 	Body struct {
 		User *Me `json:"user,omitempty" doc:"Absent when not logged in"`
@@ -129,6 +136,22 @@ func (h *handlers) registerAuth(g huma.API) {
 		} else {
 			out.SetCookie = sessionCookie(sess.Token, sess.TTL)
 		}
+		return out, nil
+	})
+
+	huma.Register(g, huma.Operation{
+		OperationID: "accept-invite", Method: http.MethodPost, Path: "/auth/accept-invite",
+		Summary: "Complete registration with an emailed invitation", Tags: []string{"auth"},
+	}, func(ctx context.Context, in *acceptInviteInput) (*verifyOutput, error) {
+		sess, err := h.d.Auth.AcceptInvite(ctx, in.Body.Token, in.UserAgent)
+		if errors.Is(err, auth.ErrInviteLink) {
+			return nil, huma.Error410Gone("邀请链接已失效。你可以尝试用受邀邮箱登录，或联系邀请人。")
+		}
+		if err != nil {
+			return nil, err
+		}
+		out := &verifyOutput{SetCookie: sessionCookie(sess.Token, sess.TTL)}
+		out.Body.User = userFromDB(sess.User)
 		return out, nil
 	})
 

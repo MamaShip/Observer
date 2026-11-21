@@ -80,11 +80,15 @@ type EmailLog struct {
 }
 
 type Invite struct {
-	ID        uuid.UUID
-	InviterID *uuid.UUID
-	Email     string
-	InviteeID *uuid.UUID
-	CreatedAt time.Time
+	ID             uuid.UUID
+	InviterID      *uuid.UUID
+	Email          string
+	InviteeID      *uuid.UUID
+	CreatedAt      time.Time
+	MailQueued     bool
+	TokenHash      []byte
+	TokenExpiresAt *time.Time
+	MailSentAt     *time.Time
 }
 
 type LoginCode struct {

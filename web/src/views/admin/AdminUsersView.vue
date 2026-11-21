@@ -39,7 +39,7 @@ async function invite() {
   notice.value = ''
   try {
     await call(api.POST('/api/v1/admin/users', { body: { email: inviteEmail.value.trim() } }))
-    notice.value = '邀请已处理。请告知对方用邮箱验证码登录。'
+    notice.value = '邀请已处理。首次注册的用户可以从邮件中接受邀请。'
     inviteOpen.value = false
     inviteEmail.value = ''
     await load()

@@ -18,6 +18,7 @@ import (
 
 	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/backup"
+	"github.com/MamaShip/Observer/internal/mail"
 	"github.com/MamaShip/Observer/internal/notify"
 	"github.com/MamaShip/Observer/internal/watch"
 )
@@ -154,6 +155,15 @@ func (w *periodicWorker[T]) Work(ctx context.Context, _ *river.Job[T]) error {
 
 func (w *periodicWorker[T]) Timeout(*river.Job[T]) time.Duration { return w.timeout }
 
+type inviteWorker struct {
+	river.WorkerDefaults[auth.InviteMailArgs]
+	auth *auth.Service
+}
+
+func (w *inviteWorker) Work(ctx context.Context, job *river.Job[auth.InviteMailArgs]) error {
+	return result(w.auth.DeliverInvite(ctx, job.Args.InviteID))
+}
+
 type digestWorker struct {
 	river.WorkerDefaults[notify.DigestArgs]
 	n *notify.Notifier
@@ -233,6 +243,7 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, s Services) 
 		return err
 	}})
 	river.AddWorker(workers, &periodicWorker[watch.CleanupArgs]{timeout: 10 * time.Minute, run: svc.Cleanup})
+	river.AddWorker(workers, &inviteWorker{auth: s.Auth})
 	river.AddWorker(workers, &digestWorker{n: s.Notify})
 	river.AddWorker(workers, &alertWorker{n: s.Notify})
 	river.AddWorker(workers, &periodicWorker[notify.SweepArgs]{timeout: time.Minute, run: func(ctx context.Context) error {
@@ -271,13 +282,14 @@ func NewClient(pool *pgxpool.Pool, log *slog.Logger, hb *Heartbeat, s Services) 
 			river.QueueDefault:  {MaxWorkers: 2},
 			watch.QueueFetch:    {MaxWorkers: 2}, // serialized further by the fetch limiter
 			watch.QueueSnapshot: {MaxWorkers: 1}, // one full page in memory at a time
-			notify.QueueEmail:   {MaxWorkers: 1}, // serial, so the daily limit count is exact
+			mail.Queue:          {MaxWorkers: 1}, // serial, so the daily limit count is exact
 		},
 		PeriodicJobs: periodicJobs,
 	})
 	if err != nil {
 		return nil, err
 	}
+	s.Auth.SetJobs(client)
 	svc.SetJobs(client)
 	s.Notify.SetJobs(client)
 	return client, nil

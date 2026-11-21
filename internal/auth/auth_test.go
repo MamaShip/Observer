@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/MamaShip/Observer/internal/store/db"
 	"github.com/MamaShip/Observer/internal/store/storetest"
@@ -17,9 +19,10 @@ import (
 type sentCode struct{ to, code string }
 
 type fakeSender struct {
-	mu    sync.Mutex
-	codes []sentCode
-	fail  error
+	mu          sync.Mutex
+	codes       []sentCode
+	inviteToken string
+	fail        error
 }
 
 func (f *fakeSender) SendLogin(_ context.Context, to, code string, _ *uuid.UUID, valid time.Duration) error {
@@ -33,6 +36,16 @@ func (f *fakeSender) SendLogin(_ context.Context, to, code string, _ *uuid.UUID,
 	}
 	f.codes = append(f.codes, sentCode{to, code})
 	return nil
+}
+
+func (f *fakeSender) SendInvite(_ context.Context, _, token string, valid time.Duration) error {
+	if valid != InviteLinkTTL {
+		panic("unexpected invite validity")
+	}
+	if f.fail == nil {
+		f.inviteToken = token
+	}
+	return f.fail
 }
 
 func (f *fakeSender) last(t *testing.T) (string, string) {
@@ -65,6 +78,11 @@ func newService(t *testing.T, mode string) (*Service, *fakeSender, *db.Queries, 
 	pool, _ := storetest.NewPool(t)
 	sender := &fakeSender{}
 	s := New(pool, sender, Config{Mode: mode}, storetest.Logger())
+	jobs, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetJobs(jobs)
 	// 10:00 in Beijing.
 	c := &clock{t: time.Date(2026, 11, 20, 2, 0, 0, 0, time.UTC)}
 	s.now = c.now

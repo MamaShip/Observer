@@ -45,7 +45,7 @@
    ```sh
    curl -fsS https://observer.example.org/api/v1/healthz
    ```
-6. **开通第一个账号。** 把下面的示例邮箱换成你自己的邮箱。第一条命令开通登录，第二条授予管理后台权限。随后在你自己的站点用邮箱验证码登录，就可以提交第一篇文章。
+6. **开通第一个账号。** 把下面的示例邮箱换成你自己的邮箱。第一条命令开通账号并安排发送邀请邮件，第二条授予管理后台权限。点击邮件中的注册链接，就可以提交第一篇文章。
    ```sh
    docker compose exec app observer admin invite you@example.org
    docker compose exec app observer admin role you@example.org admin

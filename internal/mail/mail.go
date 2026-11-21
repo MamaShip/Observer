@@ -17,12 +17,16 @@ import (
 	gomail "github.com/wneessen/go-mail"
 )
 
+// Queue is the serial River queue for outgoing email jobs.
+const Queue = "email"
+
 // Message is one email. HTML is optional; Text is always sent.
 type Message struct {
-	To      string
-	Subject string
-	Text    string
-	HTML    string
+	To          string
+	Subject     string
+	Text        string
+	HTML        string
+	omitLogBody bool // registration links authorize first login for several days
 }
 
 // Mailer sends messages and returns the Message-ID it used.
@@ -174,7 +178,11 @@ func (m *Memory) Send(_ context.Context, msg Message) (string, error) {
 	}
 	m.sent = append(m.sent, msg)
 	if m.log != nil {
-		m.log.Info("email (not sent: no SMTP configured)", "to", msg.To, "subject", msg.Subject, "text", msg.Text)
+		log := m.log.With("to", msg.To, "subject", msg.Subject)
+		if !msg.omitLogBody {
+			log = log.With("text", msg.Text)
+		}
+		log.Info("email (not sent: no SMTP configured)")
 	}
 	return fmt.Sprintf("<memory-%d@observer>", len(m.sent)), nil
 }

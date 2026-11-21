@@ -142,6 +142,32 @@ func TestDailyLimit(t *testing.T) {
 	}
 }
 
+func TestInvitationMailLimits(t *testing.T) {
+	e := newEnv(t, 1)
+	const recipient = "guest@example.com"
+	const validity = 7 * 24 * time.Hour
+	now := time.Date(2026, 11, 21, 3, 0, 0, 0, time.UTC)
+	e.n.now = func() time.Time { return now }
+	e.mailer.FailWith(errors.New("temporary SMTP failure"))
+	if err := e.n.SendInvite(e.ctx, recipient, "first", validity); err == nil {
+		t.Fatal("missing SMTP failure")
+	}
+	e.mailer.FailWith(nil)
+	if err := e.n.SendInvite(e.ctx, recipient, "retry", validity); err != nil {
+		t.Fatal(err)
+	}
+	var retry *RetryAt
+	if err := e.n.SendInvite(e.ctx, recipient, "another", validity); !errors.As(err, &retry) || !retry.Time.Equal(now.Add(time.Hour)) {
+		t.Fatalf("same-address retry: %v", err)
+	}
+	if err := e.n.SendInvite(e.ctx, "another@example.com", "other", validity); !errors.As(err, &retry) || retry.Time.Before(startOfDay(now).Add(24*time.Hour)) {
+		t.Fatalf("daily budget retry: %v", err)
+	}
+	if len(e.mailer.Sent()) != 1 {
+		t.Fatal("unexpected number of delivered invitations")
+	}
+}
+
 func TestProviderQuotaPostponesDigest(t *testing.T) {
 	e := newEnv(t, 100)
 	u, _ := e.q.CreateUser(e.ctx, "dave@example.com")

@@ -88,12 +88,7 @@ func TestAdminConsole(t *testing.T) {
 	}
 
 	// Accounts.
-	var bob api.AdminUser
-	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "Bob@Example.com"}, http.StatusCreated, &bob)
-	if bob.Email != "bob@example.com" || bob.Status != "active" || bob.MonthlyEmails != 20 || bob.CustomEmailLimit ||
-		!bob.Invited || bob.InvitedBy != "alice@example.com" {
-		t.Errorf("invited = %+v", bob)
-	}
+	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "Bob@Example.com"}, http.StatusCreated, nil)
 	// Registration is open here: users have nothing to invite.
 	var invs api.Invitations
 	alice.api(http.MethodGet, "/invites", nil, 200, &invs)
@@ -101,7 +96,7 @@ func TestAdminConsole(t *testing.T) {
 		t.Errorf("open mode invitations = %+v", invs)
 	}
 	alice.api(http.MethodPost, "/invites", map[string]string{"email": "carol@example.com"}, http.StatusConflict, nil)
-	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "bob@example.com"}, http.StatusOK, nil)
+	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "bob@example.com"}, http.StatusCreated, nil)
 	alice.api(http.MethodPost, "/admin/users", map[string]string{"email": "nope"}, http.StatusUnprocessableEntity, nil)
 	var users struct {
 		Items      []api.AdminUser `json:"items"`
@@ -110,6 +105,10 @@ func TestAdminConsole(t *testing.T) {
 	alice.api(http.MethodGet, "/admin/users?limit=1", nil, 200, &users)
 	if len(users.Items) != 1 || users.Items[0].Email != "bob@example.com" || users.NextCursor == "" {
 		t.Fatalf("first page = %+v", users)
+	}
+	bob := users.Items[0]
+	if bob.Status != "active" || bob.MonthlyEmails != 20 || bob.CustomEmailLimit || !bob.Invited || bob.InvitedBy != "alice@example.com" {
+		t.Errorf("invited = %+v", bob)
 	}
 	cursor := users.NextCursor
 	users.Items, users.NextCursor = nil, "" // fields absent from a response keep their old values

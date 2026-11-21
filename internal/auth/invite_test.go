@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/MamaShip/Observer/internal/store/db"
 )
 
 func TestMonthStart(t *testing.T) {
@@ -130,30 +132,83 @@ func TestInvitesForgottenWithAccounts(t *testing.T) {
 	}
 }
 
-func TestCreateInvited(t *testing.T) {
+func TestInviteFromCLI(t *testing.T) {
 	ctx := context.Background()
 	s, _, q, _ := newService(t, ModeInvite)
-	admin, _ := q.CreateUser(ctx, "admin@example.com")
-	u, created, err := s.CreateInvited(ctx, &admin.ID, "New@Example.com")
-	if err != nil || !created || u.Email != "new@example.com" {
-		t.Fatalf("created = %v, %+v, %v", created, u, err)
+	for range 2 {
+		if err := s.InviteFromCLI(ctx, "New@Example.com"); err != nil {
+			t.Fatal(err)
+		}
 	}
-	again, created, err := s.CreateInvited(ctx, &admin.ID, "new@example.com")
-	if err != nil || created || again.ID != u.ID {
-		t.Errorf("again = %v, %+v, %v", created, again, err)
+	inv, err := q.GetInviteByInviter(ctx, db.GetInviteByInviterParams{Email: "new@example.com"})
+	if err != nil || !inv.Invite.MailQueued || inv.Invite.InviteeID != nil {
+		t.Fatalf("operator invitation: %+v, %v", inv, err)
 	}
-	if _, created, err := s.CreateInvited(ctx, nil, "cli@example.com"); err != nil || !created {
-		t.Errorf("without inviter: %v, %v", created, err)
+	var jobs int
+	if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE kind='email_invite'").Scan(&jobs); err != nil || jobs != 1 {
+		t.Fatalf("queued %d jobs: %v", jobs, err)
 	}
-	var invitee uuid.UUID
-	if err := s.pool.QueryRow(ctx, "SELECT invitee_id FROM invites WHERE inviter_id = $1", admin.ID).Scan(&invitee); err != nil || invitee != u.ID {
-		t.Errorf("recorded invitee = %v, %v", invitee, err)
+}
+
+func TestInvitationLinks(t *testing.T) {
+	ctx := context.Background()
+	s, sender, q, clk := newService(t, ModeInvite)
+	owner, err := q.CreateUser(ctx, "owner@example.com")
+	if err != nil {
+		t.Fatal(err)
 	}
-	var n int
-	_ = s.pool.QueryRow(ctx, "SELECT count(*) FROM invites").Scan(&n)
-	if n != 1 {
-		t.Errorf("%d invitations recorded", n)
+	invite := func(email string) (uuid.UUID, string) {
+		t.Helper()
+		inv, _, err := s.Invite(ctx, owner.ID, email, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DeliverInvite(ctx, inv.ID); err != nil {
+			t.Fatal(err)
+		}
+		return inv.ID, sender.inviteToken
 	}
+	revoked, token := invite("revoked@example.com")
+	if err := s.RevokeInvite(ctx, owner.ID, revoked); err != nil {
+		t.Fatal(err)
+	}
+	_, replacement := invite("revoked@example.com")
+	assertGone := func(token string) {
+		t.Helper()
+		if _, err := s.AcceptInvite(ctx, token, ""); !errors.Is(err, ErrInviteLink) {
+			t.Fatalf("expected invalid invitation, got %v", err)
+		}
+	}
+	assertGone(token)
+	results := make(chan error, 2)
+	for range 2 {
+		go func() { _, err := s.AcceptInvite(ctx, replacement, ""); results <- err }()
+	}
+	a, b := <-results, <-results
+	if b == nil {
+		a, b = b, a
+	}
+	if a != nil || !errors.Is(b, ErrInviteLink) {
+		t.Fatalf("concurrent acceptance: %v, %v", a, b)
+	}
+	_, expired := invite("expired@example.com")
+	clk.advance(InviteLinkTTL)
+	assertGone(expired)
+	_, disabled := invite("disabled@example.com")
+	if _, err := q.SetUserStatus(ctx, db.SetUserStatusParams{Email: "disabled@example.com", Status: "disabled"}); err != nil {
+		t.Fatal(err)
+	}
+	assertGone(disabled)
+
+	_, byCode := invite("code@example.com")
+	if _, err := s.RequestCode(ctx, "code@example.com", ip); err != nil {
+		t.Fatal(err)
+	}
+	email, code := sender.last(t)
+	if _, err := s.Verify(ctx, email, code, ""); err != nil {
+		t.Fatal(err)
+	}
+	assertGone(byCode)
 }
 
 func TestRevokeInvite(t *testing.T) {

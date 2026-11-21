@@ -1,5 +1,5 @@
-// Package auth implements email login codes and sessions (plan.md §6.1).
-// Logging in with an emailed code is also what verifies the address.
+// Package auth verifies email ownership with login codes and registration
+// invitations, and issues sessions (plan.md §6.1).
 // Session tokens are 256-bit random values; only their sha256 is stored.
 package auth
 
@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
 	"golang.org/x/time/rate"
 
 	"github.com/MamaShip/Observer/internal/store/db"
@@ -30,7 +31,7 @@ import (
 // Registration modes.
 const (
 	ModeOpen   = "open"   // anyone can sign up by logging in
-	ModeInvite = "invite" // only users an admin created can log in
+	ModeInvite = "invite" // only provisioned accounts can log in
 )
 
 // Lifetimes and limits.
@@ -63,9 +64,10 @@ var (
 	ErrNoSession    = errors.New("not logged in")
 )
 
-// CodeSender emails login codes.
-type CodeSender interface {
+// MailSender delivers credentials to their intended mailbox.
+type MailSender interface {
 	SendLogin(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error
+	SendInvite(ctx context.Context, to, token string, valid time.Duration) error
 }
 
 // Config configures the service.
@@ -77,15 +79,16 @@ type Config struct {
 type Service struct {
 	pool   *pgxpool.Pool
 	q      *db.Queries
-	sender CodeSender
+	sender MailSender
 	cfg    Config
 	log    *slog.Logger
 	now    func() time.Time
+	jobs   *river.Client[pgx.Tx]
 	ips    *ipLimiter
 }
 
 // New builds the service.
-func New(pool *pgxpool.Pool, sender CodeSender, cfg Config, log *slog.Logger) *Service {
+func New(pool *pgxpool.Pool, sender MailSender, cfg Config, log *slog.Logger) *Service {
 	return &Service{
 		pool: pool, q: db.New(pool), sender: sender, cfg: cfg, log: log.With("component", "auth"), now: time.Now,
 		ips: newIPLimiter(rate.Every(time.Hour/codesPerIPPerHour), codesPerIPPerHour),
@@ -332,7 +335,7 @@ func (s *Service) LogoutAll(ctx context.Context, userID uuid.UUID) (int64, error
 func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		u, err := q.GetUser(ctx, userID)
+		u, err := q.LockUser(ctx, userID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

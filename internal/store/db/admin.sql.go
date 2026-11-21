@@ -465,6 +465,7 @@ const adminUsage = `-- name: AdminUsage :one
 SELECT
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND sent_at >= $1::timestamptz)::int AS emails,
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind = 'login' AND sent_at >= $1::timestamptz)::int AS login_emails,
+  (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind = 'invite' AND sent_at >= $1::timestamptz)::int AS invite_emails,
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind IN ('deleted', 'expired') AND sent_at >= $1::timestamptz)::int AS notification_emails,
   (SELECT count(*) FROM email_log WHERE status = 'sent' AND kind = 'alert' AND sent_at >= $1::timestamptz)::int AS alert_emails,
   (SELECT count(*) FROM email_log WHERE status = 'failed' AND created_at >= $1::timestamptz)::int AS failed_emails,
@@ -483,6 +484,7 @@ SELECT
 type AdminUsageRow struct {
 	Emails             int32
 	LoginEmails        int32
+	InviteEmails       int32
 	NotificationEmails int32
 	AlertEmails        int32
 	FailedEmails       int32
@@ -504,6 +506,7 @@ func (q *Queries) AdminUsage(ctx context.Context, since time.Time) (AdminUsageRo
 	err := row.Scan(
 		&i.Emails,
 		&i.LoginEmails,
+		&i.InviteEmails,
 		&i.NotificationEmails,
 		&i.AlertEmails,
 		&i.FailedEmails,

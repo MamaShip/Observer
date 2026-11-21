@@ -69,7 +69,7 @@ export BLOB_DIR=data/blob
 | --- | --- |
 | `migrate [up\|status]` | 执行或查看数据库迁移。服务启动时也会自动迁移 |
 | `admin stats`、`admin articles` | 查看站点统计、最近的文章及其状态 |
-| `admin invite <email>`、`admin role <email> admin` | 开通账号、授予管理后台权限 |
+| `admin invite <email>`、`admin role <email> admin` | 发送注册邀请、授予管理后台权限 |
 | `admin disable`、`admin enable`、`admin logout-all`、`admin email-limit`、`admin session` | 管理账号状态、会话和通知额度 |
 | `admin submit`、`admin check`、`admin export` | 提交文章、安排检查、导出备份 |
 | `admin backup`、`admin restore -db URL` | 将数据库备份到对象存储，或恢复到空数据库 |

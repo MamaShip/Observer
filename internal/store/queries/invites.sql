@@ -7,17 +7,21 @@ SELECT count(*)::int FROM invites
 WHERE inviter_id = sqlc.arg(inviter_id) AND created_at >= sqlc.arg(since)::timestamptz;
 
 -- name: GetInviteByInviter :one
-SELECT * FROM invites WHERE inviter_id = sqlc.arg(inviter_id) AND email = sqlc.arg(email)
-ORDER BY created_at DESC LIMIT 1;
+SELECT sqlc.embed(i), (u.last_login_at IS NOT NULL)::bool AS accepted
+FROM invites i LEFT JOIN users u ON u.id = i.invitee_id
+WHERE i.inviter_id IS NOT DISTINCT FROM sqlc.narg(inviter_id) AND i.email = sqlc.arg(email)
+ORDER BY i.created_at DESC LIMIT 1;
 
 -- name: CreateInvite :one
 INSERT INTO invites (inviter_id, email, invitee_id)
 VALUES (sqlc.narg(inviter_id), sqlc.arg(email), sqlc.narg(invitee_id))
 RETURNING *;
 
--- InsertUser creates an account, or returns no row if the address has one.
--- name: InsertUser :one
-INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING *;
+-- ReserveInvitedAccount locks the address through a concurrent invite or revocation.
+-- PostgreSQL 18 exposes the old row on conflict and NULL on insert.
+-- name: ReserveInvitedAccount :one
+INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email = users.email
+RETURNING id, (old.id IS NULL)::bool AS created;
 
 -- ListInvitesByInviter says, for each invitation, whether the account it
 -- created has logged in. An invitation to an address that already had an
@@ -26,6 +30,9 @@ INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING *
 SELECT i.id, i.email, i.created_at, (u.last_login_at IS NOT NULL)::bool AS accepted
 FROM invites i LEFT JOIN users u ON u.id = i.invitee_id
 WHERE i.inviter_id = $1 ORDER BY i.created_at DESC LIMIT 100;
+
+-- name: GetOwnedInviteEmail :one
+SELECT email FROM invites WHERE id = sqlc.arg(id) AND inviter_id = sqlc.arg(inviter_id);
 
 -- name: GetInviteForUpdate :one
 SELECT * FROM invites WHERE id = sqlc.arg(id) AND inviter_id = sqlc.arg(inviter_id) FOR UPDATE;
@@ -49,3 +56,26 @@ DELETE FROM users WHERE id = $1 AND last_login_at IS NULL;
 -- name: ForgetInvites :exec
 DELETE FROM invites
 WHERE email = sqlc.arg(email) OR (inviter_id = sqlc.arg(user_id) AND invitee_id IS NULL);
+
+-- name: QueueInviteMailOnce :execrows
+UPDATE invites SET mail_queued = true WHERE id = $1 AND NOT mail_queued;
+
+-- name: PrepareInviteMail :one
+UPDATE invites i SET token_hash = sqlc.arg(token_hash), token_expires_at = sqlc.arg(expires_at)::timestamptz
+FROM users u WHERE i.id = sqlc.arg(id) AND i.mail_sent_at IS NULL
+  AND u.email = i.email AND u.status = 'active' AND u.last_login_at IS NULL
+RETURNING i.email;
+
+-- name: MarkInviteMailed :exec
+UPDATE invites SET mail_sent_at = now() WHERE id = $1;
+
+-- name: GetInviteByToken :one
+SELECT id, email FROM invites WHERE token_hash = $1;
+
+-- name: ConsumeInviteToken :execrows
+UPDATE invites SET token_hash = NULL, token_expires_at = NULL
+WHERE id = sqlc.arg(id) AND token_hash = sqlc.arg(token_hash) AND token_expires_at > sqlc.arg(now)::timestamptz;
+
+-- name: LastInviteMail :one
+SELECT sent_at FROM email_log WHERE to_email = $1 AND kind = 'invite' AND status = 'sent'
+ORDER BY sent_at DESC LIMIT 1;

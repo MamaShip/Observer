@@ -105,7 +105,7 @@ export interface paths {
         /** Accounts with their usage, newest first */
         get: operations["admin-list-users"];
         put?: never;
-        /** Invite an email address (create the account) */
+        /** Invite an email address by email */
         post: operations["admin-invite-user"];
         delete?: never;
         options?: never;
@@ -128,6 +128,23 @@ export interface paths {
         head?: never;
         /** Disable or enable an account, change its role or email limit */
         patch: operations["admin-update-user"];
+        trace?: never;
+    };
+    "/api/v1/auth/accept-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete registration with an emailed invitation */
+        post: operations["accept-invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/auth/code": {
@@ -239,7 +256,7 @@ export interface paths {
         put?: never;
         /**
          * Invite an email address
-         * @description Lets the address log in. Nobody is emailed; tell the person yourself. Every invitation counts toward the monthly allowance, except repeating one of your own.
+         * @description Queues a one-time email link for first-time registration. Every invitation counts toward the monthly allowance, except repeating one of your own.
          */
         post: operations["create-invite"];
         delete?: never;
@@ -472,6 +489,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AcceptInviteInputBody: {
+            /** @description One-time credential from the invitation email */
+            token: string;
+        };
         AdminArticle: {
             account_name?: string;
             /** Format: int64 */
@@ -577,9 +598,6 @@ export interface components {
             users: number;
             /** Format: int64 */
             watches: number;
-        };
-        AdminInviteInputBody: {
-            email: string;
         };
         AdminLimits: {
             /**
@@ -703,6 +721,8 @@ export interface components {
             errors: number;
             /** Format: int64 */
             failed_emails: number;
+            /** Format: int64 */
+            invite_emails: number;
             /** Format: int64 */
             login_emails: number;
             /** Format: int64 */
@@ -1312,7 +1332,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AdminInviteInputBody"];
+                "application/json": components["schemas"]["InviteInputBody"];
             };
         };
         responses: {
@@ -1322,7 +1342,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminUser"];
+                    "application/json": components["schemas"]["InviteOutputBody"];
                 };
             };
             /** @description Error */
@@ -1358,6 +1378,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "accept-invite": {
+        parameters: {
+            query?: never;
+            header?: {
+                "User-Agent"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInviteInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: components["schemas"]["Cookie"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyOutputBody"];
                 };
             };
             /** @description Error */

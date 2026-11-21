@@ -44,6 +44,7 @@ type Querier interface {
 	// requested after resend_before.
 	ClaimLoginRequest(ctx context.Context, arg ClaimLoginRequestParams) (int32, error)
 	ConfirmArticleDeleted(ctx context.Context, arg ConfirmArticleDeletedParams) error
+	ConsumeInviteToken(ctx context.Context, arg ConsumeInviteTokenParams) (int64, error)
 	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
 	CountInvitesSince(ctx context.Context, arg CountInvitesSinceParams) (int32, error)
@@ -105,10 +106,12 @@ type Querier interface {
 	GetAsset(ctx context.Context, sha256 []byte) (Asset, error)
 	GetCapture(ctx context.Context, id uuid.UUID) (Capture, error)
 	GetCaptureForUpdate(ctx context.Context, id uuid.UUID) (Capture, error)
-	GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (Invite, error)
+	GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (GetInviteByInviterRow, error)
+	GetInviteByToken(ctx context.Context, tokenHash []byte) (GetInviteByTokenRow, error)
 	GetInviteForUpdate(ctx context.Context, arg GetInviteForUpdateParams) (Invite, error)
 	GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error)
 	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
+	GetOwnedInviteEmail(ctx context.Context, arg GetOwnedInviteEmailParams) (string, error)
 	GetSession(ctx context.Context, arg GetSessionParams) (GetSessionRow, error)
 	GetSnapshot(ctx context.Context, id uuid.UUID) (Snapshot, error)
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
@@ -125,8 +128,7 @@ type Querier interface {
 	InsertEmailLog(ctx context.Context, arg InsertEmailLogParams) (uuid.UUID, error)
 	InsertSnapshot(ctx context.Context, arg InsertSnapshotParams) error
 	InsertSnapshotAsset(ctx context.Context, arg InsertSnapshotAssetParams) error
-	// InsertUser creates an account, or returns no row if the address has one.
-	InsertUser(ctx context.Context, email string) (User, error)
+	LastInviteMail(ctx context.Context, toEmail string) (*time.Time, error)
 	ListArticles(ctx context.Context, maxRows int32) ([]ListArticlesRow, error)
 	ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capture, error)
 	// ListInvitesByInviter says, for each invitation, whether the account it
@@ -146,6 +148,7 @@ type Querier interface {
 	LockWechatOpenID(ctx context.Context, openid string) error
 	MarkArticleAlive(ctx context.Context, arg MarkArticleAliveParams) (Article, error)
 	MarkArticleInvalid(ctx context.Context, arg MarkArticleInvalidParams) error
+	MarkInviteMailed(ctx context.Context, id uuid.UUID) error
 	MarkUnwatchedArticlesDormant(ctx context.Context) (int64, error)
 	MarkWatchesNotified(ctx context.Context, arg MarkWatchesNotifiedParams) error
 	MoveAliases(ctx context.Context, arg MoveAliasesParams) error
@@ -161,6 +164,8 @@ type Querier interface {
 	// PostponeConfirmation keeps the first deleted answer and looks again once
 	// the confirmation delay after it is over.
 	PostponeConfirmation(ctx context.Context, arg PostponeConfirmationParams) error
+	PrepareInviteMail(ctx context.Context, arg PrepareInviteMailParams) (string, error)
+	QueueInviteMailOnce(ctx context.Context, id uuid.UUID) (int64, error)
 	// ReactivateArticle forgets a deleted answer from before the article went
 	// dormant: the article may have been online in between.
 	ReactivateArticle(ctx context.Context, arg ReactivateArticleParams) error
@@ -172,6 +177,9 @@ type Querier interface {
 	// extended, an expired or stopped one is watched again.
 	RenewWatch(ctx context.Context, arg RenewWatchParams) (Watch, error)
 	RequestCheckNow(ctx context.Context, id uuid.UUID) (int64, error)
+	// ReserveInvitedAccount locks the address through a concurrent invite or revocation.
+	// PostgreSQL 18 exposes the old row on conflict and NULL on insert.
+	ReserveInvitedAccount(ctx context.Context, email string) (ReserveInvitedAccountRow, error)
 	// RetryCapture queues a failed capture's build again and marks it rebuilt.
 	RetryCapture(ctx context.Context, arg RetryCaptureParams) error
 	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but

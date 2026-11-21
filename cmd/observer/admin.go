@@ -30,7 +30,7 @@ import (
 const adminUsage = `Usage: observer admin <command>
 
   stats                            service counters
-  invite <email>                   let an address log in (REGISTRATION_MODE=invite)
+  invite <email>                   email a one-time registration link
   disable <email> | enable <email> block or unblock an account (disabling also logs it out)
   logout-all <email>               end every session of an account
   role <email> <admin|user>        give or take the admin console (/admin)
@@ -68,7 +68,23 @@ func runAdmin(ctx context.Context, args []string) error {
 	switch cmd, rest := args[0], args[1:]; cmd {
 	case "stats":
 		return adminStats(ctx, q)
-	case "invite", "disable", "enable", "logout-all":
+	case "invite":
+		if len(rest) != 1 {
+			return errors.New("usage: observer admin invite <email>")
+		}
+		log := slog.Default()
+		rc, err := jobs.NewInsertOnlyClient(pool, log)
+		if err != nil {
+			return err
+		}
+		svc := auth.New(pool, nil, auth.Config{Mode: cfg.RegistrationMode}, log)
+		svc.SetJobs(rc)
+		if err := svc.InviteFromCLI(ctx, rest[0]); err != nil {
+			return err
+		}
+		fmt.Println("Invitation processed.")
+		return nil
+	case "disable", "enable", "logout-all":
 		return adminUser(ctx, q, cmd, rest)
 	case "submit":
 		return adminSubmit(ctx, cfg, pool, q, rest)
@@ -171,13 +187,6 @@ func adminUser(ctx context.Context, q *db.Queries, cmd string, args []string) er
 	}
 	email, err := auth.NormalizeEmail(args[0])
 	if err != nil {
-		return err
-	}
-	if cmd == "invite" {
-		u, err := q.CreateUser(ctx, email)
-		if err == nil {
-			fmt.Printf("%s can now log in (user %s, status %s)\n", u.Email, u.ID, u.Status)
-		}
 		return err
 	}
 	u, err := q.GetUserByEmail(ctx, email)

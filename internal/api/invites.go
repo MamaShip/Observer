@@ -95,7 +95,7 @@ func (h *handlers) registerInvites(g huma.API) {
 	huma.Register(g, huma.Operation{
 		OperationID: "create-invite", Method: http.MethodPost, Path: "/invites",
 		Summary: "Invite an email address", Tags: tags, Security: loggedIn, DefaultStatus: http.StatusCreated,
-		Description: "Lets the address log in. Nobody is emailed; tell the person yourself. " +
+		Description: "Queues a one-time email link for first-time registration. " +
 			"Every invitation counts toward the monthly allowance, except repeating one of your own.",
 	}, func(ctx context.Context, in *inviteInput) (*inviteOutput, error) {
 		u := principalFrom(ctx).User
@@ -106,21 +106,7 @@ func (h *handlers) registerInvites(g huma.API) {
 			}
 			return nil, huma.Error403Forbidden("目前只有管理员可以邀请。")
 		}
-		inv, quota, err := h.d.Auth.Invite(ctx, u.ID, in.Body.Email, limit)
-		switch {
-		case errors.Is(err, auth.ErrInvalidEmail):
-			return nil, huma.Error422UnprocessableEntity("邮箱地址格式不正确。")
-		case errors.Is(err, auth.ErrInviteSelf):
-			return nil, huma.Error422UnprocessableEntity("这是你自己的邮箱。")
-		case errors.Is(err, auth.ErrNoInvitesLeft):
-			return nil, huma.Error429TooManyRequests("本月的 " + strconv.Itoa(limit) + " 个邀请名额已用完，下月 1 日（北京时间）恢复。")
-		case err != nil:
-			return nil, err
-		}
-		out := &inviteOutput{}
-		out.Body.Invitation = Invitation{ID: inv.ID, Email: inv.Email, CreatedAt: inv.CreatedAt, Status: "pending"}
-		out.Body.UsedThisMonth, out.Body.MonthlyLimit = quota.Used, quota.Limit
-		return out, nil
+		return h.invite(ctx, in.Body.Email, limit)
 	})
 
 	huma.Register(g, huma.Operation{
@@ -140,4 +126,25 @@ func (h *handlers) registerInvites(g huma.API) {
 		}
 		return nil, nil
 	})
+}
+
+func (h *handlers) invite(ctx context.Context, email string, limit int) (*inviteOutput, error) {
+	inv, quota, err := h.d.Auth.Invite(ctx, principalFrom(ctx).User.ID, email, limit)
+	switch {
+	case errors.Is(err, auth.ErrInvalidEmail):
+		return nil, huma.Error422UnprocessableEntity("邮箱地址格式不正确。")
+	case errors.Is(err, auth.ErrInviteSelf):
+		return nil, huma.Error422UnprocessableEntity("这是你自己的邮箱。")
+	case errors.Is(err, auth.ErrNoInvitesLeft):
+		return nil, huma.Error429TooManyRequests("本月的 " + strconv.Itoa(limit) + " 个邀请名额已用完，下月 1 日（北京时间）恢复。")
+	case err != nil:
+		return nil, err
+	}
+	out := &inviteOutput{}
+	out.Body.Invitation = Invitation{ID: inv.ID, Email: inv.Email, CreatedAt: inv.CreatedAt, Status: "pending"}
+	if inv.Accepted {
+		out.Body.Invitation.Status = "accepted"
+	}
+	out.Body.UsedThisMonth, out.Body.MonthlyLimit = quota.Used, quota.Limit
+	return out, nil
 }

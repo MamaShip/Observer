@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -81,7 +82,20 @@ func TestInvitations(t *testing.T) {
 	}
 
 	// Bob can log in now; Carol cannot.
-	(&client{t: t, addr: alice.addr}).login(mailer, "bob@example.com")
+	bob := &client{t: t, addr: alice.addr}
+	token := awaitInviteEmail(t, mailer, "bob@example.com")
+	resp, _ := bob.do(http.MethodPost, site, api.Prefix+"/auth/accept-invite", map[string]string{"token": token})
+	if resp.StatusCode != http.StatusOK || len(resp.Cookies()) != 1 || !resp.Cookies()[0].HttpOnly || !resp.Cookies()[0].Secure {
+		t.Fatalf("accepting invitation: status %d, session cookie missing or insecure", resp.StatusCode)
+	}
+	bob.cookie = resp.Cookies()[0].Value
+	var me api.Me
+	bob.api(http.MethodGet, "/me", nil, 200, &me)
+	if me.Email != "bob@example.com" {
+		t.Fatalf("accepted as %s", me.Email)
+	}
+	bob.api(http.MethodPost, "/auth/accept-invite", map[string]string{"token": token}, http.StatusGone, nil)
+	awaitInviteEmail(t, mailer, "member@example.com")
 	before := len(mailer.Sent())
 	(&client{t: t, addr: alice.addr}).api(http.MethodPost, "/auth/code", map[string]string{"email": "carol@example.com"}, http.StatusAccepted, nil)
 	if len(mailer.Sent()) != before {
@@ -110,10 +124,12 @@ func TestInvitations(t *testing.T) {
 		t.Errorf("alice's invitees = %+v", users.Items)
 	}
 	ops.api(http.MethodGet, "/admin/users?invited_by=nope", nil, http.StatusBadRequest, nil)
-	var dave api.AdminUser
-	ops.api(http.MethodPost, "/admin/users", map[string]string{"email": "dave@example.com"}, http.StatusCreated, &dave)
-	if dave.InvitedBy != "ops@example.com" {
-		t.Errorf("admin's invitee = %+v", dave)
+	ops.api(http.MethodPost, "/admin/users", map[string]string{"email": "dave@example.com"}, http.StatusCreated, nil)
+	awaitInviteEmail(t, mailer, "dave@example.com")
+	users.Items = nil
+	ops.api(http.MethodGet, "/admin/users?search=dave", nil, 200, &users)
+	if len(users.Items) != 1 || users.Items[0].InvitedBy != "ops@example.com" {
+		t.Fatalf("admin's invitee = %+v", users.Items)
 	}
 
 	// Bob has logged in, so his invitation is accepted and stays; the one to
@@ -148,4 +164,24 @@ func TestInvitations(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+}
+
+func awaitInviteEmail(t *testing.T, mailer *mail.Memory, to string) string {
+	t.Helper()
+	link := regexp.MustCompile(regexp.QuoteMeta("http://"+site+"/invite#t=") + `([A-Za-z0-9_-]{43})`)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, m := range mailer.Sent() {
+			if m.To != to {
+				continue
+			}
+			match := link.FindStringSubmatch(m.Text)
+			if match != nil && strings.Contains(m.HTML, `href="`+match[0]+`"`) {
+				return match[1]
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("no matching HTML and text invitation for %s", to)
+	return ""
 }

@@ -12,6 +12,25 @@ import (
 	"github.com/google/uuid"
 )
 
+const consumeInviteToken = `-- name: ConsumeInviteToken :execrows
+UPDATE invites SET token_hash = NULL, token_expires_at = NULL
+WHERE id = $1 AND token_hash = $2 AND token_expires_at > $3::timestamptz
+`
+
+type ConsumeInviteTokenParams struct {
+	ID        uuid.UUID
+	TokenHash []byte
+	Now       time.Time
+}
+
+func (q *Queries) ConsumeInviteToken(ctx context.Context, arg ConsumeInviteTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeInviteToken, arg.ID, arg.TokenHash, arg.Now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countInvitesSince = `-- name: CountInvitesSince :one
 SELECT count(*)::int FROM invites
 WHERE inviter_id = $1 AND created_at >= $2::timestamptz
@@ -32,7 +51,7 @@ func (q *Queries) CountInvitesSince(ctx context.Context, arg CountInvitesSincePa
 const createInvite = `-- name: CreateInvite :one
 INSERT INTO invites (inviter_id, email, invitee_id)
 VALUES ($1, $2, $3)
-RETURNING id, inviter_id, email, invitee_id, created_at
+RETURNING id, inviter_id, email, invitee_id, created_at, mail_queued, token_hash, token_expires_at, mail_sent_at
 `
 
 type CreateInviteParams struct {
@@ -50,6 +69,10 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Inv
 		&i.Email,
 		&i.InviteeID,
 		&i.CreatedAt,
+		&i.MailQueued,
+		&i.TokenHash,
+		&i.TokenExpiresAt,
+		&i.MailSentAt,
 	)
 	return i, err
 }
@@ -94,8 +117,10 @@ func (q *Queries) ForgetInvites(ctx context.Context, arg ForgetInvitesParams) er
 }
 
 const getInviteByInviter = `-- name: GetInviteByInviter :one
-SELECT id, inviter_id, email, invitee_id, created_at FROM invites WHERE inviter_id = $1 AND email = $2
-ORDER BY created_at DESC LIMIT 1
+SELECT i.id, i.inviter_id, i.email, i.invitee_id, i.created_at, i.mail_queued, i.token_hash, i.token_expires_at, i.mail_sent_at, (u.last_login_at IS NOT NULL)::bool AS accepted
+FROM invites i LEFT JOIN users u ON u.id = i.invitee_id
+WHERE i.inviter_id IS NOT DISTINCT FROM $1 AND i.email = $2
+ORDER BY i.created_at DESC LIMIT 1
 `
 
 type GetInviteByInviterParams struct {
@@ -103,21 +128,47 @@ type GetInviteByInviterParams struct {
 	Email     string
 }
 
-func (q *Queries) GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (Invite, error) {
+type GetInviteByInviterRow struct {
+	Invite   Invite
+	Accepted bool
+}
+
+func (q *Queries) GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (GetInviteByInviterRow, error) {
 	row := q.db.QueryRow(ctx, getInviteByInviter, arg.InviterID, arg.Email)
-	var i Invite
+	var i GetInviteByInviterRow
 	err := row.Scan(
-		&i.ID,
-		&i.InviterID,
-		&i.Email,
-		&i.InviteeID,
-		&i.CreatedAt,
+		&i.Invite.ID,
+		&i.Invite.InviterID,
+		&i.Invite.Email,
+		&i.Invite.InviteeID,
+		&i.Invite.CreatedAt,
+		&i.Invite.MailQueued,
+		&i.Invite.TokenHash,
+		&i.Invite.TokenExpiresAt,
+		&i.Invite.MailSentAt,
+		&i.Accepted,
 	)
 	return i, err
 }
 
+const getInviteByToken = `-- name: GetInviteByToken :one
+SELECT id, email FROM invites WHERE token_hash = $1
+`
+
+type GetInviteByTokenRow struct {
+	ID    uuid.UUID
+	Email string
+}
+
+func (q *Queries) GetInviteByToken(ctx context.Context, tokenHash []byte) (GetInviteByTokenRow, error) {
+	row := q.db.QueryRow(ctx, getInviteByToken, tokenHash)
+	var i GetInviteByTokenRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
 const getInviteForUpdate = `-- name: GetInviteForUpdate :one
-SELECT id, inviter_id, email, invitee_id, created_at FROM invites WHERE id = $1 AND inviter_id = $2 FOR UPDATE
+SELECT id, inviter_id, email, invitee_id, created_at, mail_queued, token_hash, token_expires_at, mail_sent_at FROM invites WHERE id = $1 AND inviter_id = $2 FOR UPDATE
 `
 
 type GetInviteForUpdateParams struct {
@@ -134,28 +185,40 @@ func (q *Queries) GetInviteForUpdate(ctx context.Context, arg GetInviteForUpdate
 		&i.Email,
 		&i.InviteeID,
 		&i.CreatedAt,
+		&i.MailQueued,
+		&i.TokenHash,
+		&i.TokenExpiresAt,
+		&i.MailSentAt,
 	)
 	return i, err
 }
 
-const insertUser = `-- name: InsertUser :one
-INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO NOTHING RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit
+const getOwnedInviteEmail = `-- name: GetOwnedInviteEmail :one
+SELECT email FROM invites WHERE id = $1 AND inviter_id = $2
 `
 
-// InsertUser creates an account, or returns no row if the address has one.
-func (q *Queries) InsertUser(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRow(ctx, insertUser, email)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Role,
-		&i.Status,
-		&i.CreatedAt,
-		&i.LastLoginAt,
-		&i.MonthlyEmailLimit,
-	)
-	return i, err
+type GetOwnedInviteEmailParams struct {
+	ID        uuid.UUID
+	InviterID *uuid.UUID
+}
+
+func (q *Queries) GetOwnedInviteEmail(ctx context.Context, arg GetOwnedInviteEmailParams) (string, error) {
+	row := q.db.QueryRow(ctx, getOwnedInviteEmail, arg.ID, arg.InviterID)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
+const lastInviteMail = `-- name: LastInviteMail :one
+SELECT sent_at FROM email_log WHERE to_email = $1 AND kind = 'invite' AND status = 'sent'
+ORDER BY sent_at DESC LIMIT 1
+`
+
+func (q *Queries) LastInviteMail(ctx context.Context, toEmail string) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, lastInviteMail, toEmail)
+	var sent_at *time.Time
+	err := row.Scan(&sent_at)
+	return sent_at, err
 }
 
 const listInvitesByInviter = `-- name: ListInvitesByInviter :many
@@ -219,6 +282,15 @@ func (q *Queries) LockUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return i, err
 }
 
+const markInviteMailed = `-- name: MarkInviteMailed :exec
+UPDATE invites SET mail_sent_at = now() WHERE id = $1
+`
+
+func (q *Queries) MarkInviteMailed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markInviteMailed, id)
+	return err
+}
+
 const passInvitee = `-- name: PassInvitee :execrows
 UPDATE invites SET invitee_id = $1
 WHERE id = (SELECT o.id FROM invites o WHERE o.email = $2 AND o.invitee_id IS NULL
@@ -238,4 +310,55 @@ func (q *Queries) PassInvitee(ctx context.Context, arg PassInviteeParams) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const prepareInviteMail = `-- name: PrepareInviteMail :one
+UPDATE invites i SET token_hash = $1, token_expires_at = $2::timestamptz
+FROM users u WHERE i.id = $3 AND i.mail_sent_at IS NULL
+  AND u.email = i.email AND u.status = 'active' AND u.last_login_at IS NULL
+RETURNING i.email
+`
+
+type PrepareInviteMailParams struct {
+	TokenHash []byte
+	ExpiresAt time.Time
+	ID        uuid.UUID
+}
+
+func (q *Queries) PrepareInviteMail(ctx context.Context, arg PrepareInviteMailParams) (string, error) {
+	row := q.db.QueryRow(ctx, prepareInviteMail, arg.TokenHash, arg.ExpiresAt, arg.ID)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
+const queueInviteMailOnce = `-- name: QueueInviteMailOnce :execrows
+UPDATE invites SET mail_queued = true WHERE id = $1 AND NOT mail_queued
+`
+
+func (q *Queries) QueueInviteMailOnce(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, queueInviteMailOnce, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reserveInvitedAccount = `-- name: ReserveInvitedAccount :one
+INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET email = users.email
+RETURNING id, (old.id IS NULL)::bool AS created
+`
+
+type ReserveInvitedAccountRow struct {
+	ID      uuid.UUID
+	Created bool
+}
+
+// ReserveInvitedAccount locks the address through a concurrent invite or revocation.
+// PostgreSQL 18 exposes the old row on conflict and NULL on insert.
+func (q *Queries) ReserveInvitedAccount(ctx context.Context, email string) (ReserveInvitedAccountRow, error) {
+	row := q.db.QueryRow(ctx, reserveInvitedAccount, email)
+	var i ReserveInvitedAccountRow
+	err := row.Scan(&i.ID, &i.Created)
+	return i, err
 }

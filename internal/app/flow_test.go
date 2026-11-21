@@ -93,13 +93,18 @@ func (c *client) login(mailer *mail.Memory, email string) {
 	if quota.Remaining != auth.CodesPerDay-1 || quota.ResendAfter != int(auth.ResendAfter.Seconds()) {
 		c.t.Errorf("quota = %+v", quota)
 	}
-	sent := mailer.Sent()
-	if len(sent) != before+1 || sent[len(sent)-1].To != email {
-		c.t.Fatalf("login email not sent to %s: %+v", email, sent)
+	var code string
+	for _, msg := range mailer.Sent()[before:] {
+		m := codeRe.FindStringSubmatch(msg.Text)
+		if msg.To == email && m != nil && strings.HasPrefix(msg.Subject, m[1]) {
+			if code != "" {
+				c.t.Fatal("received multiple login codes")
+			}
+			code = m[1]
+		}
 	}
-	m := codeRe.FindStringSubmatch(sent[len(sent)-1].Text)
-	if m == nil || !strings.HasPrefix(sent[len(sent)-1].Subject, m[1]) {
-		c.t.Fatalf("no login code in %q", sent[len(sent)-1].Text)
+	if code == "" {
+		c.t.Fatalf("login code not sent to %s", email)
 	}
 	// Asking again right away is refused with a wait time.
 	resp, b := c.do(http.MethodPost, site, api.Prefix+"/auth/code", map[string]string{"email": email})
@@ -110,7 +115,7 @@ func (c *client) login(mailer *mail.Memory, email string) {
 	if resp.StatusCode != http.StatusBadRequest {
 		c.t.Errorf("bad code: %d %s", resp.StatusCode, b)
 	}
-	resp, b = c.do(http.MethodPost, site, api.Prefix+"/auth/verify", map[string]string{"email": email, "code": m[1]})
+	resp, b = c.do(http.MethodPost, site, api.Prefix+"/auth/verify", map[string]string{"email": email, "code": code})
 	if resp.StatusCode != http.StatusOK {
 		c.t.Fatalf("verify: %d %s", resp.StatusCode, b)
 	}

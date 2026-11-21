@@ -24,6 +24,14 @@ type LoginData struct {
 	ServiceURL   string
 }
 
+// InviteData fills the registration invitation.
+type InviteData struct {
+	Link        string
+	ValidDays   int
+	ServiceName string
+	ServiceURL  string
+}
+
 // DigestItem is one deleted article in a notification digest.
 type DigestItem struct {
 	Title       string
@@ -59,9 +67,10 @@ func Render(name, to string, data any) (Message, error) {
 	}
 	subject, body, _ := strings.Cut(text.String(), "\n")
 	m := Message{
-		To:      to,
-		Subject: strings.TrimSpace(strings.TrimPrefix(subject, "Subject:")),
-		Text:    strings.TrimLeft(body, "\n"),
+		To:          to,
+		omitLogBody: name == "invite",
+		Subject:     strings.TrimSpace(strings.TrimPrefix(subject, "Subject:")),
+		Text:        strings.TrimLeft(body, "\n"),
 	}
 	if t := htmlTemplates.Lookup(name + ".html.tmpl"); t != nil {
 		var html bytes.Buffer

@@ -1,5 +1,5 @@
 // Package notify decides what email to send and when (plan.md §5.6): login
-// links, digests of ended watches, and operator alerts, within the daily
+// codes, invitations, deletion digests and operator alerts, within the daily
 // sending limit, recording every message in email_log.
 package notify
 
@@ -86,7 +86,6 @@ type (
 
 // Queue and timing.
 const (
-	QueueEmail    = "email"
 	SweepInterval = 5 * time.Minute
 	AlertPeriod   = 6 * time.Hour
 )
@@ -98,11 +97,11 @@ var openStates = []rivertype.JobState{
 
 func (DigestArgs) Kind() string { return "email_digest" }
 func (DigestArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueEmail, MaxAttempts: 8, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: openStates}}
+	return river.InsertOpts{Queue: mail.Queue, MaxAttempts: 8, UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: openStates}}
 }
 func (AlertArgs) Kind() string { return "email_alert" }
 func (AlertArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{Queue: QueueEmail, MaxAttempts: 5, UniqueOpts: river.UniqueOpts{ByArgs: true, ByPeriod: AlertPeriod}}
+	return river.InsertOpts{Queue: mail.Queue, MaxAttempts: 5, UniqueOpts: river.UniqueOpts{ByArgs: true, ByPeriod: AlertPeriod}}
 }
 func (SweepArgs) Kind() string { return "notify_sweep" }
 
@@ -110,7 +109,7 @@ func (SweepArgs) Kind() string { return "notify_sweep" }
 // provider limit; everything else stops at 90% so people can still sign in
 // after a burst of notifications.
 func (n *Notifier) limitFor(kind string) int {
-	if kind == "login" {
+	if kind == "login" || (kind == "invite" && n.cfg.DailyLimit == 1) {
 		return n.cfg.DailyLimit
 	}
 	return n.cfg.DailyLimit * 9 / 10
@@ -162,6 +161,30 @@ func (n *Notifier) SendLogin(ctx context.Context, to, code string, userID *uuid.
 		return err
 	}
 	return n.send(ctx, "login", userID, m)
+}
+
+// SendInvite shares the provider budget with notifications. Even when
+// invitations are revoked and recreated, each address gets at most one an hour.
+func (n *Notifier) SendInvite(ctx context.Context, to, token string, valid time.Duration) error {
+	last, err := n.q.LastInviteMail(ctx, to)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if last != nil && n.now().Before(last.Add(time.Hour)) {
+		return &RetryAt{Time: last.Add(time.Hour)}
+	}
+	m, err := mail.Render("invite", to, mail.InviteData{
+		ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL,
+		Link: n.cfg.BaseURL + "/invite#t=" + token, ValidDays: int(valid.Hours() / 24),
+	})
+	if err != nil {
+		return err
+	}
+	err = n.send(ctx, "invite", nil, m)
+	if errors.Is(err, ErrDailyLimit) {
+		return &RetryAt{Time: startOfDay(n.now()).Add(24*time.Hour + 5*time.Minute)}
+	}
+	return err
 }
 
 // Sweep queues a digest for every user with unannounced ended watches.
