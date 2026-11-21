@@ -31,6 +31,8 @@ func TestAnalyzeFixtures(t *testing.T) {
 		// The whole page as fetched on 2026-11-20 (tokens redacted), not trimmed.
 		{file: "deleted_by_author_full.html", wantVerdict: VerdictDeleted, wantReason: ReasonAuthorDeleted, wantMessage: "该内容已被发布者删除"},
 		{file: "deleted_violation.html", wantVerdict: VerdictDeleted, wantReason: ReasonViolation, wantMessage: "此内容因违规无法查看"},
+		// Taken down after a complaint; fetched whole on 2026-11-21 (tokens redacted).
+		{file: "deleted_violation_full.html", wantVerdict: VerdictDeleted, wantReason: ReasonViolation, wantMessage: "此内容因违规无法查看"},
 		{file: "blocked_verify.html", wantVerdict: VerdictBlocked},
 	}
 	for _, tt := range tests {
@@ -172,7 +174,8 @@ func TestAnalyzeHead(t *testing.T) {
 	}
 	for file, want := range map[string]Verdict{
 		"deleted_by_author.html": VerdictDeleted, "deleted_by_author_full.html": VerdictDeleted,
-		"deleted_violation.html": VerdictDeleted, "blocked_verify.html": VerdictBlocked,
+		"deleted_violation.html": VerdictDeleted, "deleted_violation_full.html": VerdictDeleted,
+		"blocked_verify.html": VerdictBlocked,
 	} {
 		if r := AnalyzeHead(200, "", fixture(t, file)); r.Verdict != want {
 			t.Errorf("%s: %s, want %s", file, r.Verdict, want)
