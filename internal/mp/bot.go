@@ -177,10 +177,10 @@ func (r *reply) String() string {
 	return strings.TrimRight(s, "\n")
 }
 
-// linkNote says where the links lead. Without an ICP filing WeChat warns
-// before opening the site, so the note says the warning is expected.
+// linkNote says where the links lead. Without an ICP filing WeChat may warn
+// before opening the site, so the note says that is expected.
 func (b *Bot) linkNote() string {
-	return "链接打开的是本号配套的「" + b.cfg.ServiceName + "」网站（" + b.host + "）。微信提示「该网站未完成ICP备案」是因为服务器在香港，可以放心继续访问。"
+	return "链接打开的是本号配套的「" + b.cfg.ServiceName + "」网站（" + b.host + "）。微信可能提示「该网站未完成ICP备案」，可以放心继续访问。"
 }
 
 // site names the website and, if it has another name, its relation to the
