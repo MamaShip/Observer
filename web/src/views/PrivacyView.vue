@@ -31,7 +31,7 @@ import { serviceName, session } from '@/session'
         </ul>
 
         <h2 id="cookie">Cookie</h2>
-        <p>只使用一个保持登录状态的 Cookie，30 天内不使用会自动失效。没有其他 Cookie。</p>
+        <p>只使用一个保持登录状态的 Cookie，60 天内不使用会自动失效。没有其他 Cookie。</p>
 
         <h2 id="backup">文章备份</h2>
         <p>

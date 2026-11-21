@@ -151,14 +151,14 @@ func clientIP(ctx context.Context) netip.Addr {
 }
 
 // sessionToken reads the session from the cookie or an Authorization header.
-func sessionToken(r *http.Request) string {
+func sessionToken(r *http.Request) (token string, fromCookie bool) {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer ")), false
 	}
 	if c, err := r.Cookie(auth.CookieName); err == nil {
-		return c.Value
+		return c.Value, true
 	}
-	return ""
+	return "", false
 }
 
 // middleware resolves the caller, its address, and rejects cross-site writes.
@@ -176,9 +176,16 @@ func (d Deps) middleware(next http.Handler) http.Handler {
 			}
 		}
 		ctx := context.WithValue(r.Context(), clientIPKey{}, d.clientAddr(r))
-		if tok := sessionToken(r); tok != "" && d.Auth != nil {
-			if u, err := d.Auth.Authenticate(ctx, tok); err == nil {
+		if tok, fromCookie := sessionToken(r); tok != "" && d.Auth != nil {
+			if u, renewed, err := d.Auth.Resume(ctx, tok); err == nil {
 				ctx = context.WithValue(ctx, principalKey{}, &principal{User: u, Token: tok})
+				// The server just pushed the expiry out; push the cookie's
+				// out too, or the browser drops it SessionTTL after login.
+				// Handlers that set the cookie themselves (login, logout)
+				// replace this header with theirs.
+				if renewed && fromCookie {
+					http.SetCookie(w, sessionCookie(tok, auth.SessionTTL))
+				}
 			}
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))

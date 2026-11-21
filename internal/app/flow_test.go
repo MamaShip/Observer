@@ -176,6 +176,20 @@ func TestUserFlow(t *testing.T) {
 	if session.User == nil || session.User.Email != "alice@example.com" {
 		t.Fatalf("session after login: %+v", session.User)
 	}
+	// An hour or more later the server extends the session and renews the
+	// cookie with it, so the browser keeps it as long as the server does.
+	resp, _ := alice.do(http.MethodGet, site, api.Prefix+"/me", nil)
+	if len(resp.Cookies()) != 0 {
+		t.Errorf("cookie renewed right after login: %v", resp.Cookies())
+	}
+	if _, err := a.pool.Exec(ctx, `UPDATE sessions SET last_seen_at = last_seen_at - interval '2 hours'`); err != nil {
+		t.Fatal(err)
+	}
+	resp, _ = alice.do(http.MethodGet, site, api.Prefix+"/me", nil)
+	if ck := resp.Cookies(); len(ck) != 1 || ck[0].Name != auth.CookieName || ck[0].Value != alice.cookie ||
+		ck[0].MaxAge != int(auth.SessionTTL.Seconds()) || !ck[0].Secure || !ck[0].HttpOnly || ck[0].SameSite != http.SameSiteLaxMode {
+		t.Errorf("renewed cookie: %v", ck)
+	}
 	var me api.Me
 	alice.api(http.MethodGet, "/me", nil, 200, &me)
 	if me.Email != "alice@example.com" || me.EmailsThisMonth != 0 || me.MonthlyEmails != 20 {
@@ -183,7 +197,7 @@ func TestUserFlow(t *testing.T) {
 	}
 
 	// Writes from another site are refused even with the cookie.
-	resp, _ := alice.doWithOrigin(http.MethodPost, api.Prefix+"/watches", "https://evil.example", map[string]string{"url": watchtest.AliveURL})
+	resp, _ = alice.doWithOrigin(http.MethodPost, api.Prefix+"/watches", "https://evil.example", map[string]string{"url": watchtest.AliveURL})
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("cross-site write: %d", resp.StatusCode)
 	}
@@ -320,7 +334,14 @@ func TestUserFlow(t *testing.T) {
 	// Stopping, logging out, deleting the account.
 	alice.api(http.MethodDelete, "/watches/"+uuid.NewString(), nil, http.StatusNotFound, nil)
 	alice.api(http.MethodDelete, "/watches/"+id.String(), nil, http.StatusNoContent, nil)
-	bob.api(http.MethodPost, "/auth/logout", nil, http.StatusNoContent, nil)
+	// Logging out when the session is due for renewal still clears the cookie.
+	if _, err := a.pool.Exec(ctx, `UPDATE sessions SET last_seen_at = last_seen_at - interval '2 hours'`); err != nil {
+		t.Fatal(err)
+	}
+	resp, b := bob.do(http.MethodPost, site, api.Prefix+"/auth/logout", nil)
+	if ck := resp.Cookies(); resp.StatusCode != http.StatusNoContent || len(ck) != 1 || ck[0].Name != auth.CookieName || ck[0].MaxAge >= 0 {
+		t.Errorf("logout: %d %s, cookies %v", resp.StatusCode, b, ck)
+	}
 	bob.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
 	alice.api(http.MethodDelete, "/me", nil, http.StatusNoContent, nil)
 	alice.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)

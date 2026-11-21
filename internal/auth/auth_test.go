@@ -342,16 +342,23 @@ func TestSessionSlidingExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := clk.t
-	// Used every 20 days, the session outlives its initial 30 days.
-	for _, day := range []int{20, 40, 60} {
+	if _, renewed, err := s.Resume(ctx, sess.Token); err != nil || renewed {
+		t.Fatalf("right after login: renewed %v, %v; want not renewed", renewed, err)
+	}
+	// Used every 40 days, the session outlives its initial 60 days.
+	for _, day := range []int{40, 80, 120} {
 		clk.t = start.Add(time.Duration(day) * 24 * time.Hour)
-		if _, err := s.Authenticate(ctx, sess.Token); err != nil {
-			t.Fatalf("day %d: %v", day, err)
+		if _, renewed, err := s.Resume(ctx, sess.Token); err != nil || !renewed {
+			t.Fatalf("day %d: renewed %v, %v; want renewed", day, renewed, err)
+		}
+		// Extended at most once an hour.
+		if _, renewed, err := s.Resume(ctx, sess.Token); err != nil || renewed {
+			t.Fatalf("day %d again: renewed %v, %v; want not renewed", day, renewed, err)
 		}
 	}
-	clk.t = start.Add(91 * 24 * time.Hour)
+	clk.t = start.Add(181 * 24 * time.Hour)
 	if _, err := s.Authenticate(ctx, sess.Token); !errors.Is(err, ErrNoSession) {
-		t.Fatalf("idle 31 days: %v, want ErrNoSession", err)
+		t.Fatalf("idle 61 days: %v, want ErrNoSession", err)
 	}
 	if err := s.Cleanup(ctx); err != nil {
 		t.Fatal(err)

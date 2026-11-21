@@ -39,7 +39,7 @@ const (
 	CodesPerDay       = 2 // per address and Beijing calendar day
 	ResendAfter       = 60 * time.Second
 	codeAttempts      = 5 // guesses per code
-	SessionTTL        = 30 * 24 * time.Hour
+	SessionTTL        = 60 * 24 * time.Hour
 	sessionTouchEvery = time.Hour
 	codesPerIPPerHour = 10
 )
@@ -291,27 +291,36 @@ func (s *Service) newSession(ctx context.Context, q *db.Queries, user db.User, u
 // Authenticate returns the user of a session token, extending the session
 // (sliding expiry) at most once an hour.
 func (s *Service) Authenticate(ctx context.Context, token string) (db.User, error) {
+	u, _, err := s.Resume(ctx, token)
+	return u, err
+}
+
+// Resume is Authenticate that also reports whether the session was just
+// extended, so the caller can renew the browser cookie to match.
+func (s *Service) Resume(ctx context.Context, token string) (user db.User, renewed bool, err error) {
 	hash, ok := hashToken(token)
 	if !ok {
-		return db.User{}, ErrNoSession
+		return db.User{}, false, ErrNoSession
 	}
 	now := s.now()
 	row, err := s.q.GetSession(ctx, db.GetSessionParams{TokenHash: hash, Now: now})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return db.User{}, ErrNoSession
+		return db.User{}, false, ErrNoSession
 	}
 	if err != nil {
-		return db.User{}, err
+		return db.User{}, false, err
 	}
 	if row.User.Status != "active" {
-		return db.User{}, ErrDisabled
+		return db.User{}, false, ErrDisabled
 	}
 	if now.Sub(row.Session.LastSeenAt) > sessionTouchEvery {
 		if err := s.q.TouchSession(ctx, db.TouchSessionParams{ID: row.Session.ID, Now: now, ExpiresAt: now.Add(SessionTTL)}); err != nil {
 			s.log.Warn("could not extend session", "err", err)
+		} else {
+			renewed = true
 		}
 	}
-	return row.User, nil
+	return row.User, renewed, nil
 }
 
 // Logout ends one session.
