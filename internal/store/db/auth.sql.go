@@ -139,7 +139,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email) VALUES ($1)
 ON CONFLICT (email) DO UPDATE SET email = users.email
-RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit
+RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit, invite_link_id
 `
 
 func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
@@ -153,6 +153,7 @@ func (q *Queries) CreateUser(ctx context.Context, email string) (User, error) {
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
+		&i.InviteLinkID,
 	)
 	return i, err
 }
@@ -267,7 +268,7 @@ func (q *Queries) GetLoginRequest(ctx context.Context, arg GetLoginRequestParams
 }
 
 const getSession = `-- name: GetSession :one
-SELECT s.id, s.user_id, s.token_hash, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly_email_limit
+SELECT s.id, s.user_id, s.token_hash, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly_email_limit, u.invite_link_id
 FROM sessions s JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = $1 AND s.expires_at > $2::timestamptz
 `
@@ -300,12 +301,13 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSess
 		&i.User.CreatedAt,
 		&i.User.LastLoginAt,
 		&i.User.MonthlyEmailLimit,
+		&i.User.InviteLinkID,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE id = $1
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit, invite_link_id FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -319,12 +321,13 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
+		&i.InviteLinkID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE email = $1
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit, invite_link_id FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -338,12 +341,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
+		&i.InviteLinkID,
 	)
 	return i, err
 }
 
 const getUserByEmailForUpdate = `-- name: GetUserByEmailForUpdate :one
-SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE email = $1 FOR UPDATE
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit, invite_link_id FROM users WHERE email = $1 FOR UPDATE
 `
 
 // GetUserByEmailForUpdate holds the account while a login completes, so a
@@ -359,6 +363,7 @@ func (q *Queries) GetUserByEmailForUpdate(ctx context.Context, email string) (Us
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
+		&i.InviteLinkID,
 	)
 	return i, err
 }

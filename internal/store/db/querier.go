@@ -39,6 +39,9 @@ type Querier interface {
 	// BackupState is the newest capture's state, and how many snapshots an
 	// article has.
 	BackupState(ctx context.Context, articleID uuid.UUID) (BackupStateRow, error)
+	// ClaimInviteLinkCode counts a login code requested through a link that
+	// is still open, up to max_codes.
+	ClaimInviteLinkCode(ctx context.Context, arg ClaimInviteLinkCodeParams) (int64, error)
 	// ClaimLoginRequest counts one code for (email, day). It returns no row,
 	// counting nothing, when the day's limit is reached or the last code was
 	// requested after resend_before.
@@ -61,9 +64,14 @@ type Querier interface {
 	CreateArticle(ctx context.Context) (Article, error)
 	CreateCapture(ctx context.Context, arg CreateCaptureParams) error
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
+	// Public invitation links (plan.md §6.1).
+	CreateInviteLink(ctx context.Context, arg CreateInviteLinkParams) (InviteLink, error)
 	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateUser(ctx context.Context, email string) (User, error)
+	// CreateUserFromLink returns no row when the address got an account
+	// meanwhile (waiting for that transaction if needed).
+	CreateUserFromLink(ctx context.Context, arg CreateUserFromLinkParams) (User, error)
 	CreateWatch(ctx context.Context, arg CreateWatchParams) (Watch, error)
 	CreateWechatBinding(ctx context.Context, arg CreateWechatBindingParams) (WechatBinding, error)
 	CreateWechatToken(ctx context.Context, arg CreateWechatTokenParams) error
@@ -110,6 +118,7 @@ type Querier interface {
 	GetInviteByInviter(ctx context.Context, arg GetInviteByInviterParams) (GetInviteByInviterRow, error)
 	GetInviteByToken(ctx context.Context, tokenHash []byte) (GetInviteByTokenRow, error)
 	GetInviteForUpdate(ctx context.Context, arg GetInviteForUpdateParams) (Invite, error)
+	GetInviteLink(ctx context.Context, id uuid.UUID) (InviteLink, error)
 	GetLoginRequest(ctx context.Context, arg GetLoginRequestParams) (LoginRequest, error)
 	GetOpenWatch(ctx context.Context, arg GetOpenWatchParams) (Watch, error)
 	GetOwnedInviteEmail(ctx context.Context, arg GetOwnedInviteEmailParams) (string, error)
@@ -132,6 +141,9 @@ type Querier interface {
 	LastInviteMail(ctx context.Context, toEmail string) (*time.Time, error)
 	ListArticles(ctx context.Context, maxRows int32) ([]ListArticlesRow, error)
 	ListCaptures(ctx context.Context, articleID uuid.UUID) ([]Capture, error)
+	// ListInviteLinks shows each link with its creator and the accounts it
+	// created that still exist.
+	ListInviteLinks(ctx context.Context, onlyID *uuid.UUID) ([]ListInviteLinksRow, error)
 	// ListInvitesByInviter says, for each invitation, whether the account it
 	// created has logged in. An invitation to an address that already had an
 	// account created none and so never counts as accepted.
@@ -144,6 +156,8 @@ type Querier interface {
 	// A confirmation ends active watches and records its check at the same
 	// instant. A submission of an already deleted article has no such check.
 	ListWechatNews(ctx context.Context, arg ListWechatNewsParams) ([]ListWechatNewsRow, error)
+	// LockInviteLink serialises sign-ups through one link so its places hold.
+	LockInviteLink(ctx context.Context, id uuid.UUID) (InviteLink, error)
 	// LockUser serialises one user's invitations so the monthly count holds.
 	LockUser(ctx context.Context, id uuid.UUID) (User, error)
 	LockUserWatch(ctx context.Context, arg LockUserWatchParams) (Watch, error)
@@ -178,6 +192,7 @@ type Querier interface {
 	RecordArticleAlive(ctx context.Context, arg RecordArticleAliveParams) error
 	RecordArticleFailure(ctx context.Context, arg RecordArticleFailureParams) (int32, error)
 	RecordRevokedInvite(ctx context.Context, arg RecordRevokedInviteParams) error
+	ReleaseInviteLinkCode(ctx context.Context, id uuid.UUID) error
 	// ReleaseLoginRequest gives back a claim whose email could not be sent.
 	ReleaseLoginRequest(ctx context.Context, arg ReleaseLoginRequestParams) error
 	// RenewWatch makes a watch active until expires_at: an active one is
@@ -193,6 +208,7 @@ type Querier interface {
 	ReserveInvitedAccount(ctx context.Context, email string) (ReserveInvitedAccountRow, error)
 	// RetryCapture queues a failed capture's build again and marks it rebuilt.
 	RetryCapture(ctx context.Context, arg RetryCaptureParams) error
+	RevokeInviteLink(ctx context.Context, arg RevokeInviteLinkParams) (int64, error)
 	// ScrubEmailLog keeps the rows (they count toward today's sending limit) but
 	// forgets the address.
 	ScrubEmailLog(ctx context.Context, arg ScrubEmailLogParams) error
@@ -205,6 +221,7 @@ type Querier interface {
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) error
 	UpsertUserByEmail(ctx context.Context, email string) (User, error)
+	UseInviteLink(ctx context.Context, id uuid.UUID) error
 	// UseWechatToken marks an unused, unexpired token as used and returns it.
 	// No row means it is unknown, used, expired or for another purpose.
 	UseWechatToken(ctx context.Context, arg UseWechatTokenParams) (WechatToken, error)

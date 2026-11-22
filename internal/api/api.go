@@ -119,6 +119,7 @@ func build(d Deps, all bool) (http.Handler, huma.API) {
 		h.registerAuth(g)
 		h.registerMe(g)
 		h.registerInvites(g)
+		h.registerInviteLinks(g)
 		h.registerWatches(g)
 		h.registerSnapshots(g)
 		h.registerAdmin(g)

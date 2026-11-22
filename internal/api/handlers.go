@@ -26,7 +26,8 @@ type handlers struct{ d Deps }
 
 type codeInput struct {
 	Body struct {
-		Email string `json:"email" maxLength:"254" doc:"Where to send the login code"`
+		Email       string `json:"email" maxLength:"254" doc:"Where to send the login code"`
+		InviteToken string `json:"invite_token,omitempty" maxLength:"64" doc:"A public invitation link's token: lets an address without an account receive a code (invite mode)"`
 	}
 }
 
@@ -42,9 +43,10 @@ type codeOutput struct {
 type verifyInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      struct {
-		Email  string `json:"email" maxLength:"254"`
-		Code   string `json:"code" maxLength:"10" doc:"The 6-digit code from the email"`
-		Bearer bool   `json:"bearer,omitempty" doc:"Return the session token in the body instead of setting a cookie (for non-browser clients)"`
+		Email       string `json:"email" maxLength:"254"`
+		Code        string `json:"code" maxLength:"10" doc:"The 6-digit code from the email"`
+		InviteToken string `json:"invite_token,omitempty" maxLength:"64" doc:"The public invitation link the code was requested through; creates the account on one of its places"`
+		Bearer      bool   `json:"bearer,omitempty" doc:"Return the session token in the body instead of setting a cookie (for non-browser clients)"`
 	}
 }
 
@@ -92,7 +94,7 @@ func (h *handlers) registerAuth(g huma.API) {
 		Description: fmt.Sprintf("Each email can request %d codes a day (Beijing time), %d seconds apart. "+
 			"Answers the same way whether or not the address has an account.", auth.CodesPerDay, int(auth.ResendAfter.Seconds())),
 	}, func(ctx context.Context, in *codeInput) (*codeOutput, error) {
-		q, err := h.d.Auth.RequestCode(ctx, in.Body.Email, clientIP(ctx))
+		q, err := h.d.Auth.RequestCode(ctx, in.Body.Email, in.Body.InviteToken, clientIP(ctx))
 		wait := int(math.Ceil(q.ResendIn.Seconds()))
 		switch {
 		case errors.Is(err, auth.ErrInvalidEmail):
@@ -104,6 +106,8 @@ func (h *handlers) registerAuth(g huma.API) {
 				http.Header{"Retry-After": {strconv.Itoa(wait)}})
 		case errors.Is(err, auth.ErrTryTomorrow):
 			return nil, huma.Error429TooManyRequests(fmt.Sprintf("这个邮箱今天已获取过 %d 次验证码，请明天再试。", auth.CodesPerDay))
+		case errors.Is(err, auth.ErrInviteLink):
+			return nil, inviteLinkGone()
 		case errors.Is(err, notify.ErrDailyLimit):
 			return nil, huma.Error503ServiceUnavailable("今天的邮件发送额度已用完，请明天再试。")
 		case err != nil:
@@ -120,10 +124,12 @@ func (h *handlers) registerAuth(g huma.API) {
 		Summary: "Log in with an emailed code", Tags: []string{"auth"},
 		Description: "Each code allows a few attempts and works once.",
 	}, func(ctx context.Context, in *verifyInput) (*verifyOutput, error) {
-		sess, err := h.d.Auth.Verify(ctx, in.Body.Email, in.Body.Code, in.UserAgent)
+		sess, err := h.d.Auth.Verify(ctx, in.Body.Email, in.Body.Code, in.Body.InviteToken, in.UserAgent)
 		switch {
 		case errors.Is(err, auth.ErrInvalidCode):
 			return nil, huma.Error400BadRequest("验证码不正确或已失效。")
+		case errors.Is(err, auth.ErrInviteLink):
+			return nil, inviteLinkGone()
 		case errors.Is(err, auth.ErrDisabled):
 			return nil, huma.Error403Forbidden("该账号已停用。")
 		case err != nil:

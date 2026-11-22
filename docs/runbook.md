@@ -59,6 +59,9 @@ dc logs -f --since 1h app               # 日志（JSON；不含访问者 IP）
 dc logs --since 1h caddy                # Caddy 只记自身事件；请求信息已被过滤（无 IP、请求头、签名）
 dc exec app observer admin stats        # 统计
 dc exec app observer admin invite <email>       # 用户也可以在设置页邀请（每月 5 个），后台账户页可看邀请关系
+dc exec app observer admin invite-link create -n 20 -valid 72h -note 读者群  # 公共邀请链接（也可在后台「邀请链接」页创建）
+dc exec app observer admin invite-link list      # 链接、状态与已用名额
+dc exec app observer admin invite-link revoke <id>
 dc exec app observer admin disable <email>      # 停用并退出所有设备
 dc exec app observer admin articles -n 20
 dc exec app observer admin email-limit <email> <n|default>  # 该账号每月通知邮件上限（0 = 不限）
@@ -158,7 +161,7 @@ dc up -d
 |---|---|---|
 | Resend API Key | Resend 后台新建 → 改 `.env` 的 `SMTP_PASSWORD` → `dc up -d app` → `observer mailtest` → 删除旧 Key | 无 |
 | Wasabi Access Key | Wasabi 后台新建 → 改 `.env` → `dc up -d app` → 删除旧 Key | 无 |
-| `SIGNING_KEY` | 改 `.env` → `dc up -d app` | 已发出的快照查看链接失效（最长 1 小时） |
+| `SIGNING_KEY` | 改 `.env` → `dc up -d app` | 已发出的快照查看链接失效（最长 1 小时）；所有公共邀请链接失效，需要重新创建并分享 |
 | `WECHAT_TOKEN` | 改 `.env` → `dc up -d app` → 公众平台服务器配置里改成同一个 Token 并提交 | 两边不一致期间公众号无法回复 |
 | `POSTGRES_PASSWORD` | `dc exec postgres psql -U observer -c "ALTER USER observer PASSWORD '新密码'"` → 改 `.env` → `dc up -d` | 重启期间短暂不可用 |
 

@@ -47,7 +47,7 @@ func TestInvite(t *testing.T) {
 		t.Errorf("invite = %+v, quota %+v", inv, quota)
 	}
 	// The invited address can now log in.
-	if _, err := s.RequestCode(ctx, "bob@example.com", ip); err != nil || sender.count() != 1 {
+	if _, err := s.RequestCode(ctx, "bob@example.com", "", ip); err != nil || sender.count() != 1 {
 		t.Fatalf("invitee's code: %v, %d sent", err, sender.count())
 	}
 
@@ -220,11 +220,11 @@ func TestInvitationLinks(t *testing.T) {
 	assertGone(disabled)
 
 	_, byCode := invite("code@example.com")
-	if _, err := s.RequestCode(ctx, "code@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "code@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	email, code := sender.last(t)
-	if _, err := s.Verify(ctx, email, code, ""); err != nil {
+	if _, err := s.Verify(ctx, email, code, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	assertGone(byCode)
@@ -310,11 +310,11 @@ func TestRevokeInvite(t *testing.T) {
 	}
 
 	// Bob logs in: carol's invitation is accepted and cannot be revoked.
-	if _, err := s.RequestCode(ctx, "bob@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "bob@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, code := sender.last(t)
-	if _, err := s.Verify(ctx, "bob@example.com", code, ""); err != nil {
+	if _, err := s.Verify(ctx, "bob@example.com", code, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := status(carol.ID); !got["bob@example.com"] {

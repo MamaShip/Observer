@@ -97,7 +97,7 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 	if err != nil {
 		return nil, err
 	}
-	authSvc := auth.New(pool, notifier, auth.Config{Mode: cfg.RegistrationMode}, log)
+	authSvc := auth.New(pool, notifier, auth.Config{Mode: cfg.RegistrationMode, LinkKey: []byte(cfg.SigningKey)}, log)
 
 	hb := &jobs.Heartbeat{}
 	var backups *backup.Service

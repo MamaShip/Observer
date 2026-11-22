@@ -266,7 +266,7 @@ func (q *Queries) ListInvitesByInviter(ctx context.Context, inviterID *uuid.UUID
 }
 
 const lockUser = `-- name: LockUser :one
-SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit FROM users WHERE id = $1 FOR UPDATE
+SELECT id, email, role, status, created_at, last_login_at, monthly_email_limit, invite_link_id FROM users WHERE id = $1 FOR UPDATE
 `
 
 // LockUser serialises one user's invitations so the monthly count holds.
@@ -281,6 +281,7 @@ func (q *Queries) LockUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
+		&i.InviteLinkID,
 	)
 	return i, err
 }

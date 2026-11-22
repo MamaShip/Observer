@@ -119,7 +119,7 @@ func TestOpenModeLoginFlow(t *testing.T) {
 	ctx := context.Background()
 	s, sender, q, _ := newService(t, ModeOpen)
 
-	quota, err := s.RequestCode(ctx, "New.User@Example.com", ip)
+	quota, err := s.RequestCode(ctx, "New.User@Example.com", "", ip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,20 +130,20 @@ func TestOpenModeLoginFlow(t *testing.T) {
 	if to != "new.user@example.com" {
 		t.Errorf("sent to %s", to)
 	}
-	if _, err := s.Verify(ctx, "new.user@example.com", wrong(code), ""); !errors.Is(err, ErrInvalidCode) {
+	if _, err := s.Verify(ctx, "new.user@example.com", wrong(code), "", ""); !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("wrong code: %v", err)
 	}
-	if _, err := s.Verify(ctx, "other@example.com", code, ""); !errors.Is(err, ErrInvalidCode) {
+	if _, err := s.Verify(ctx, "other@example.com", code, "", ""); !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("code for another address: %v", err)
 	}
-	sess, err := s.Verify(ctx, "NEW.user@example.com", " "+code+" ", "test-agent")
+	sess, err := s.Verify(ctx, "NEW.user@example.com", " "+code+" ", "", "test-agent")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sess.User.Email != "new.user@example.com" || sess.Token == "" {
 		t.Fatalf("session = %+v", sess)
 	}
-	if _, err := s.Verify(ctx, "new.user@example.com", code, "again"); !errors.Is(err, ErrInvalidCode) {
+	if _, err := s.Verify(ctx, "new.user@example.com", code, "", "again"); !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("reused code: %v, want ErrInvalidCode", err)
 	}
 
@@ -172,7 +172,7 @@ func TestOpenModeLoginFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := sender.count()
-	if _, err := s.RequestCode(ctx, "d@example.com", ip); err != nil || sender.count() != n {
+	if _, err := s.RequestCode(ctx, "d@example.com", "", ip); err != nil || sender.count() != n {
 		t.Errorf("disabled user got a code (err %v)", err)
 	}
 }
@@ -181,30 +181,30 @@ func TestCodeExpiresAndRunsOutOfGuesses(t *testing.T) {
 	ctx := context.Background()
 	s, sender, _, clk := newService(t, ModeOpen)
 
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, code := sender.last(t)
 	clk.advance(CodeTTL + time.Second)
-	if _, err := s.Verify(ctx, "a@example.com", code, ""); !errors.Is(err, ErrInvalidCode) {
+	if _, err := s.Verify(ctx, "a@example.com", code, "", ""); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("expired code: %v", err)
 	}
 
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, code = sender.last(t)
 	for range codeAttempts {
-		if _, err := s.Verify(ctx, "a@example.com", wrong(code), ""); !errors.Is(err, ErrInvalidCode) {
+		if _, err := s.Verify(ctx, "a@example.com", wrong(code), "", ""); !errors.Is(err, ErrInvalidCode) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.Verify(ctx, "a@example.com", code, ""); !errors.Is(err, ErrInvalidCode) {
+	if _, err := s.Verify(ctx, "a@example.com", code, "", ""); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("right code after %d wrong guesses: %v, want ErrInvalidCode", codeAttempts, err)
 	}
 	// Malformed input does not use up guesses.
 	for _, c := range []string{"", "12345", "1234567", "12345a"} {
-		if _, err := s.Verify(ctx, "a@example.com", c, ""); !errors.Is(err, ErrInvalidCode) {
+		if _, err := s.Verify(ctx, "a@example.com", c, "", ""); !errors.Is(err, ErrInvalidCode) {
 			t.Errorf("Verify(%q) = %v", c, err)
 		}
 	}
@@ -213,21 +213,21 @@ func TestCodeExpiresAndRunsOutOfGuesses(t *testing.T) {
 func TestOnlyLatestCodeWorks(t *testing.T) {
 	ctx := context.Background()
 	s, sender, _, clk := newService(t, ModeOpen)
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, first := sender.last(t)
 	clk.advance(ResendAfter)
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, second := sender.last(t)
 	if first != second {
-		if _, err := s.Verify(ctx, "a@example.com", first, ""); !errors.Is(err, ErrInvalidCode) {
+		if _, err := s.Verify(ctx, "a@example.com", first, "", ""); !errors.Is(err, ErrInvalidCode) {
 			t.Errorf("superseded code: %v", err)
 		}
 	}
-	if _, err := s.Verify(ctx, "a@example.com", second, ""); err != nil {
+	if _, err := s.Verify(ctx, "a@example.com", second, "", ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -239,7 +239,7 @@ func TestInviteMode(t *testing.T) {
 	// Unknown address: same answers as a real one, no email.
 	stranger := make([]error, 3)
 	for i := range stranger {
-		_, stranger[i] = s.RequestCode(ctx, "stranger@example.com", ip)
+		_, stranger[i] = s.RequestCode(ctx, "stranger@example.com", "", ip)
 		clk.advance(ResendAfter)
 	}
 	if sender.count() != 0 {
@@ -250,7 +250,7 @@ func TestInviteMode(t *testing.T) {
 	}
 	invited := make([]error, 3)
 	for i := range invited {
-		_, invited[i] = s.RequestCode(ctx, "Invited@example.com", ip)
+		_, invited[i] = s.RequestCode(ctx, "Invited@example.com", "", ip)
 		clk.advance(ResendAfter)
 	}
 	for i := range invited {
@@ -262,7 +262,7 @@ func TestInviteMode(t *testing.T) {
 		t.Fatalf("invited address got %d emails", sender.count())
 	}
 	_, code := sender.last(t)
-	if _, err := s.Verify(ctx, "invited@example.com", code, ""); err != nil {
+	if _, err := s.Verify(ctx, "invited@example.com", code, "", ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -271,22 +271,22 @@ func TestDailyLimit(t *testing.T) {
 	ctx := context.Background()
 	s, sender, _, clk := newService(t, ModeOpen)
 
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	// A second request within a minute is refused and not counted.
 	clk.advance(20 * time.Second)
-	q, err := s.RequestCode(ctx, "a@example.com", ip)
+	q, err := s.RequestCode(ctx, "a@example.com", "", ip)
 	if !errors.Is(err, ErrTooSoon) || q.ResendIn != ResendAfter-20*time.Second || q.Remaining != 1 {
 		t.Fatalf("too soon: %+v, %v", q, err)
 	}
 	clk.advance(40 * time.Second)
-	q, err = s.RequestCode(ctx, "a@example.com", ip)
+	q, err = s.RequestCode(ctx, "a@example.com", "", ip)
 	if err != nil || q != (CodeQuota{}) {
 		t.Fatalf("second code: %+v, %v", q, err)
 	}
 	clk.advance(time.Hour)
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); !errors.Is(err, ErrTryTomorrow) {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); !errors.Is(err, ErrTryTomorrow) {
 		t.Fatalf("third code: %v, want ErrTryTomorrow", err)
 	}
 	if sender.count() != CodesPerDay {
@@ -295,22 +295,22 @@ func TestDailyLimit(t *testing.T) {
 
 	// A failed send does not count.
 	sender.fail = errors.New("smtp down")
-	if _, err := s.RequestCode(ctx, "b@example.com", ip); err == nil {
+	if _, err := s.RequestCode(ctx, "b@example.com", "", ip); err == nil {
 		t.Fatal("send failure not reported")
 	}
 	sender.fail = nil
 	clk.advance(ResendAfter)
-	if q, err := s.RequestCode(ctx, "b@example.com", ip); err != nil || q.Remaining != 1 {
+	if q, err := s.RequestCode(ctx, "b@example.com", "", ip); err != nil || q.Remaining != 1 {
 		t.Fatalf("after a failed send: %+v, %v", q, err)
 	}
 
 	// The day turns at midnight Beijing time (16:00 UTC).
 	clk.t = time.Date(2026, 11, 20, 15, 59, 0, 0, time.UTC)
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); !errors.Is(err, ErrTryTomorrow) {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); !errors.Is(err, ErrTryTomorrow) {
 		t.Fatalf("23:59 Beijing: %v", err)
 	}
 	clk.t = time.Date(2026, 11, 20, 16, 0, 0, 0, time.UTC)
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatalf("00:00 Beijing: %v", err)
 	}
 }
@@ -320,12 +320,12 @@ func TestIPRateLimit(t *testing.T) {
 	s, _, _, _ := newService(t, ModeOpen)
 	var err error
 	for i := range codesPerIPPerHour + 1 {
-		_, err = s.RequestCode(ctx, "user"+string(rune('a'+i))+"@example.com", ip)
+		_, err = s.RequestCode(ctx, "user"+string(rune('a'+i))+"@example.com", "", ip)
 	}
 	if !errors.Is(err, ErrRateLimited) {
 		t.Errorf("request %d from one IP: %v, want ErrRateLimited", codesPerIPPerHour+1, err)
 	}
-	if _, err := s.RequestCode(ctx, "other@example.com", netip.MustParseAddr("198.51.100.1")); err != nil {
+	if _, err := s.RequestCode(ctx, "other@example.com", "", netip.MustParseAddr("198.51.100.1")); err != nil {
 		t.Errorf("another IP was limited: %v", err)
 	}
 }
@@ -333,11 +333,11 @@ func TestIPRateLimit(t *testing.T) {
 func TestSessionSlidingExpiry(t *testing.T) {
 	ctx := context.Background()
 	s, sender, _, clk := newService(t, ModeOpen)
-	if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, code := sender.last(t)
-	sess, err := s.Verify(ctx, "a@example.com", code, "")
+	sess, err := s.Verify(ctx, "a@example.com", code, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,11 +375,11 @@ func TestSessionSlidingExpiry(t *testing.T) {
 func TestDeleteAccount(t *testing.T) {
 	ctx := context.Background()
 	s, sender, q, _ := newService(t, ModeOpen)
-	if _, err := s.RequestCode(ctx, "gone@example.com", ip); err != nil {
+	if _, err := s.RequestCode(ctx, "gone@example.com", "", ip); err != nil {
 		t.Fatal(err)
 	}
 	_, code := sender.last(t)
-	sess, err := s.Verify(ctx, "gone@example.com", code, "")
+	sess, err := s.Verify(ctx, "gone@example.com", code, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,11 +476,11 @@ func TestLogoutAll(t *testing.T) {
 	s, sender, _, clk := newService(t, ModeOpen)
 	var tokens []string
 	for range 2 {
-		if _, err := s.RequestCode(ctx, "a@example.com", ip); err != nil {
+		if _, err := s.RequestCode(ctx, "a@example.com", "", ip); err != nil {
 			t.Fatal(err)
 		}
 		_, code := sender.last(t)
-		sess, err := s.Verify(ctx, "a@example.com", code, "")
+		sess, err := s.Verify(ctx, "a@example.com", code, "", "")
 		if err != nil {
 			t.Fatal(err)
 		}

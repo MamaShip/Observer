@@ -312,17 +312,22 @@ SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly
   (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.invitee_id IS NOT NULL)::int AS invitees,
   ((SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= $1::timestamptz)
     + (SELECT count(*) FROM revoked_invites r WHERE r.inviter_id = u.id AND r.invited_at >= $1::timestamptz))::int AS invites_this_month,
-  wb.created_at AS wechat_bound_at
+  wb.created_at AS wechat_bound_at,
+  u.invite_link_id,
+  coalesce(il.note, '')::text AS invite_link_note,
+  il.created_at AS invite_link_created_at
 FROM users u
 LEFT JOIN invites i ON i.invitee_id = u.id
 LEFT JOIN users inv ON inv.id = i.inviter_id
 LEFT JOIN wechat_bindings wb ON wb.user_id = u.id
+LEFT JOIN invite_links il ON il.id = u.invite_link_id
 WHERE ($2::uuid IS NULL OR u.id < $2::uuid)
   AND ($3::uuid IS NULL OR u.id = $3::uuid)
   AND ($4::uuid IS NULL OR i.inviter_id = $4::uuid)
-  AND ($5::text IS NULL OR u.email ILIKE '%' || $5::text || '%')
+  AND ($5::uuid IS NULL OR u.invite_link_id = $5::uuid)
+  AND ($6::text IS NULL OR u.email ILIKE '%' || $6::text || '%')
 ORDER BY u.id DESC
-LIMIT $6::int
+LIMIT $7::int
 `
 
 type AdminListUsersParams struct {
@@ -330,28 +335,32 @@ type AdminListUsersParams struct {
 	Before     *uuid.UUID
 	OnlyID     *uuid.UUID
 	InvitedBy  *uuid.UUID
+	InviteLink *uuid.UUID
 	Search     *string
 	MaxRows    int32
 }
 
 type AdminListUsersRow struct {
-	ID                uuid.UUID
-	Email             string
-	Role              string
-	Status            string
-	CreatedAt         time.Time
-	LastLoginAt       *time.Time
-	MonthlyEmailLimit *int32
-	OpenWatches       int32
-	TotalWatches      int32
-	WatchesThisMonth  int32
-	EmailsThisMonth   int32
-	Invited           bool
-	InviterID         *uuid.UUID
-	InviterEmail      string
-	Invitees          int32
-	InvitesThisMonth  int32
-	WechatBoundAt     *time.Time
+	ID                  uuid.UUID
+	Email               string
+	Role                string
+	Status              string
+	CreatedAt           time.Time
+	LastLoginAt         *time.Time
+	MonthlyEmailLimit   *int32
+	OpenWatches         int32
+	TotalWatches        int32
+	WatchesThisMonth    int32
+	EmailsThisMonth     int32
+	Invited             bool
+	InviterID           *uuid.UUID
+	InviterEmail        string
+	Invitees            int32
+	InvitesThisMonth    int32
+	WechatBoundAt       *time.Time
+	InviteLinkID        *uuid.UUID
+	InviteLinkNote      string
+	InviteLinkCreatedAt *time.Time
 }
 
 func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error) {
@@ -360,6 +369,7 @@ func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) 
 		arg.Before,
 		arg.OnlyID,
 		arg.InvitedBy,
+		arg.InviteLink,
 		arg.Search,
 		arg.MaxRows,
 	)
@@ -388,6 +398,9 @@ func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) 
 			&i.Invitees,
 			&i.InvitesThisMonth,
 			&i.WechatBoundAt,
+			&i.InviteLinkID,
+			&i.InviteLinkNote,
+			&i.InviteLinkCreatedAt,
 		); err != nil {
 			return nil, err
 		}

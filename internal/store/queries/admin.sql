@@ -77,14 +77,19 @@ SELECT u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly
   (SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.invitee_id IS NOT NULL)::int AS invitees,
   ((SELECT count(*) FROM invites x WHERE x.inviter_id = u.id AND x.created_at >= sqlc.arg(month_start)::timestamptz)
     + (SELECT count(*) FROM revoked_invites r WHERE r.inviter_id = u.id AND r.invited_at >= sqlc.arg(month_start)::timestamptz))::int AS invites_this_month,
-  wb.created_at AS wechat_bound_at
+  wb.created_at AS wechat_bound_at,
+  u.invite_link_id,
+  coalesce(il.note, '')::text AS invite_link_note,
+  il.created_at AS invite_link_created_at
 FROM users u
 LEFT JOIN invites i ON i.invitee_id = u.id
 LEFT JOIN users inv ON inv.id = i.inviter_id
 LEFT JOIN wechat_bindings wb ON wb.user_id = u.id
+LEFT JOIN invite_links il ON il.id = u.invite_link_id
 WHERE (sqlc.narg(before)::uuid IS NULL OR u.id < sqlc.narg(before)::uuid)
   AND (sqlc.narg(only_id)::uuid IS NULL OR u.id = sqlc.narg(only_id)::uuid)
   AND (sqlc.narg(invited_by)::uuid IS NULL OR i.inviter_id = sqlc.narg(invited_by)::uuid)
+  AND (sqlc.narg(invite_link)::uuid IS NULL OR u.invite_link_id = sqlc.narg(invite_link)::uuid)
   AND (sqlc.narg(search)::text IS NULL OR u.email ILIKE '%' || sqlc.narg(search)::text || '%')
 ORDER BY u.id DESC
 LIMIT sqlc.arg(max_rows)::int;

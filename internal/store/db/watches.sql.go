@@ -566,7 +566,7 @@ func (q *Queries) StopWatch(ctx context.Context, arg StopWatchParams) (int64, er
 const upsertUserByEmail = `-- name: UpsertUserByEmail :one
 INSERT INTO users (email) VALUES ($1)
 ON CONFLICT (email) DO UPDATE SET email = users.email
-RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit
+RETURNING id, email, role, status, created_at, last_login_at, monthly_email_limit, invite_link_id
 `
 
 func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, error) {
@@ -580,6 +580,7 @@ func (q *Queries) UpsertUserByEmail(ctx context.Context, email string) (User, er
 		&i.CreatedAt,
 		&i.LastLoginAt,
 		&i.MonthlyEmailLimit,
+		&i.InviteLinkID,
 	)
 	return i, err
 }

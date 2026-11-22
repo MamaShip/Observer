@@ -78,6 +78,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/invite-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public invitation links, newest first */
+        get: operations["admin-list-invite-links"];
+        put?: never;
+        /**
+         * Open a public invitation link
+         * @description Anyone with the link can sign up during valid_hours, until max_uses accounts were created. 409 when registration is open.
+         */
+        post: operations["admin-create-invite-link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invite-links/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Close a public invitation link
+         * @description The link stops working at once; accounts it created stay.
+         */
+        delete: operations["admin-revoke-invite-link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/overview": {
         parameters: {
             query?: never;
@@ -161,6 +202,26 @@ export interface paths {
          * @description Each email can request 2 codes a day (Beijing time), 60 seconds apart. Answers the same way whether or not the address has an account.
          */
         post: operations["request-login-code"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/invite-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a public invitation link
+         * @description 410 when the link has expired, has no places left or was revoked (one answer for all). 409 when registration is open and no link is needed.
+         */
+        post: operations["check-invite-link"];
         delete?: never;
         options?: never;
         head?: never;
@@ -758,6 +819,11 @@ export interface components {
              */
             emails_this_month: number;
             id: string;
+            /** Format: date-time */
+            invite_link_created_at?: string;
+            /** @description The public invitation link that created the account */
+            invite_link_id?: string;
+            invite_link_note?: string;
             /** @description The account was created by someone's invitation (false: by the command line or before invitations were recorded) */
             invited: boolean;
             /** @description The inviter's email */
@@ -844,6 +910,8 @@ export interface components {
         CodeInputBody: {
             /** @description Where to send the login code */
             email: string;
+            /** @description A public invitation link's token: lets an address without an account receive a code (invite mode) */
+            invite_token?: string;
         };
         CodeOutputBody: {
             message: string;
@@ -876,6 +944,20 @@ export interface components {
             Secure: boolean;
             Unparsed: string[];
             Value: string;
+        };
+        CreateInviteLinkInputBody: {
+            /**
+             * Format: int64
+             * @description Accounts the link may create
+             */
+            max_uses: number;
+            /** @description For the admins, e.g. where the link was posted */
+            note?: string;
+            /**
+             * Format: int64
+             * @description How long the link stays open
+             */
+            valid_hours: number;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -964,6 +1046,52 @@ export interface components {
         };
         InviteInputBody: {
             email: string;
+        };
+        InviteLink: {
+            /**
+             * Format: int64
+             * @description Accounts it created that still exist
+             */
+            accounts: number;
+            /** Format: date-time */
+            created_at: string;
+            /** @description The creating admin's email; absent from the command line or once that account is deleted */
+            created_by?: string;
+            /** Format: date-time */
+            expires_at: string;
+            id: string;
+            /**
+             * Format: int64
+             * @description Accounts the link may create
+             */
+            max_uses: number;
+            note: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            /** @enum {string} */
+            status: "active" | "full" | "expired" | "revoked";
+            /** @description The link to share */
+            url: string;
+            /**
+             * Format: int64
+             * @description Accounts it has created, including ones deleted since
+             */
+            used: number;
+        };
+        InviteLinkCheckInputBody: {
+            /** @description The token from the link (after #t=) */
+            token: string;
+        };
+        InviteLinkCheckOutputBody: {
+            /**
+             * Format: date-time
+             * @description Until when the link accepts sign-ups, if places remain
+             */
+            expires_at: string;
+        };
+        InviteLinksOutputBody: {
+            /** @description Newest first, at most 200 */
+            items: components["schemas"]["InviteLink"][];
         };
         InviteOutputBody: {
             invitation: components["schemas"]["Invitation"];
@@ -1074,6 +1202,8 @@ export interface components {
             /** @description The 6-digit code from the email */
             code: string;
             email: string;
+            /** @description The public invitation link the code was requested through; creates the account on one of its places */
+            invite_token?: string;
         };
         VerifyOutputBody: {
             /** @description Session token; only when bearer was requested */
@@ -1258,6 +1388,97 @@ export interface operations {
             };
         };
     };
+    "admin-list-invite-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLinksOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-create-invite-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInviteLinkInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLink"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "admin-revoke-invite-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "admin-overview": {
         parameters: {
             query?: never;
@@ -1294,6 +1515,8 @@ export interface operations {
                 search?: string;
                 /** @description Only accounts created by this user's invitations (a user id) */
                 invited_by?: string;
+                /** @description Only accounts created through this public invitation link (its id) */
+                invite_link?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -1447,6 +1670,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodeOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "check-invite-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteLinkCheckInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteLinkCheckOutputBody"];
                 };
             };
             /** @description Error */

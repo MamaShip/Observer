@@ -139,7 +139,7 @@ func (q *Queries) DeleteWechatTokensByOpenID(ctx context.Context, openid string)
 }
 
 const getWechatBindingByOpenID = `-- name: GetWechatBindingByOpenID :one
-SELECT b.openid, b.user_id, b.created_at, u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly_email_limit
+SELECT b.openid, b.user_id, b.created_at, u.id, u.email, u.role, u.status, u.created_at, u.last_login_at, u.monthly_email_limit, u.invite_link_id
 FROM wechat_bindings b JOIN users u ON u.id = b.user_id
 WHERE b.openid = $1
 `
@@ -163,6 +163,7 @@ func (q *Queries) GetWechatBindingByOpenID(ctx context.Context, openid string) (
 		&i.User.CreatedAt,
 		&i.User.LastLoginAt,
 		&i.User.MonthlyEmailLimit,
+		&i.User.InviteLinkID,
 	)
 	return i, err
 }

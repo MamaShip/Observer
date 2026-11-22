@@ -10,6 +10,7 @@ const route = useRoute()
     <span class="zg-side__label">运营</span>
     <RouterLink to="/admin">概览</RouterLink>
     <RouterLink to="/admin/users">账户管理</RouterLink>
+    <RouterLink to="/admin/invites">邀请链接</RouterLink>
     <RouterLink to="/admin/articles" :class="{ 'is-current': route.name === 'admin-article' }">文章管理</RouterLink>
     <span class="zg-side__label">其他</span>
     <RouterLink to="/watches">返回我的观察</RouterLink>

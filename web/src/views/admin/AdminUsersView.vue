@@ -6,9 +6,14 @@ import { useAdminPages } from '@/lib/adminPages'
 import ResultPager from '@/components/admin/ResultPager.vue'
 import ZgIcon from '@/components/ZgIcon.vue'
 import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const search = ref('')
+const route = useRoute()
+const router = useRouter()
 const invitedBy = ref<AdminUser | null>(null) // show only the accounts this user's invitations created
+// Or only those a public invitation link created (from the links page).
+const inviteLink = ref(typeof route.query.invite_link === 'string' ? route.query.invite_link : '')
 const filter = ref('all')
 const appliedSearch = ref('')
 const inviteOpen = ref(false)
@@ -21,7 +26,7 @@ const busy = ref(false)
 
 const { items, loading, error, page, hasNext, go, reset, replace, matchCount } = useAdminPages<AdminUser>(
   cursor => call(api.GET('/api/v1/admin/users', { params: { query: {
-    search: appliedSearch.value || undefined, invited_by: invitedBy.value?.id, cursor, limit: 50,
+    search: appliedSearch.value || undefined, invited_by: invitedBy.value?.id, invite_link: inviteLink.value || undefined, cursor, limit: 50,
   } } })),
   u => filter.value === 'all' || u.status === filter.value || (filter.value === 'admin' && u.role === 'admin'),
 )
@@ -52,16 +57,35 @@ async function invite() {
 
 function showInvitees(u: AdminUser | null) {
   invitedBy.value = u
+  setLink('')
   search.value = ''
-  open.value = null
   void load()
 }
+
+function showLink(id: string) {
+  invitedBy.value = null
+  setLink(id)
+  search.value = ''
+  void load()
+}
+
+// setLink keeps the link filter in the address, so the links page can link here.
+function setLink(id: string) {
+  inviteLink.value = id
+  if ((route.query.invite_link ?? '') !== id) void router.replace({ query: id ? { invite_link: id } : {} })
+}
+
+/** The public invitation link an account came from, as the panel shows it. */
+function linkLabel(u: AdminUser): string {
+  return u.invite_link_note ? `公开邀请「${u.invite_link_note}」` : `公开邀请（${formatDate(u.invite_link_created_at)} 创建）`
+}
+const linkFilterNote = computed(() => items.value.find(u => u.invite_link_id === inviteLink.value)?.invite_link_note)
 
 function showInviter(u: AdminUser) {
   if (!u.invited_by) return
   invitedBy.value = null
+  setLink('')
   search.value = u.invited_by
-  open.value = null
   void load()
 }
 
@@ -112,6 +136,7 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
   <p v-if="notice" class="notice notice-ok" role="status">{{ notice }}</p>
   <p v-if="error" class="notice notice-danger" role="alert">{{ error }} <button class="btn-link" @click="load">刷新列表</button></p>
   <p v-if="invitedBy" class="notice notice-info">只看 {{ invitedBy.email }} 邀请注册的账户。 <button class="btn-link" @click="showInvitees(null)">显示全部</button></p>
+  <p v-else-if="inviteLink" class="notice notice-info">只看通过公开邀请{{ linkFilterNote ? `「${linkFilterNote}」` : '链接' }}注册的账户。 <button class="btn-link" @click="showInvitees(null)">显示全部</button></p>
   <div class="zg-detail">
     <section>
       <form class="zg-toolbar" role="search" @submit.prevent="load">
@@ -138,7 +163,7 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
       <p v-if="!selected" class="muted small">选择列表中的邮箱，查看邀请关系、用量和权限。</p>
       <template v-else>
         <dl class="zg-facts">
-          <dt>邀请人</dt><dd><button v-if="selected.invited_by" class="btn-link" @click="showInviter(selected)">{{ selected.invited_by }}</button><template v-else>{{ selected.invited ? '已注销的账户' : '—' }}</template></dd>
+          <dt>邀请人</dt><dd><button v-if="selected.invite_link_id" class="btn-link" @click="showLink(selected.invite_link_id)">{{ linkLabel(selected) }}</button><button v-else-if="selected.invited_by" class="btn-link" @click="showInviter(selected)">{{ selected.invited_by }}</button><template v-else>{{ selected.invited ? '已注销的账户' : '—' }}</template></dd>
           <dt>邀请注册</dt><dd><button v-if="selected.invitees" class="btn-link" @click="showInvitees(selected)">{{ selected.invitees }} 人</button><template v-else>0 人</template></dd>
           <dt>本月邀请</dt><dd>{{ selected.invites_this_month }} 人</dd><dt>累计观察</dt><dd>{{ selected.total_watches }} 篇</dd>
           <dt>本月提交</dt><dd>{{ selected.watches_this_month }} 篇</dd><dt>最近登录</dt><dd>{{ selected.last_login_at ? formatRelative(selected.last_login_at) : '从未' }}</dd>

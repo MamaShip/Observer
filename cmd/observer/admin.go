@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MamaShip/Observer/internal/api"
 	"github.com/MamaShip/Observer/internal/app"
 	"github.com/MamaShip/Observer/internal/auth"
 	"github.com/MamaShip/Observer/internal/blob"
@@ -31,6 +32,10 @@ const adminUsage = `Usage: observer admin <command>
 
   stats                            service counters
   invite <email>                   email a one-time registration link
+  invite-link create -n N [-valid 72h] [-note TEXT]
+                                   open a public invitation link for N new accounts
+  invite-link list                 public invitation links and their use
+  invite-link revoke <id>          close a public invitation link
   disable <email> | enable <email> block or unblock an account (disabling also logs it out)
   logout-all <email>               end every session of an account
   role <email> <admin|user>        give or take the admin console (/admin)
@@ -84,6 +89,8 @@ func runAdmin(ctx context.Context, args []string) error {
 		}
 		fmt.Println("Invitation processed.")
 		return nil
+	case "invite-link":
+		return adminInviteLink(ctx, cfg, pool, q, rest)
 	case "disable", "enable", "logout-all":
 		return adminUser(ctx, q, cmd, rest)
 	case "submit":
@@ -166,6 +173,71 @@ func runAdmin(ctx context.Context, args []string) error {
 		os.Exit(2)
 		return nil
 	}
+}
+
+// adminInviteLink manages public invitation links (plan.md §6.1). Their
+// URLs are derived with SIGNING_KEY, so it must match the server's.
+func adminInviteLink(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, q *db.Queries, args []string) error {
+	const usage = "usage: observer admin invite-link create -n N [-valid 72h] [-note TEXT] | list | revoke <id>"
+	if len(args) == 0 {
+		return errors.New(usage)
+	}
+	if cfg.SigningKey == "" && args[0] != "revoke" {
+		return errors.New("SIGNING_KEY is not set: links made here would not match the server's")
+	}
+	svc := auth.New(pool, nil, auth.Config{Mode: cfg.RegistrationMode, LinkKey: []byte(cfg.SigningKey)}, slog.New(slog.DiscardHandler))
+	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("invite-link create", flag.ContinueOnError)
+		n := fs.Int("n", 0, "accounts the link may create (1-1000)")
+		valid := fs.Duration("valid", 72*time.Hour, "how long the link stays open (1h-720h)")
+		note := fs.String("note", "", "for the admins, e.g. where the link is posted")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		l, err := svc.CreateInviteLink(ctx, nil, *n, *valid, *note)
+		if errors.Is(err, auth.ErrRegistrationOpen) {
+			return errors.New("registration is open: no invitation link is needed")
+		}
+		if errors.Is(err, auth.ErrLinkSettings) {
+			return fmt.Errorf("-n is 1 to %d, -valid 1h to %s, -note at most %d characters", auth.LinkMaxUses, auth.LinkMaxValid, auth.LinkNoteMax)
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s\nid %s, %d places, open until %s\n", api.InviteLinkURL(cfg.Origin(), svc, l.ID), l.ID, l.MaxUses, l.ExpiresAt.Format(time.RFC3339))
+		return nil
+	case "list":
+		rows, err := q.ListInviteLinks(ctx, nil)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "ID\tSTATUS\tUSED\tEXPIRES\tNOTE\tURL")
+		for _, r := range rows {
+			l := r.InviteLink
+			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%s\t%s\t%s\n", l.ID, auth.LinkStatus(l, now), l.Used, l.MaxUses,
+				l.ExpiresAt.Format(time.RFC3339), l.Note, api.InviteLinkURL(cfg.Origin(), svc, l.ID))
+		}
+		return w.Flush()
+	case "revoke":
+		if len(args) != 2 {
+			return errors.New(usage)
+		}
+		id, err := uuid.Parse(args[1])
+		if err != nil {
+			return err
+		}
+		if err := svc.RevokeInviteLink(ctx, id); errors.Is(err, auth.ErrInviteNotFound) {
+			return errors.New("no invitation link with that id")
+		} else if err != nil {
+			return err
+		}
+		fmt.Println("Invitation link revoked.")
+		return nil
+	}
+	return errors.New(usage)
 }
 
 func adminStats(ctx context.Context, q *db.Queries) error {

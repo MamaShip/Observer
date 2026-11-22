@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ApiError, api, call, messageOf } from '@/api/client'
+import { formatDateTime } from '@/lib/format'
 import * as storage from '@/lib/storage'
 import { safeNext } from '@/router'
 import { session, setUser } from '@/session'
@@ -14,10 +15,18 @@ interface Saved {
   resendAt: number
   remaining: number | null
 }
-const storageKey = 'login'
-
 const route = useRoute()
 const router = useRouter()
+
+// /join is this page for a public invitation link (plan.md, 6.1): the token
+// from the fragment goes with the code request and the login, so an address
+// without an account can sign up. It is kept in storage across reloads.
+const joining = route.name === 'join'
+const storageKey = joining ? 'join' : 'login'
+const linkKey = 'join-link'
+const linkState = ref<'checking' | 'open' | 'gone'>(joining ? 'checking' : 'open')
+const linkExpires = ref('')
+let inviteToken = ''
 
 const step = ref<'email' | 'code'>('email')
 const email = ref('')
@@ -41,8 +50,9 @@ const accountName = computed(() => session.site?.wechat?.name || siteName.value)
 const emailLooksValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim()))
 
 let timer: ReturnType<typeof setInterval> | undefined
-onMounted(() => {
+onMounted(async () => {
   timer = setInterval(() => (now.value = Date.now()), 1000)
+  if (joining && !(await checkLink())) return
   const saved = storage.load<Saved>(storageKey)
   if (saved && Date.now() - saved.sentAt < ttlMinutes.value * 60_000) {
     email.value = saved.email
@@ -53,6 +63,53 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => clearInterval(timer))
+
+/** checkLink reads the invitation token and asks whether its link is open. */
+async function checkLink(): Promise<boolean> {
+  const t = new URLSearchParams(route.hash.slice(1)).get('t')
+  if (t) {
+    inviteToken = t
+    storage.save(linkKey, t)
+    await router.replace({ path: '/join' })
+  } else {
+    inviteToken = storage.load<string>(linkKey) ?? ''
+  }
+  if (session.site && session.site.registration_mode !== 'invite') {
+    await router.replace('/login')
+    return false
+  }
+  if (!inviteToken) {
+    linkGone()
+    return false
+  }
+  try {
+    const r = await call(api.POST('/api/v1/auth/invite-link', { body: { token: inviteToken } }))
+    linkExpires.value = r.expires_at
+    linkState.value = 'open'
+    return true
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      await router.replace('/login')
+    } else if (e instanceof ApiError && e.status === 410) {
+      linkGone()
+    } else {
+      linkState.value = 'open'
+      error.value = messageOf(e)
+    }
+    return false
+  }
+}
+
+function linkGone() {
+  linkState.value = 'gone'
+  storage.remove(linkKey)
+  storage.remove(storageKey)
+}
+
+/** The invitation token for a request, when signing up through a link. */
+function invite(): { invite_token?: string } {
+  return joining && inviteToken ? { invite_token: inviteToken } : {}
+}
 
 function persist() {
   storage.save(storageKey, {
@@ -78,7 +135,7 @@ async function requestCode() {
   }
   sending.value = true
   try {
-    const r = await call(api.POST('/api/v1/auth/code', { body: { email: email.value.trim() } }))
+    const r = await call(api.POST('/api/v1/auth/code', { body: { email: email.value.trim(), ...invite() } }))
     remaining.value = r.remaining
     now.value = Date.now()
     resendAt.value = now.value + r.resend_after * 1000
@@ -87,6 +144,7 @@ async function requestCode() {
     await toCodeStep()
   } catch (e) {
     error.value = messageOf(e)
+    if (e instanceof ApiError && e.status === 410 && joining) linkGone()
     if (e instanceof ApiError && e.status === 429 && e.retryAfter) {
       // A code was sent moments ago (another tab, or a double tap).
       now.value = Date.now()
@@ -117,12 +175,14 @@ async function verify() {
   }
   verifying.value = true
   try {
-    const r = await call(api.POST('/api/v1/auth/verify', { body: { email: email.value.trim(), code: code.value } }))
+    const r = await call(api.POST('/api/v1/auth/verify', { body: { email: email.value.trim(), code: code.value, ...invite() } }))
     storage.remove(storageKey)
+    storage.remove(linkKey)
     setUser(r.user)
-    await router.replace(safeNext(route.query.next))
+    await router.replace(joining ? '/watches' : safeNext(route.query.next))
   } catch (e) {
     error.value = messageOf(e)
+    if (e instanceof ApiError && e.status === 410 && joining) linkGone()
     code.value = ''
   } finally {
     verifying.value = false
@@ -146,13 +206,24 @@ function changeEmail() {
 <template>
   <div class="login-layout">
   <section class="zg-auth">
-    <h1 class="zg-auth__title">邮箱登录</h1>
+    <h1 class="zg-auth__title">{{ joining ? '接受邀请' : '邮箱登录' }}</h1>
+    <p v-if="linkState === 'checking'" class="muted" role="status"><span class="spinner" aria-hidden="true" /> 正在检查邀请链接…</p>
+    <template v-else-if="linkState === 'gone'">
+      <p class="notice notice-danger" role="alert">邀请已失效：这个邀请链接已过期或名额已满。已有账号可以直接用邮箱登录。</p>
+      <div class="zg-actions"><RouterLink to="/login" class="zg-shard zg-btn">邮箱登录</RouterLink></div>
+    </template>
+    <template v-else-if="joining && session.user">
+      <p class="notice notice-info">当前已登录 {{ session.user.email }}。如需为其他邮箱注册，请先在「设置」中退出登录，再重新打开邀请链接。</p>
+      <div class="zg-actions"><RouterLink to="/watches" class="zg-shard zg-btn">进入我的观察</RouterLink></div>
+    </template>
+    <template v-else>
     <p v-if="fromWechat" class="notice notice-info">
       {{ accountName === siteName ? `这是公众号「${accountName}」的网站。` : `「${siteName}」是公众号「${accountName}」配套的文章备份网站。` }}用邮箱登录后，就能完成微信绑定。
     </p>
 
     <form v-if="step === 'email'" class="zg-stack" novalidate @submit.prevent="requestCode">
-      <p class="zg-auth__lede">输入邮箱，我们会发送一个 6 位数字验证码。<template v-if="session.site?.registration_mode !== 'invite'">第一次使用会自动创建账号。</template></p>
+      <p v-if="joining" class="zg-auth__lede">你收到了一个公开邀请。输入邮箱获取 6 位数字验证码，即可注册；已有账号也可以在这里直接登录。<template v-if="linkExpires">邀请有效期至 {{ formatDateTime(linkExpires) }}。</template></p>
+      <p v-else class="zg-auth__lede">输入邮箱，我们会发送一个 6 位数字验证码。<template v-if="session.site?.registration_mode !== 'invite'">第一次使用会自动创建账号。</template></p>
 
       <label class="zg-field">
         <span class="zg-field__label">邮箱</span>
@@ -196,7 +267,7 @@ function changeEmail() {
       <p v-if="error" class="notice notice-danger" role="alert">{{ error }}</p>
       <button class="zg-shard zg-btn zg-btn--block" type="submit" :disabled="verifying || code.length !== 6">
         <span v-if="verifying" class="spinner" aria-hidden="true" />
-        登录
+        {{ joining ? '注册 / 登录' : '登录' }}
       </button>
       <div class="row between small">
         <button type="button" class="btn-link" @click="changeEmail">换一个邮箱</button>
@@ -207,7 +278,8 @@ function changeEmail() {
       </div>
       <p v-if="remaining !== null && remaining > 0" class="muted small">今天这个邮箱还可以获取 {{ remaining }} 次验证码。</p>
     </form>
-    <p class="zg-auth__fine">登录即表示你同意<RouterLink to="/terms">服务条款</RouterLink>和<RouterLink to="/privacy">隐私说明</RouterLink>。</p>
+    <p class="zg-auth__fine">{{ joining ? '注册' : '登录' }}即表示你同意<RouterLink to="/terms">服务条款</RouterLink>和<RouterLink to="/privacy">隐私说明</RouterLink>。</p>
+    </template>
   </section>
   <aside class="next-steps zg-stack" aria-label="登录后的使用步骤">
     <span class="zg-hero__kicker">WHAT HAPPENS NEXT</span>
@@ -216,8 +288,8 @@ function changeEmail() {
         <span class="zg-step__n">0{{ i + 1 }}</span>{{ step }}
       </li>
     </ol>
-      <p v-if="session.site?.registration_mode === 'invite'" class="notice notice-info">
-        目前处于邀请测试阶段，朋友可以在「设置」里邀请你。首次注册时，点击邀请邮件中的链接即可；之后在这里用邮箱验证码登录。
+      <p v-if="session.site?.registration_mode === 'invite' && !joining" class="notice notice-info">
+        目前处于邀请测试阶段，朋友可以在「设置」里邀请你，也可以通过管理员发布的邀请链接注册。首次注册时，点击邀请邮件中的链接即可；之后在这里用邮箱验证码登录。
       </p>
   </aside>
   </div>

@@ -27,6 +27,8 @@ export const router = createRouter({
     { path: '/', name: 'home', component: HomeView },
     { path: '/invite', name: 'invite', component: () => import('./views/InviteView.vue'), meta: { title: '接受邀请' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: '登录', guest: true } },
+    // A public invitation link (plan.md, 6.1): the login page, signing up through the link.
+    { path: '/join', name: 'join', component: LoginView, meta: { title: '接受邀请' } },
     { path: '/watches', name: 'watches', component: WatchListView, meta: { title: '我的观察', auth: true } },
     { path: '/watches/:id', name: 'watch', component: WatchDetailView, meta: { title: '观察详情', auth: true } },
     { path: '/watches/:id/backup/:version', name: 'reader', component: () => import('./views/ReaderView.vue'), meta: { title: '文章备份', auth: true } },
@@ -42,6 +44,12 @@ export const router = createRouter({
       name: 'admin-users',
       component: () => import('./views/admin/AdminUsersView.vue'),
       meta: { title: '账户 · 管理后台', auth: true, admin: true, wide: true },
+    },
+    {
+      path: '/admin/invites',
+      name: 'admin-invites',
+      component: () => import('./views/admin/AdminInviteLinksView.vue'),
+      meta: { title: '邀请链接 · 管理后台', auth: true, admin: true, wide: true },
     },
     {
       path: '/admin/articles',

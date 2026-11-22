@@ -72,25 +72,35 @@ type MailSender interface {
 // Config configures the service.
 type Config struct {
 	Mode string
+	// LinkKey signs public invitation links (SIGNING_KEY). Without it a
+	// random key is used, and links stop working after a restart.
+	LinkKey []byte
 }
 
 // Service implements login and sessions.
 type Service struct {
-	pool   *pgxpool.Pool
-	q      *db.Queries
-	sender MailSender
-	cfg    Config
-	log    *slog.Logger
-	now    func() time.Time
-	jobs   JobInserter
-	ips    *ipLimiter
+	pool    *pgxpool.Pool
+	q       *db.Queries
+	sender  MailSender
+	cfg     Config
+	log     *slog.Logger
+	now     func() time.Time
+	jobs    JobInserter
+	ips     *ipLimiter
+	linkKey []byte
 }
 
 // New builds the service.
 func New(pool *pgxpool.Pool, sender MailSender, cfg Config, log *slog.Logger) *Service {
+	secret := cfg.LinkKey
+	if len(secret) == 0 {
+		secret = make([]byte, 32)
+		_, _ = rand.Read(secret) // never fails
+	}
 	return &Service{
 		pool: pool, q: db.New(pool), sender: sender, cfg: cfg, log: log.With("component", "auth"), now: time.Now,
-		ips: newIPLimiter(rate.Every(time.Hour/codesPerIPPerHour), codesPerIPPerHour),
+		ips:     newIPLimiter(rate.Every(time.Hour/codesPerIPPerHour), codesPerIPPerHour),
+		linkKey: deriveLinkKey(secret),
 	}
 }
 
@@ -122,7 +132,12 @@ func today(t time.Time) time.Time {
 // for every address, and the request succeeds silently when no email is sent
 // (unknown address in invite mode, disabled account), so the answers do not
 // reveal which addresses have accounts.
-func (s *Service) RequestCode(ctx context.Context, email string, ip netip.Addr) (CodeQuota, error) {
+//
+// In invite mode, link is a public invitation link's token (or ""): with an
+// open link, an address without an account receives a code too. Every
+// request through a link counts towards its cap, whoever it is for, and a
+// closed link is ErrInviteLink before anything is counted for the address.
+func (s *Service) RequestCode(ctx context.Context, email, link string, ip netip.Addr) (CodeQuota, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
 		return CodeQuota{}, err
@@ -133,6 +148,28 @@ func (s *Service) RequestCode(ctx context.Context, email string, ip netip.Addr) 
 	}
 	log := s.log.With("email_domain", email[strings.LastIndex(email, "@")+1:])
 	day := today(now)
+
+	var inviteLink *db.InviteLink
+	if link != "" && s.cfg.Mode == ModeInvite {
+		l, err := s.openLink(ctx, s.q, link, false)
+		if err != nil {
+			return CodeQuota{}, err
+		}
+		inviteLink = &l
+	}
+	// release gives back what this request counted, when it is not the
+	// user's fault or the link turns out to be closed.
+	release := func(link bool) {
+		ctx := context.WithoutCancel(ctx)
+		if err := s.q.ReleaseLoginRequest(ctx, db.ReleaseLoginRequestParams{Email: email, Day: day}); err != nil {
+			log.Error("could not release login request", "err", err)
+		}
+		if link {
+			if err := s.q.ReleaseInviteLinkCode(ctx, inviteLink.ID); err != nil {
+				log.Error("could not release invitation link code", "err", err)
+			}
+		}
+	}
 
 	sent, err := s.q.ClaimLoginRequest(ctx, db.ClaimLoginRequestParams{
 		Email: email, Day: day, Now: now, PerDay: CodesPerDay, ResendBefore: now.Add(-ResendAfter),
@@ -150,6 +187,19 @@ func (s *Service) RequestCode(ctx context.Context, email string, ip netip.Addr) 
 	if err != nil {
 		return CodeQuota{}, err
 	}
+	if inviteLink != nil {
+		n, err := s.q.ClaimInviteLinkCode(ctx, db.ClaimInviteLinkCodeParams{
+			ID: inviteLink.ID, Now: now, MaxCodes: linkCodeCap(inviteLink.MaxUses),
+		})
+		if err != nil || n == 0 {
+			release(false)
+			if err == nil {
+				log.Info("login code not sent: invitation link closed or at its cap", "link", inviteLink.ID)
+				err = ErrInviteLink
+			}
+			return CodeQuota{}, err
+		}
+	}
 	quota := CodeQuota{Remaining: CodesPerDay - int(sent)}
 	if quota.Remaining > 0 {
 		quota.ResendIn = ResendAfter
@@ -165,7 +215,7 @@ func (s *Service) RequestCode(ctx context.Context, email string, ip netip.Addr) 
 		}
 		userID = &user.ID
 	case errors.Is(err, pgx.ErrNoRows):
-		if s.cfg.Mode != ModeOpen {
+		if s.cfg.Mode != ModeOpen && inviteLink == nil {
 			log.Info("login code not sent: not invited")
 			return quota, nil
 		}
@@ -186,9 +236,7 @@ func (s *Service) RequestCode(ctx context.Context, email string, ip netip.Addr) 
 	}
 	if err := s.sender.SendLogin(ctx, email, code, userID, CodeTTL); err != nil {
 		// Not the user's fault: give the attempt back.
-		if rerr := s.q.ReleaseLoginRequest(context.WithoutCancel(ctx), db.ReleaseLoginRequestParams{Email: email, Day: day}); rerr != nil {
-			log.Error("could not release login request", "err", rerr)
-		}
+		release(inviteLink != nil)
 		return CodeQuota{}, err
 	}
 	return quota, nil
@@ -203,8 +251,10 @@ type Session struct {
 
 // Verify checks the latest code sent to email and starts a session. Each
 // call uses up one of the code's guesses. In open mode the first login
-// creates the account.
-func (s *Service) Verify(ctx context.Context, email, code, userAgent string) (Session, error) {
+// creates the account; in invite mode, an address without one gets it on a
+// place of the public invitation link (token link), or ErrInviteLink when
+// the link has closed. An existing account just logs in, link or not.
+func (s *Service) Verify(ctx context.Context, email, code, link, userAgent string) (Session, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
 		return Session{}, ErrInvalidCode
@@ -239,6 +289,8 @@ func (s *Service) Verify(ctx context.Context, email, code, userAgent string) (Se
 		switch {
 		case errors.Is(err, pgx.ErrNoRows) && s.cfg.Mode == ModeOpen:
 			user, err = q.CreateUser(ctx, email)
+		case errors.Is(err, pgx.ErrNoRows) && link != "":
+			user, err = s.signUpThroughLink(ctx, q, email, link)
 		case errors.Is(err, pgx.ErrNoRows):
 			return ErrInvalidCode // account removed after the code was sent
 		}

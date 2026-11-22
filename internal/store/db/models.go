@@ -91,6 +91,18 @@ type Invite struct {
 	MailSentAt     *time.Time
 }
 
+type InviteLink struct {
+	ID        uuid.UUID
+	CreatorID *uuid.UUID
+	Note      string
+	MaxUses   int32
+	Used      int32
+	CodesSent int32
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	CreatedAt time.Time
+}
+
 type LoginCode struct {
 	ID        uuid.UUID
 	Email     string
@@ -159,6 +171,7 @@ type User struct {
 	CreatedAt         time.Time
 	LastLoginAt       *time.Time
 	MonthlyEmailLimit *int32
+	InviteLinkID      *uuid.UUID
 }
 
 type Watch struct {

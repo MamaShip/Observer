@@ -225,6 +225,10 @@ type AdminUser struct {
 	Invitees         int        `json:"invitees" doc:"Accounts this user's invitations created"`
 	InvitesThisMonth int        `json:"invites_this_month" doc:"Invitations sent this month, including to addresses that had an account"`
 	WechatBoundAt    *time.Time `json:"wechat_bound_at,omitempty" doc:"When the account was bound to a WeChat user of the Official Account"`
+	// A public invitation link, rather than a person, created the account.
+	InviteLinkID        *uuid.UUID `json:"invite_link_id,omitempty" doc:"The public invitation link that created the account"`
+	InviteLinkNote      string     `json:"invite_link_note,omitempty"`
+	InviteLinkCreatedAt *time.Time `json:"invite_link_created_at,omitempty"`
 }
 
 func (h *handlers) adminUser(r db.AdminListUsersRow) AdminUser {
@@ -234,6 +238,7 @@ func (h *handlers) adminUser(r db.AdminListUsersRow) AdminUser {
 		EmailsThisMonth: int(r.EmailsThisMonth), MonthlyEmails: h.d.Site.MonthlyEmails,
 		Invited: r.Invited, InvitedByID: r.InviterID, InvitedBy: r.InviterEmail,
 		Invitees: int(r.Invitees), InvitesThisMonth: int(r.InvitesThisMonth), WechatBoundAt: r.WechatBoundAt,
+		InviteLinkID: r.InviteLinkID, InviteLinkNote: r.InviteLinkNote, InviteLinkCreatedAt: r.InviteLinkCreatedAt,
 	}
 	if r.MonthlyEmailLimit != nil {
 		u.MonthlyEmails, u.CustomEmailLimit = int(*r.MonthlyEmailLimit), true
@@ -254,10 +259,11 @@ func (h *handlers) getAdminUser(ctx context.Context, id uuid.UUID) (*AdminUser, 
 }
 
 type adminUsersInput struct {
-	Search    string `query:"search" maxLength:"254" doc:"Part of an email address"`
-	InvitedBy string `query:"invited_by" doc:"Only accounts created by this user's invitations (a user id)"`
-	Cursor    string `query:"cursor"`
-	Limit     int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
+	Search     string `query:"search" maxLength:"254" doc:"Part of an email address"`
+	InvitedBy  string `query:"invited_by" doc:"Only accounts created by this user's invitations (a user id)"`
+	InviteLink string `query:"invite_link" doc:"Only accounts created through this public invitation link (its id)"`
+	Cursor     string `query:"cursor"`
+	Limit      int    `query:"limit" minimum:"1" maximum:"200" default:"50"`
 }
 
 type adminUsersOutput struct {
@@ -445,6 +451,13 @@ func (h *handlers) registerAdmin(g huma.API) {
 				return nil, huma.Error400BadRequest("invited_by 应为用户 ID。")
 			}
 			p.InvitedBy = &id
+		}
+		if in.InviteLink != "" {
+			id, err := uuid.Parse(in.InviteLink)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invite_link 应为邀请链接 ID。")
+			}
+			p.InviteLink = &id
 		}
 		if in.Cursor != "" {
 			c, err := uuid.Parse(in.Cursor)
