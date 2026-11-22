@@ -67,27 +67,29 @@ const steps = [
           <WechatQR />
         </template>
       </div>
-      <div class="zg-shard zg-panel">
-        <h3 class="zg-panel__title">支持</h3>
-        <dl class="zg-facts">
-          <dt>链接</dt>
-          <dd class="is-mono">mp.weixin.qq.com/s…</dd>
-          <dt>备份</dt>
-          <dd>正文、图片、标题、公众号名、发布时间</dd>
-          <dt>格式</dt>
-          <dd>在线预览、离线 HTML、打印为 PDF</dd>
-        </dl>
-      </div>
-      <div class="zg-shard zg-panel">
-        <h3 class="zg-panel__title">不包含</h3>
-        <dl class="zg-facts">
-          <dt>媒体</dt>
-          <dd>视频、音频、小程序卡片</dd>
-          <dt>互动</dt>
-          <dd>留言区、点赞与在看数</dd>
-          <dt>外链</dt>
-          <dd>文章里跳转到的其他页面</dd>
-        </dl>
+      <div class="scope__facts">
+        <div class="zg-shard zg-panel">
+          <h3 class="zg-panel__title">支持</h3>
+          <dl class="zg-facts">
+            <dt>链接</dt>
+            <dd class="is-mono">mp.weixin.qq.com/s…</dd>
+            <dt>备份</dt>
+            <dd>正文、图片、标题、公众号名、发布时间</dd>
+            <dt>格式</dt>
+            <dd>在线预览、离线 HTML、打印为 PDF</dd>
+          </dl>
+        </div>
+        <div class="zg-shard zg-panel">
+          <h3 class="zg-panel__title">不包含</h3>
+          <dl class="zg-facts">
+            <dt>媒体</dt>
+            <dd>视频、音频、小程序卡片</dd>
+            <dt>互动</dt>
+            <dd>留言区、点赞与在看数</dd>
+            <dt>外链</dt>
+            <dd>文章里跳转到的其他页面</dd>
+          </dl>
+        </div>
       </div>
     </section>
     <section class="zg-shard zg-panel start">
@@ -131,18 +133,22 @@ const steps = [
 @media (prefers-reduced-motion: reduce) { .example-card { animation: none; } }
 
 /* 三件事 and 怎么用 are separate sections: a rule and space between them, and
-   flat tinted panels below so they do not read as a fourth and fifth step. */
+   flat tinted panels below so they do not read as a fourth and fifth step.
+   The two short fact panels stack beside the instructions, so together they
+   roughly match its height instead of each stretching to it. */
 .how { padding-top: var(--space-4); }
 .scope {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-5);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-5) var(--space-7);
   margin-top: var(--space-4); padding: var(--space-7) 0; border-top: var(--border-hair) solid var(--line-100);
 }
+.scope__facts { display: grid; gap: var(--space-4); align-content: start; }
 .scope .zg-panel { --_fill: var(--surface-200); --_edge: var(--surface-200); }
 .scope p, .start p { margin: 0; color: var(--ink-200); }
 .scope .wx-also { margin: var(--space-4) 0 var(--space-3); }
 .start { --_c: var(--chamfer-l); padding: var(--space-6); flex-flow: row wrap; align-items: center; justify-content: space-between; }
 .start h2 { margin-bottom: var(--space-2); }
 @media (max-width: 767px) {
+  .scope { grid-template-columns: minmax(0, 1fr); }
   .hero-example { justify-self: stretch; max-width: none; padding: var(--space-7) var(--space-4) var(--space-5); }
   .hero-example .zg-notice { margin-left: var(--space-4); }
 }
