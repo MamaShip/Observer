@@ -23,7 +23,7 @@ import (
 
 // Limits of a link's settings.
 const (
-	LinkMaxUses  = 1000
+	LinkMaxUses  = 100
 	LinkMinValid = time.Hour
 	LinkMaxValid = 30 * 24 * time.Hour
 	LinkNoteMax  = 100 // characters

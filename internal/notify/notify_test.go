@@ -142,6 +142,43 @@ func TestDailyLimit(t *testing.T) {
 	}
 }
 
+// Codes through invitation links have their own share of the day, and stop
+// with notifications at 90% so the rest stays for logins.
+func TestJoinCodeBudget(t *testing.T) {
+	e := newEnv(t, 10) // invitation links may send 3
+	if e.n.JoinLimit() != 3 {
+		t.Fatalf("JoinLimit = %d", e.n.JoinLimit())
+	}
+	for i := range 3 {
+		if err := e.n.SendJoinCode(e.ctx, "new@example.com", "123456", nil, 15*time.Minute); err != nil {
+			t.Fatalf("join code %d: %v", i, err)
+		}
+	}
+	if err := e.n.SendJoinCode(e.ctx, "new@example.com", "123456", nil, 15*time.Minute); !errors.Is(err, ErrJoinLimit) {
+		t.Fatalf("fourth join code: %v, want ErrJoinLimit", err)
+	}
+	if err := e.n.SendLogin(e.ctx, "member@example.com", "123456", nil, 15*time.Minute); err != nil {
+		t.Fatalf("login after the join budget: %v", err)
+	}
+	var kind string
+	if err := e.pool.QueryRow(e.ctx, `SELECT kind FROM email_log WHERE to_email = 'new@example.com' LIMIT 1`).Scan(&kind); err != nil || kind != "join" {
+		t.Errorf("logged as %q, %v", kind, err)
+	}
+
+	e = newEnv(t, 10)
+	for i := range 9 {
+		if err := e.n.SendLogin(e.ctx, "member@example.com", "123456", nil, 15*time.Minute); err != nil {
+			t.Fatalf("login %d: %v", i, err)
+		}
+	}
+	if err := e.n.SendJoinCode(e.ctx, "new@example.com", "123456", nil, 15*time.Minute); !errors.Is(err, ErrJoinLimit) {
+		t.Fatalf("join code past 90%%: %v, want ErrJoinLimit", err)
+	}
+	if err := e.n.SendLogin(e.ctx, "member@example.com", "123456", nil, 15*time.Minute); err != nil {
+		t.Fatalf("login in the reserved share: %v", err)
+	}
+}
+
 func TestInvitationMailLimits(t *testing.T) {
 	e := newEnv(t, 2) // invitations may use 1 of 2, like notifications
 	const recipient = "guest@example.com"

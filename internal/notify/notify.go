@@ -61,6 +61,10 @@ func (n *Notifier) SetJobs(j JobInserter) { n.jobs = j }
 // ErrDailyLimit means today's sending budget is used up.
 var ErrDailyLimit = errors.New("daily email limit reached")
 
+// ErrJoinLimit means today's budget for login codes requested through
+// public invitation links is used up; other email still goes out.
+var ErrJoinLimit = errors.New("daily email budget for invitation links reached")
+
 // RetryAt asks the job runner to try again at a given time without using up
 // an attempt (the daily limit resets then).
 type RetryAt struct{ Time time.Time }
@@ -115,11 +119,29 @@ func (n *Notifier) limitFor(kind string) int {
 	return n.cfg.DailyLimit * 9 / 10
 }
 
+// JoinShare is the part of the daily limit that login codes requested
+// through public invitation links may use, whatever the addresses: a link
+// shared in a busy group must leave the rest to logins and notifications.
+const JoinShare = 0.3
+
+// JoinLimit is how many codes invitation links may send per UTC day.
+func (n *Notifier) JoinLimit() int { return int(float64(n.cfg.DailyLimit) * JoinShare) }
+
 // send delivers one message and records it in email_log.
 func (n *Notifier) send(ctx context.Context, kind string, userID *uuid.UUID, m mail.Message) error {
-	sent, err := n.q.CountEmailsSince(ctx, startOfDay(n.now()))
+	day := startOfDay(n.now())
+	sent, err := n.q.CountEmailsSince(ctx, day)
 	if err != nil {
 		return err
+	}
+	if kind == "join" {
+		joins, err := n.q.CountEmailsOfKindSince(ctx, db.CountEmailsOfKindSinceParams{Kind: kind, Since: day})
+		if err != nil {
+			return err
+		}
+		if int(joins) >= n.JoinLimit() || int(sent) >= n.limitFor(kind) {
+			return ErrJoinLimit
+		}
 	}
 	if int(sent) >= n.limitFor(kind) {
 		return ErrDailyLimit
@@ -161,6 +183,19 @@ func (n *Notifier) SendLogin(ctx context.Context, to, code string, userID *uuid.
 		return err
 	}
 	return n.send(ctx, "login", userID, m)
+}
+
+// SendJoinCode is SendLogin for a code requested through a public
+// invitation link. It has its own daily budget (JoinLimit) and returns
+// ErrJoinLimit beyond it, whether or not the address has an account.
+func (n *Notifier) SendJoinCode(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error {
+	m, err := mail.Render("login", to, mail.LoginData{
+		Code: code, ValidMinutes: int(valid.Minutes()), ServiceName: n.cfg.ServiceName, ServiceURL: n.cfg.BaseURL,
+	})
+	if err != nil {
+		return err
+	}
+	return n.send(ctx, "join", userID, m)
 }
 
 // SendInvite shares the provider budget with notifications. Even when

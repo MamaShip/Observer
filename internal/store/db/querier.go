@@ -49,6 +49,7 @@ type Querier interface {
 	ConfirmArticleDeleted(ctx context.Context, arg ConfirmArticleDeletedParams) error
 	ConsumeInviteToken(ctx context.Context, arg ConsumeInviteTokenParams) (int64, error)
 	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
+	CountEmailsOfKindSince(ctx context.Context, arg CountEmailsOfKindSinceParams) (int64, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
 	// CountInvitesSince also counts revoked invitations that had queued an email.
 	CountInvitesSince(ctx context.Context, arg CountInvitesSinceParams) (int32, error)

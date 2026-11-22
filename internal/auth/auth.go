@@ -66,6 +66,9 @@ var (
 // MailSender delivers credentials to their intended mailbox.
 type MailSender interface {
 	SendLogin(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error
+	// SendJoinCode sends a code requested through a public invitation
+	// link, from that use's own daily budget.
+	SendJoinCode(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error
 	SendInvite(ctx context.Context, to, token string, valid time.Duration) error
 }
 
@@ -234,7 +237,13 @@ func (s *Service) RequestCode(ctx context.Context, email, link string, ip netip.
 	if err := s.q.CreateLoginCode(ctx, p); err != nil {
 		return CodeQuota{}, err
 	}
-	if err := s.sender.SendLogin(ctx, email, code, userID, CodeTTL); err != nil {
+	send := s.sender.SendLogin
+	if inviteLink != nil {
+		// Every code through a link, account or not, so running out of
+		// that budget says nothing about the address.
+		send = s.sender.SendJoinCode
+	}
+	if err := send(ctx, email, code, userID, CodeTTL); err != nil {
 		// Not the user's fault: give the attempt back.
 		release(inviteLink != nil)
 		return CodeQuota{}, err

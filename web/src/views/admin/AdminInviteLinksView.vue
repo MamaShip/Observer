@@ -45,8 +45,8 @@ onMounted(load)
 
 async function create() {
   const n = maxUses.value
-  if (n === null || !Number.isInteger(n) || n < 1 || n > 1000) {
-    error.value = '名额是 1～1000 的整数。'
+  if (n === null || !Number.isInteger(n) || n < 1 || n > 100) {
+    error.value = '名额是 1～100 的整数。'
     return
   }
   creating.value = true
@@ -112,8 +112,8 @@ function selectAll(e: Event) {
   <p v-if="session.site && !inviteMode" class="notice notice-info">现在开放注册，任何人都可以直接登录，不需要邀请链接。</p>
   <form v-if="formOpen" class="zg-shard zg-panel link-form" @submit.prevent="create">
     <label class="zg-field"><span class="zg-field__label">名额</span>
-      <span class="zg-shard zg-input"><input v-model.number="maxUses" type="number" min="1" max="1000" step="1" required></span>
-      <span class="zg-field__hint">最多可以注册的新账号数（1～1000）。已有账号通过链接登录不占名额。</span></label>
+      <span class="zg-shard zg-input"><input v-model.number="maxUses" type="number" min="1" max="100" step="1" required></span>
+      <span class="zg-field__hint">最多可以注册的新账号数（1～100）。已有账号通过链接登录不占名额。邀请链接每天最多发出全站邮件额度 30% 的验证码，人多时可能要分几天注册完。</span></label>
     <label class="zg-field"><span class="zg-field__label">有效期</span>
       <span class="zg-shard zg-select"><select v-model.number="validDays"><option v-for="d in durations" :key="d" :value="d">{{ d }} 天</option></select>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></label>

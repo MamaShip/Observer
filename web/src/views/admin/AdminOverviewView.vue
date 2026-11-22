@@ -114,7 +114,7 @@ const healthy = computed(() => o.value?.health.status === 'ok')
         <div class="zg-stats">
           <StatTile label="今日邮件（服务商额度）" :value="`${o.emails_today} / ${o.limits.daily_emails}`" note="UTC 0 点重置；通知类最多用到 90%" />
           <StatTile label="本月邮件" :value="formatNumber(o.month.emails)"
-            :note="`验证码 ${o.month.login_emails} · 邀请 ${o.month.invite_emails} · 通知 ${o.month.notification_emails} · 告警 ${o.month.alert_emails}${o.month.failed_emails ? ` · 失败 ${o.month.failed_emails}` : ''}`" />
+            :note="`验证码 ${o.month.login_emails}${o.month.join_emails ? `（邀请链接 ${o.month.join_emails}）` : ''} · 邀请 ${o.month.invite_emails} · 通知 ${o.month.notification_emails} · 告警 ${o.month.alert_emails}${o.month.failed_emails ? ` · 失败 ${o.month.failed_emails}` : ''}`" />
           <StatTile label="本月检查" :value="formatNumber(o.month.checks)"
             :note="`被拦截 ${o.month.blocked}（${formatPercent(o.month.blocked, o.month.checks)}）· 出错 ${o.month.errors}`" />
           <StatTile label="页面抓取流量" :value="formatBytes(o.month.page_bytes)" note="微信页面（压缩后），不含图片" />

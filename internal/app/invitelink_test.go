@@ -85,6 +85,7 @@ func TestInvitationLinks(t *testing.T) {
 	member.api(http.MethodGet, "/admin/invite-links", nil, http.StatusForbidden, nil)
 	member.api(http.MethodPost, "/admin/invite-links", map[string]any{"max_uses": 2, "valid_hours": 24}, http.StatusForbidden, nil)
 	ops.api(http.MethodPost, "/admin/invite-links", map[string]any{"max_uses": 0, "valid_hours": 24}, http.StatusUnprocessableEntity, nil)
+	ops.api(http.MethodPost, "/admin/invite-links", map[string]any{"max_uses": 101, "valid_hours": 24}, http.StatusUnprocessableEntity, nil)
 
 	var link api.InviteLink
 	ops.api(http.MethodPost, "/admin/invite-links", map[string]any{"max_uses": 2, "valid_hours": 24, "note": "读者群"}, http.StatusCreated, &link)

@@ -56,7 +56,7 @@ type inviteLinksOutput struct {
 
 type createInviteLinkInput struct {
 	Body struct {
-		MaxUses    int    `json:"max_uses" minimum:"1" maximum:"1000" doc:"Accounts the link may create"`
+		MaxUses    int    `json:"max_uses" minimum:"1" maximum:"100" doc:"Accounts the link may create"`
 		ValidHours int    `json:"valid_hours" minimum:"1" maximum:"720" doc:"How long the link stays open"`
 		Note       string `json:"note,omitempty" maxLength:"100" doc:"For the admins, e.g. where the link was posted"`
 	}

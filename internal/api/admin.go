@@ -58,7 +58,8 @@ type AdminTotals struct {
 // AdminUsage is activity since a point in time.
 type AdminUsage struct {
 	Emails             int   `json:"emails"`
-	LoginEmails        int   `json:"login_emails"`
+	LoginEmails        int   `json:"login_emails" doc:"Login codes, including those sent through invitation links"`
+	JoinEmails         int   `json:"join_emails" doc:"Login codes requested through public invitation links"`
 	InviteEmails       int   `json:"invite_emails"`
 	NotificationEmails int   `json:"notification_emails"`
 	AlertEmails        int   `json:"alert_emails"`
@@ -110,7 +111,7 @@ type adminOverviewOutput struct{ Body AdminOverview }
 
 func usageFrom(r db.AdminUsageRow) AdminUsage {
 	return AdminUsage{
-		Emails: int(r.Emails), LoginEmails: int(r.LoginEmails), InviteEmails: int(r.InviteEmails), NotificationEmails: int(r.NotificationEmails),
+		Emails: int(r.Emails), LoginEmails: int(r.LoginEmails), JoinEmails: int(r.JoinEmails), InviteEmails: int(r.InviteEmails), NotificationEmails: int(r.NotificationEmails),
 		AlertEmails: int(r.AlertEmails), FailedEmails: int(r.FailedEmails), Checks: int(r.Checks),
 		Blocked: int(r.Blocked), Errors: int(r.Errors), PageBytes: r.PageBytes, NewImageBytes: r.NewAssetBytes,
 		NewUsers: int(r.NewUsers), NewWatches: int(r.NewWatches), NewArticles: int(r.NewArticles),

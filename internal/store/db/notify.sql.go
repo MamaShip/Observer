@@ -12,6 +12,23 @@ import (
 	"github.com/google/uuid"
 )
 
+const countEmailsOfKindSince = `-- name: CountEmailsOfKindSince :one
+SELECT count(*)::bigint FROM email_log
+WHERE status = 'sent' AND kind = $1 AND sent_at >= $2::timestamptz
+`
+
+type CountEmailsOfKindSinceParams struct {
+	Kind  string
+	Since time.Time
+}
+
+func (q *Queries) CountEmailsOfKindSince(ctx context.Context, arg CountEmailsOfKindSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countEmailsOfKindSince, arg.Kind, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countEmailsSince = `-- name: CountEmailsSince :one
 SELECT count(*)::bigint FROM email_log WHERE status = 'sent' AND sent_at >= $1::timestamptz
 `

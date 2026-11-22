@@ -16,13 +16,17 @@ import (
 	"github.com/MamaShip/Observer/internal/store/storetest"
 )
 
-type sentCode struct{ to, code string }
+type sentCode struct {
+	to, code string
+	join     bool // through an invitation link
+}
 
 type fakeSender struct {
 	mu          sync.Mutex
 	codes       []sentCode
 	inviteToken string
 	fail        error
+	joinFail    error // only for codes through invitation links
 }
 
 func (f *fakeSender) SendLogin(_ context.Context, to, code string, _ *uuid.UUID, valid time.Duration) error {
@@ -34,7 +38,23 @@ func (f *fakeSender) SendLogin(_ context.Context, to, code string, _ *uuid.UUID,
 	if valid != CodeTTL {
 		panic("unexpected validity")
 	}
-	f.codes = append(f.codes, sentCode{to, code})
+	f.codes = append(f.codes, sentCode{to: to, code: code})
+	return nil
+}
+
+func (f *fakeSender) SendJoinCode(_ context.Context, to, code string, _ *uuid.UUID, valid time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.joinFail != nil {
+		return f.joinFail
+	}
+	if f.fail != nil {
+		return f.fail
+	}
+	if valid != CodeTTL {
+		panic("unexpected validity")
+	}
+	f.codes = append(f.codes, sentCode{to: to, code: code, join: true})
 	return nil
 }
 

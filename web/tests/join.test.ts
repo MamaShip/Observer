@@ -107,6 +107,19 @@ describe('/join', () => {
     expect(w.find('input[name=email]').exists()).toBe(false)
   })
 
+  it('keeps the link when today\'s budget for its codes is used up', async () => {
+    const detail = '今天通过邀请链接发送的验证码已达上限，请明天再试。已有账号可以在登录页正常登录。'
+    routes['POST /api/v1/auth/code'] = () => ({ status: 503, body: { detail } })
+    const w = await mountAt(`/join#t=${token}`)
+    await w.find('input[name=email]').setValue('busy@example.com')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(w.text()).toContain(detail)
+    expect(w.text()).not.toContain('邀请已失效')
+    expect(w.find('input[name=email]').exists()).toBe(true)
+    expect(sessionStorage.getItem('join-link')).not.toBeNull()
+  })
+
   it('treats a missing token as an invalid link', async () => {
     const w = await mountAt('/join')
     expect(w.text()).toContain('邀请已失效')

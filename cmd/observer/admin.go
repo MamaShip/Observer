@@ -189,7 +189,7 @@ func adminInviteLink(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	switch args[0] {
 	case "create":
 		fs := flag.NewFlagSet("invite-link create", flag.ContinueOnError)
-		n := fs.Int("n", 0, "accounts the link may create (1-1000)")
+		n := fs.Int("n", 0, "accounts the link may create (1-100)")
 		valid := fs.Duration("valid", 72*time.Hour, "how long the link stays open (1h-720h)")
 		note := fs.String("note", "", "for the admins, e.g. where the link is posted")
 		if err := fs.Parse(args[1:]); err != nil {

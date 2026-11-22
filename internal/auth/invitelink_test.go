@@ -282,6 +282,48 @@ func TestInviteLinkCodeCap(t *testing.T) {
 	}
 }
 
+// Codes through a link come from its own daily budget, for every address;
+// when that runs out, nothing is counted and ordinary logins still work.
+func TestInviteLinkMailBudget(t *testing.T) {
+	ctx := context.Background()
+	s, sender, q, clk := newService(t, ModeInvite)
+	if _, err := q.CreateUser(ctx, "member@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	l, token := newLink(t, s, 5)
+	for _, email := range []string{"new@example.com", "member@example.com"} {
+		if _, err := s.RequestCode(ctx, email, token, noIP); err != nil {
+			t.Fatal(err)
+		}
+		if c := sender.codes[len(sender.codes)-1]; c.to != email || !c.join {
+			t.Errorf("%s: sent %+v, want a code from the invitation budget", email, c)
+		}
+	}
+
+	sender.joinFail = errJoinBudget
+	for _, email := range []string{"other@example.com", "member2@example.com"} {
+		if _, err := s.RequestCode(ctx, email, token, noIP); !errors.Is(err, errJoinBudget) {
+			t.Errorf("%s over the budget: %v", email, err)
+		}
+	}
+	if got, _ := q.GetInviteLink(ctx, l.ID); got.CodesSent != 2 {
+		t.Errorf("codes_sent = %d, want the refused requests given back", got.CodesSent)
+	}
+	// Without the link the member logs in as usual (after the usual wait
+	// between requests, which a refused one also starts).
+	clk.advance(ResendAfter)
+	if _, err := s.RequestCode(ctx, "member2@example.com", "", noIP); err != nil {
+		t.Errorf("ordinary login: %v", err)
+	}
+	sender.joinFail = nil
+	// The refused requests did not use the address's daily codes.
+	if quota, err := s.RequestCode(ctx, "other@example.com", token, noIP); err != nil || quota.Remaining != CodesPerDay-1 {
+		t.Errorf("after the budget: %+v, %v", quota, err)
+	}
+}
+
+var errJoinBudget = errors.New("join budget")
+
 // Two addresses racing for a link's last place: one gets it.
 func TestInviteLinkLastPlace(t *testing.T) {
 	ctx := context.Background()

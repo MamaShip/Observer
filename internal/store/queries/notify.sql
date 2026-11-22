@@ -19,6 +19,10 @@ UPDATE watches SET notified_at = sqlc.arg(now)::timestamptz WHERE id = ANY(sqlc.
 -- name: CountEmailsSince :one
 SELECT count(*)::bigint FROM email_log WHERE status = 'sent' AND sent_at >= sqlc.arg(since)::timestamptz;
 
+-- name: CountEmailsOfKindSince :one
+SELECT count(*)::bigint FROM email_log
+WHERE status = 'sent' AND kind = sqlc.arg(kind) AND sent_at >= sqlc.arg(since)::timestamptz;
+
 -- name: InsertEmailLog :one
 INSERT INTO email_log (user_id, kind, to_email, subject, status)
 VALUES (sqlc.narg(user_id), sqlc.arg(kind), sqlc.arg(to_email), sqlc.arg(subject), 'queued')

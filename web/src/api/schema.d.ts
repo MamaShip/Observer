@@ -784,7 +784,15 @@ export interface components {
             failed_emails: number;
             /** Format: int64 */
             invite_emails: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Login codes requested through public invitation links
+             */
+            join_emails: number;
+            /**
+             * Format: int64
+             * @description Login codes, including those sent through invitation links
+             */
             login_emails: number;
             /** Format: int64 */
             new_articles: number;
