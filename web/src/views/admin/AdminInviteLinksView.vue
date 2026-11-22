@@ -128,7 +128,7 @@ function selectAll(e: Event) {
   <p v-if="notice" class="notice notice-ok" role="status">{{ notice }}</p>
   <p v-if="error" class="notice notice-danger" role="alert">{{ error }} <button class="btn-link" @click="load">刷新列表</button></p>
   <p v-if="loading" class="muted" role="status">加载中…</p>
-  <div class="zg-shard zg-tablewrap"><table class="zg-table">
+  <div class="zg-shard zg-tablewrap"><div class="zg-tablewrap__scroll"><table class="zg-table">
     <thead><tr><th>备注</th><th>状态</th><th class="is-num">已用 / 名额</th><th>到期</th><th>操作</th></tr></thead>
     <tbody>
       <template v-for="l in links" :key="l.id">
@@ -150,7 +150,7 @@ function selectAll(e: Event) {
       </template>
       <tr v-if="!links.length && !loading && !error"><td colspan="5">还没有邀请链接。</td></tr>
     </tbody>
-  </table></div>
+  </table></div></div>
 </template>
 
 <style scoped>

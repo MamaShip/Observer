@@ -144,7 +144,7 @@ const healthy = computed(() => o.value?.health.status === 'ok')
         </div>
         <details class="table-view">
           <summary>查看数据表</summary>
-          <div class="zg-shard zg-tablewrap">
+          <div class="zg-shard zg-tablewrap"><div class="zg-tablewrap__scroll">
             <table class="zg-table">
               <thead>
                 <tr>
@@ -159,7 +159,7 @@ const healthy = computed(() => o.value?.health.status === 'ok')
                 </tr>
               </tbody>
             </table>
-          </div>
+          </div></div>
         </details>
       </details>
     </template>

@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import BarChart from '@/components/admin/BarChart.vue'
-import { articleStatusText, articleStatusTone, captureStateText, issueDetail, issueLabel, issueTone, shortDay } from '@/lib/admin'
+import { accountSource, articleStatusText, articleStatusTone, captureStateText, issueDetail, issueLabel, issueTone, shortDay } from '@/lib/admin'
 import { formatBytes, formatPercent } from '@/lib/format'
 
 describe('format', () => {
@@ -38,6 +38,14 @@ describe('admin wording', () => {
     expect(captureStateText('done')).toBe('已生成')
     expect(captureStateText('failed', 'no_content')).toContain('图片或视频消息')
     expect(captureStateText('failed', 'new-code')).toBe('失败：new-code')
+  })
+
+  it('names where an account came from', () => {
+    expect(accountSource({ invited: true, invite_link_id: 'l1', invite_link_note: '读者群', invited_by: 'a@example.com' })).toBe('公开邀请「读者群」')
+    expect(accountSource({ invited: true, invite_link_id: 'l1', invite_link_created_at: '2026-11-20T08:00:00Z' })).toBe('公开邀请（2026-11-20 创建）')
+    expect(accountSource({ invited: true, invited_by: 'a@example.com' })).toBe('a@example.com')
+    expect(accountSource({ invited: true })).toBe('已注销的账户')
+    expect(accountSource({ invited: false })).toBe('—')
   })
 })
 

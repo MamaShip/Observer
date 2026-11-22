@@ -158,7 +158,7 @@ async function rebuild(captureId: string) {
             </div>
             <p v-if="notice" class="notice notice-info small" role="status">{{ notice }}</p>
             <p v-if="!d.snapshots.length" class="muted">没有备份。</p>
-            <div class="zg-tablewrap">
+            <div class="zg-tablewrap__scroll">
               <table v-if="d.snapshots.length" class="zg-table">
                 <thead>
                   <tr>
@@ -200,7 +200,7 @@ async function rebuild(captureId: string) {
           </section>
           <section class="zg-shard zg-panel">
             <h2 class="zg-panel__title">检查记录（最近 {{ d.checks.length }} 次）</h2>
-            <div class="zg-tablewrap">
+            <div class="zg-tablewrap__scroll">
               <table class="zg-table">
                 <thead>
                   <tr>
@@ -248,7 +248,7 @@ async function rebuild(captureId: string) {
           <section v-if="d.captures.length" class="zg-shard zg-panel">
             <h2 class="zg-panel__title">抓取记录（{{ d.captures.length }}）</h2>
             <p class="muted small">每次为备份抓取的原始页面及其处理结果。失败的可以在修复原因后从原始页面重建，不需要再访问微信，文章已删除也可以。</p>
-            <div class="zg-tablewrap">
+            <div class="zg-tablewrap__scroll">
               <table class="zg-table">
                 <thead>
                   <tr>

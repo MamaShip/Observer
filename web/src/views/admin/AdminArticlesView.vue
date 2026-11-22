@@ -55,7 +55,7 @@ watch([filter, query], () => { search.value = query.value; void reset() }, { imm
   </form>
   <p v-if="error" class="notice notice-danger" role="alert">{{ error }} <button class="btn-link" @click="reset">重试</button></p>
   <p v-if="loading" class="muted" role="status">加载中…</p>
-  <div class="zg-shard zg-tablewrap"><table class="zg-table">
+  <div class="zg-shard zg-tablewrap"><div class="zg-tablewrap__scroll"><table class="zg-table">
     <thead><tr><th>标题 / 公众号</th><th>状态</th><th>备份</th><th class="is-num">观察者</th><th>最近检查</th></tr></thead>
     <tbody><tr v-for="a in items" :key="a.id">
       <td><RouterLink class="zg-table__title" :to="{ name: 'admin-article', params: { id: a.id } }">{{ a.title || '（无标题）' }}</RouterLink>
@@ -67,7 +67,7 @@ watch([filter, query], () => { search.value = query.value; void reset() }, { imm
           :title="issueDetail(i)"><i class="zg-tag__glyph" />{{ issueLabel(i) }}</span></span>
       </td><td class="is-num">{{ a.watchers }}</td><td class="is-mono">{{ formatShort(a.last_checked_at) || '—' }}</td>
     </tr><tr v-if="!items.length && !loading && !error"><td colspan="5">没有符合条件的文章。</td></tr></tbody>
-  </table></div>
+  </table></div></div>
   <ResultPager :page="page" :has-next="hasNext" :loading="loading" @go="go" />
 </template>
 <style scoped>

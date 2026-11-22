@@ -1,5 +1,7 @@
 // Wording for the admin console.
 
+import { formatDate } from '@/lib/format'
+
 // In the design system's words: an article being checked is 观察中, one
 // nobody watches any more 已结束, a link that never opened 无法访问.
 const articleStatuses: Record<string, { label: string; tone: string }> = {
@@ -57,4 +59,25 @@ export function captureStateText(status: string, errorCode?: string): string {
 /** shortDay turns 2026-11-20 into 11-20. */
 export function shortDay(day: string): string {
   return day.slice(5)
+}
+
+/** What the console knows about where an account came from. */
+export interface AccountOrigin {
+  invited: boolean
+  invited_by?: string
+  invite_link_id?: string
+  invite_link_note?: string
+  invite_link_created_at?: string
+}
+
+/** linkLabel names the public invitation link an account came from. */
+export function linkLabel(u: AccountOrigin): string {
+  return u.invite_link_note ? `公开邀请「${u.invite_link_note}」` : `公开邀请（${formatDate(u.invite_link_created_at)} 创建）`
+}
+
+/** accountSource names who or which public link brought an account in. */
+export function accountSource(u: AccountOrigin): string {
+  if (u.invite_link_id) return linkLabel(u)
+  if (u.invited_by) return u.invited_by
+  return u.invited ? '已注销的账户' : '—'
 }

@@ -3,6 +3,7 @@ import { api, call, messageOf, type AdminUser } from '@/api/client'
 import { formatDate, formatRelative } from '@/lib/format'
 import { session } from '@/session'
 import { useAdminPages } from '@/lib/adminPages'
+import { accountSource, linkLabel } from '@/lib/admin'
 import ResultPager from '@/components/admin/ResultPager.vue'
 import ZgIcon from '@/components/ZgIcon.vue'
 import { computed, ref, watch } from 'vue'
@@ -75,10 +76,6 @@ function setLink(id: string) {
   if ((route.query.invite_link ?? '') !== id) void router.replace({ query: id ? { invite_link: id } : {} })
 }
 
-/** The public invitation link an account came from, as the panel shows it. */
-function linkLabel(u: AdminUser): string {
-  return u.invite_link_note ? `公开邀请「${u.invite_link_note}」` : `公开邀请（${formatDate(u.invite_link_created_at)} 创建）`
-}
 const linkFilterNote = computed(() => items.value.find(u => u.invite_link_id === inviteLink.value)?.invite_link_note)
 
 function showInviter(u: AdminUser) {
@@ -148,14 +145,15 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
         <span v-if="matchCount !== undefined" class="zg-toolbar__count">匹配 {{ matchCount }} 个</span>
       </form>
       <p v-if="loading" class="muted" role="status">加载中…</p>
-      <div class="zg-shard zg-tablewrap"><table class="zg-table">
-        <thead><tr><th>邮箱</th><th>状态</th><th class="is-num">观察中</th><th class="is-num">本月通知</th><th>注册</th></tr></thead>
+      <div class="zg-shard zg-tablewrap"><div class="zg-tablewrap__scroll"><table class="zg-table">
+        <thead><tr><th class="pin">邮箱</th><th>来源</th><th class="fit">状态</th><th class="is-num fit">观察中</th><th class="is-num fit">本月通知</th><th class="fit">注册</th></tr></thead>
         <tbody><tr v-for="u in items" :key="u.id" :class="{ chosen: open === u.id }" @click="toggle(u)">
-          <td><button class="btn-link mono" :aria-expanded="open === u.id" @click.stop="toggle(u)">{{ u.email }}</button><span v-if="u.role === 'admin'" class="zg-table__sub">管理员</span></td>
-          <td><span class="zg-shard zg-tag" :class="u.status === 'active' ? 'zg-tag--archived' : 'zg-tag--ended'"><i class="zg-tag__glyph" />{{ u.status === 'active' ? '启用' : '停用' }}</span></td>
-          <td class="is-num">{{ u.open_watches }}</td><td class="is-num">{{ u.emails_this_month }} / {{ u.monthly_emails || '不限' }}{{ u.custom_email_limit ? '*' : '' }}</td><td class="is-mono">{{ formatDate(u.created_at) }}</td>
-        </tr><tr v-if="!items.length && !loading && !error"><td colspan="5">没有符合条件的账户。</td></tr></tbody>
-      </table></div>
+          <td class="pin"><button class="btn-link mono clip" :title="u.email" :aria-expanded="open === u.id" @click.stop="toggle(u)">{{ u.email }}</button><span v-if="u.role === 'admin'" class="zg-table__sub">管理员</span></td>
+          <td><span class="clip source" :title="accountSource(u)">{{ accountSource(u) }}</span></td>
+          <td class="fit"><span class="zg-shard zg-tag" :class="u.status === 'active' ? 'zg-tag--archived' : 'zg-tag--ended'"><i class="zg-tag__glyph" />{{ u.status === 'active' ? '启用' : '停用' }}</span></td>
+          <td class="is-num fit">{{ u.open_watches }}</td><td class="is-num fit">{{ u.emails_this_month }} / {{ u.monthly_emails || '不限' }}{{ u.custom_email_limit ? '*' : '' }}</td><td class="is-mono fit">{{ formatDate(u.created_at) }}</td>
+        </tr><tr v-if="!items.length && !loading && !error"><td colspan="6">没有符合条件的账户。</td></tr></tbody>
+      </table></div></div>
       <ResultPager :page="page" :has-next="hasNext" :loading="loading" @go="go" />
     </section>
     <aside class="zg-shard zg-panel">
@@ -163,7 +161,7 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
       <p v-if="!selected" class="muted small">选择列表中的邮箱，查看邀请关系、用量和权限。</p>
       <template v-else>
         <dl class="zg-facts">
-          <dt>邀请人</dt><dd><button v-if="selected.invite_link_id" class="btn-link" @click="showLink(selected.invite_link_id)">{{ linkLabel(selected) }}</button><button v-else-if="selected.invited_by" class="btn-link" @click="showInviter(selected)">{{ selected.invited_by }}</button><template v-else>{{ selected.invited ? '已注销的账户' : '—' }}</template></dd>
+          <dt>来源</dt><dd><button v-if="selected.invite_link_id" class="btn-link" @click="showLink(selected.invite_link_id)">{{ linkLabel(selected) }}</button><button v-else-if="selected.invited_by" class="btn-link" @click="showInviter(selected)">{{ selected.invited_by }}</button><template v-else>{{ selected.invited ? '已注销的账户' : '—' }}</template></dd>
           <dt>邀请注册</dt><dd><button v-if="selected.invitees" class="btn-link" @click="showInvitees(selected)">{{ selected.invitees }} 人</button><template v-else>0 人</template></dd>
           <dt>本月邀请</dt><dd>{{ selected.invites_this_month }} 人</dd><dt>累计观察</dt><dd>{{ selected.total_watches }} 篇</dd>
           <dt>本月提交</dt><dd>{{ selected.watches_this_month }} 篇</dd><dt>最近登录</dt><dd>{{ selected.last_login_at ? formatRelative(selected.last_login_at) : '从未' }}</dd>
@@ -191,8 +189,21 @@ const isSelf = (u: AdminUser) => u.id === session.user?.id
   </div>
 </template>
 <style scoped>
-.zg-table { min-width: 565px; }
 .zg-table tbody tr { cursor: pointer; }
 .chosen { background: var(--status-watching-soft); }
+/* Narrow columns shrink to their content; 来源 takes what is left. */
+.zg-table th, .zg-table td { padding-inline: var(--space-3); }
+.fit { width: 1%; white-space: nowrap; }
+.clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.pin .clip { max-width: 12em; }
+.source { max-width: 11em; color: var(--ink-200); }
+/* When the rows scroll sideways the email stays in view. */
+.pin { position: sticky; left: 0; z-index: 1; background: var(--surface-100); }
+tbody tr:hover > .pin { background: var(--surface-200); }
+tr.chosen > .pin { background: var(--status-watching-soft); }
+@media (max-width: 767px) {
+  .pin { box-shadow: inset -1px 0 0 var(--line-100); }
+  .pin .clip, .source { max-width: 10em; }
+}
 @media (min-width: 768px) { .zg-detail { grid-template-columns: minmax(0, 1fr) 300px; } }
 </style>

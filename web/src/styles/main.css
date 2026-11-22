@@ -51,7 +51,7 @@ button:disabled { cursor: not-allowed; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 .zg-doc h1 + p { margin-top: var(--space-4); }
-.zg-tablewrap { min-width: 0; }
+.zg-tablewrap, .zg-tablewrap__scroll { min-width: 0; }
 .zg-input input, .zg-input textarea { width: 100%; }
 .zg-footnote { color: var(--ink-300); font-size: 12px; }
 @media (max-width: 767px) {

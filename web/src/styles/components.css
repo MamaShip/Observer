@@ -293,7 +293,10 @@ body { margin: 0; font-family: var(--font-sans); background: var(--surface-000);
 .zg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
 .zg-toolbar .zg-input { flex: 1 1 240px; max-width: 360px; height: 36px; }
 .zg-toolbar__count { margin-left: auto; font: 400 12px/18px var(--font-mono); color: var(--ink-300); }
-.zg-tablewrap { --_c: var(--chamfer-m); --_edge: var(--line-100); --_fill: var(--surface-100); overflow-x: auto; }
+/* The frame draws the shard; the rows scroll inside it, so the drawn edge stays put. */
+.zg-tablewrap { --_c: var(--chamfer-m); --_edge: var(--line-100); --_fill: var(--surface-100); }
+.zg-tablewrap__scroll { overflow-x: auto; }
+.zg-shard.zg-tablewrap { padding: var(--border-hair); }
 .zg-table { width: 100%; border-collapse: collapse; font: 400 13px/20px var(--font-sans); color: var(--ink-100); }
 .zg-table th { text-align: left; font: 500 12px/18px var(--font-sans); color: var(--ink-300); padding: var(--space-3) var(--space-4); border-bottom: var(--border-hair) solid var(--line-100); white-space: nowrap; }
 .zg-table td { padding: var(--space-3) var(--space-4); border-bottom: var(--border-hair) solid var(--line-100); vertical-align: middle; }
