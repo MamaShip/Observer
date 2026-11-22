@@ -99,30 +99,19 @@ func (s *Service) BindWechat(ctx context.Context, userID uuid.UUID, token string
 	}
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		t, err := q.UseWechatToken(ctx, db.UseWechatTokenParams{TokenHash: hash, Purpose: wechatBind, Now: s.now()})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrWechatLink
-		}
-		if err != nil {
-			return err
-		}
-		// The user first (as everywhere else), then the OpenID, which may
-		// have no row yet.
-		u, err := q.LockUser(ctx, userID)
+		t, u, err := s.useWechatToken(ctx, q, hash, wechatBind, &userID)
 		if err != nil {
 			return err
 		}
 		if u.Status != "active" {
 			return ErrDisabled
 		}
-		if err := q.LockWechatOpenID(ctx, t.Openid); err != nil {
-			return err
-		}
-		// Links sent for the old pairs would sign in the wrong account.
-		if err := q.DeleteWechatLoginTokens(ctx, db.DeleteWechatLoginTokensParams{Openid: t.Openid, UserID: &userID}); err != nil {
-			return err
-		}
+		// Bindings before tokens, as in ForgetWechat. Links sent for the
+		// old pairs would sign in the wrong account.
 		if err := q.DeleteWechatBindingsFor(ctx, db.DeleteWechatBindingsForParams{Openid: t.Openid, UserID: userID}); err != nil {
+			return err
+		}
+		if err := q.DeleteWechatLoginTokens(ctx, db.DeleteWechatLoginTokensParams{Openid: t.Openid, UserID: &userID}); err != nil {
 			return err
 		}
 		if _, err := q.CreateWechatBinding(ctx, db.CreateWechatBindingParams{Openid: t.Openid, UserID: userID}); err != nil {
@@ -146,14 +135,7 @@ func (s *Service) WechatLogin(ctx context.Context, token, userAgent string) (Ses
 	var out Session
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		t, err := q.UseWechatToken(ctx, db.UseWechatTokenParams{TokenHash: hash, Purpose: wechatLogin, Now: s.now()})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrWechatLink
-		}
-		if err != nil {
-			return err
-		}
-		u, err := q.LockUser(ctx, *t.UserID)
+		t, u, err := s.useWechatToken(ctx, q, hash, wechatLogin, nil)
 		if err != nil {
 			return err
 		}
@@ -178,6 +160,24 @@ func (s *Service) WechatLogin(ctx context.Context, token, userAgent string) (Ses
 func (s *Service) UnbindWechat(ctx context.Context, userID uuid.UUID) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		// The lock order of useWechatToken. With the user locked, the
+		// binding can only go away (ForgetWechat), not change.
+		if _, err := q.LockUser(ctx, userID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		b, err := q.GetWechatBindingByUser(ctx, userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := q.LockWechatOpenID(ctx, b.Openid); err != nil {
+			return err
+		}
 		openid, err := q.DeleteWechatBindingByUser(ctx, userID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -189,8 +189,52 @@ func (s *Service) UnbindWechat(ctx context.Context, userID uuid.UUID) error {
 	})
 }
 
+// useWechatToken uses a token inside a transaction. Every change to
+// bindings and links locks in the same order, so concurrent binds, logins
+// and unbinds wait for each other instead of deadlocking: the user row,
+// then the OpenID, then binding rows, then token rows. The token is read
+// first without a lock to learn its user and OpenID, and used once both are
+// locked. userID is the user to lock (the one binding), or nil for the
+// token's own user (a login link).
+func (s *Service) useWechatToken(ctx context.Context, q *db.Queries, hash []byte, purpose string, userID *uuid.UUID) (db.WechatToken, db.User, error) {
+	now := s.now()
+	t, err := q.PeekWechatToken(ctx, db.PeekWechatTokenParams{TokenHash: hash, Purpose: purpose, Now: now})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.WechatToken{}, db.User{}, ErrWechatLink
+	}
+	if err != nil {
+		return db.WechatToken{}, db.User{}, err
+	}
+	if userID == nil {
+		userID = t.UserID
+	}
+	if userID == nil {
+		return db.WechatToken{}, db.User{}, ErrWechatLink
+	}
+	u, err := q.LockUser(ctx, *userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.WechatToken{}, db.User{}, ErrWechatLink // deleted meanwhile
+	}
+	if err != nil {
+		return db.WechatToken{}, db.User{}, err
+	}
+	// The OpenID may have no row yet: an advisory lock.
+	if err := q.LockWechatOpenID(ctx, t.Openid); err != nil {
+		return db.WechatToken{}, db.User{}, err
+	}
+	t, err = q.UseWechatToken(ctx, db.UseWechatTokenParams{TokenHash: hash, Purpose: purpose, Now: now})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.WechatToken{}, db.User{}, ErrWechatLink // used or removed meanwhile
+	}
+	if err != nil {
+		return db.WechatToken{}, db.User{}, err
+	}
+	return t, u, nil
+}
+
 // ForgetWechat removes openid's binding and links: the WeChat user sent
 // 解绑 or unfollowed the account. It reports whether there was a binding.
+// It locks no user, so it starts at the OpenID in useWechatToken's order.
 func (s *Service) ForgetWechat(ctx context.Context, openid string) (bool, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {

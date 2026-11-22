@@ -23,12 +23,14 @@ vi.stubGlobal('fetch', async (input: RequestInfo, init?: RequestInit) => {
 let router: Router
 let LoginView: (typeof import('@/views/LoginView.vue'))['default']
 let AdminInviteLinksView: (typeof import('@/views/admin/AdminInviteLinksView.vue'))['default']
+let App: (typeof import('@/App.vue'))['default']
 let session: (typeof import('@/session'))['session']
 
 beforeAll(async () => {
   router = (await import('@/router')).router
   LoginView = (await import('@/views/LoginView.vue')).default
   AdminInviteLinksView = (await import('@/views/admin/AdminInviteLinksView.vue')).default
+  App = (await import('@/App.vue')).default
   session = (await import('@/session')).session
 })
 
@@ -118,6 +120,43 @@ describe('/join', () => {
     expect(w.text()).not.toContain('邀请已失效')
     expect(w.find('input[name=email]').exists()).toBe(true)
     expect(sessionStorage.getItem('join-link')).not.toBeNull()
+  })
+
+  it('keeps a code already received when the link can send no more', async () => {
+    const detail = '这个邀请链接能发送的验证码已达上限，不能再获取新的验证码。已经收到的验证码仍然可以使用，已有账号可以在登录页正常登录。'
+    routes['POST /api/v1/auth/code'] = () => ({ status: 202, body: { message: '如果该邮箱可以登录，几分钟内会收到验证码，10 分钟内有效。', remaining: 1, resend_after: 0 } })
+    routes['POST /api/v1/auth/verify'] = () => ({ status: 200, body: { user } })
+    const w = await mountAt(`/join#t=${token}`)
+    await w.find('input[name=email]').setValue('new@example.com')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+
+    // Asking again: the link has sent all its codes.
+    routes['POST /api/v1/auth/code'] = () => ({ status: 429, body: { detail } })
+    await w.findAll('button').find((b) => b.text().includes('重新获取'))!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain(detail)
+    expect(w.text()).not.toContain('邀请已失效')
+    expect(sessionStorage.getItem('join-link')).not.toBeNull()
+    await w.find('input[name=code]').setValue('123456')
+    await flushPromises()
+    expect(bodyOf('/api/v1/auth/verify')).toEqual({ email: 'new@example.com', code: '123456', invite_token: token })
+    expect(router.currentRoute.value.path).toBe('/watches')
+  })
+
+  it('opens the login page from a dead link', async () => {
+    await router.push('/join')
+    await router.isReady()
+    const w = mount(App, { global: { plugins: [router] }, attachTo: document.body })
+    await flushPromises()
+    expect(w.find('h1').text()).toBe('接受邀请')
+    await w.find('main a[href="/login"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(w.find('h1').text()).toBe('邮箱登录')
+    expect(w.text()).not.toContain('邀请已失效')
+    expect(w.find('input[name=email]').exists()).toBe(true)
+    w.unmount()
   })
 
   it('treats a missing token as an invalid link', async () => {

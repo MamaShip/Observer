@@ -25,6 +25,8 @@ const inviteMode = computed(() => session.site?.registration_mode === 'invite')
 const durations = [1, 3, 7, 14, 30]
 const statuses: Record<InviteLink['status'], { text: string; tone: string }> = {
   active: { text: '有效', tone: 'watching' },
+  // Open, but it may send no more login codes; codes already sent still sign up.
+  no_codes: { text: '验证码已发完', tone: 'expiring' },
   full: { text: '名额已满', tone: 'archived' },
   expired: { text: '已过期', tone: 'ended' },
   revoked: { text: '已撤销', tone: 'deleted' },
@@ -138,7 +140,7 @@ function selectAll(e: Event) {
           <td class="link-actions">
             <button v-if="l.status === 'active'" class="btn-link" @click="copy(l)">复制链接</button>
             <RouterLink v-if="l.accounts" class="btn-link" :to="{ path: '/admin/users', query: { invite_link: l.id } }">{{ l.accounts }} 个账户</RouterLink>
-            <button v-if="l.status === 'active'" class="btn-link danger" :disabled="busy" @click="revoke(l)">{{ confirming === l.id ? '确认撤销' : '撤销' }}</button>
+            <button v-if="l.status === 'active' || l.status === 'no_codes'" class="btn-link danger" :disabled="busy" @click="revoke(l)">{{ confirming === l.id ? '确认撤销' : '撤销' }}</button>
           </td>
         </tr>
         <tr v-if="shown === l.id"><td colspan="5">

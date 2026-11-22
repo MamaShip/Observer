@@ -33,7 +33,8 @@ type wechatTokenInput struct {
 
 type wechatBindOutput struct {
 	Body struct {
-		WatchID     *uuid.UUID `json:"watch_id,omitempty" doc:"The article sent before binding, now watched"`
+		Submitted   bool       `json:"submitted,omitempty" doc:"The article sent before binding is now watched"`
+		WatchID     *uuid.UUID `json:"watch_id,omitempty" doc:"Its watch, once its first fetch is done; absent while that runs, as the watch may then merge into one the user already has"`
 		SubmitError string     `json:"submit_error,omitempty" doc:"Why that article could not be watched"`
 	}
 }
@@ -88,7 +89,7 @@ func (h *handlers) registerWechat(g huma.API) {
 			return nil, err
 		}
 		out := &wechatBindOutput{}
-		out.Body.WatchID, out.Body.SubmitError = r.WatchID, r.SubmitError
+		out.Body.Submitted, out.Body.WatchID, out.Body.SubmitError = r.Submitted, r.WatchID, r.SubmitError
 		return out, nil
 	})
 

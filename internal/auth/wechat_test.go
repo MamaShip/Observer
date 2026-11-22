@@ -153,6 +153,39 @@ func TestWechatBindConcurrent(t *testing.T) {
 	}
 }
 
+// Logging in, binding and unbinding at once (from the website and from
+// WeChat) lock in one order: they wait for each other, never deadlock.
+func TestWechatLoginUnbindConcurrent(t *testing.T) {
+	ctx := context.Background()
+	s, _, q, _ := newService(t, ModeInvite)
+	alice, bob := newUser(t, q, "alice@example.com"), newUser(t, q, "bob@example.com")
+	for round := range 20 {
+		if _, err := s.BindWechat(ctx, alice.ID, mustBindLink(t, s, "oA", "")); err != nil {
+			t.Fatal(err)
+		}
+		login, err := s.NewWechatLoginLink(ctx, "oA", alice.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rebind := mustBindLink(t, s, "oA", "")
+		errs := make([]error, 4)
+		var wg sync.WaitGroup
+		wg.Go(func() { _, errs[0] = s.WechatLogin(ctx, login, "") })
+		wg.Go(func() { errs[1] = s.UnbindWechat(ctx, alice.ID) })
+		wg.Go(func() { _, errs[2] = s.ForgetWechat(ctx, "oA") })
+		wg.Go(func() { _, errs[3] = s.BindWechat(ctx, bob.ID, rebind) })
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil && !errors.Is(err, ErrWechatLink) {
+				t.Fatalf("round %d, call %d: %v", round, i, err)
+			}
+		}
+		if _, err := s.ForgetWechat(ctx, "oA"); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestWechatLogin(t *testing.T) {
 	ctx := context.Background()
 	s, _, q, clk := newService(t, ModeInvite)

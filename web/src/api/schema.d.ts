@@ -1076,8 +1076,11 @@ export interface components {
             note: string;
             /** Format: date-time */
             revoked_at?: string;
-            /** @enum {string} */
-            status: "active" | "full" | "expired" | "revoked";
+            /**
+             * @description no_codes: still open, but has sent all the login codes it may (those sent still work)
+             * @enum {string}
+             */
+            status: "active" | "no_codes" | "full" | "expired" | "revoked";
             /** @description The link to share */
             url: string;
             /**
@@ -1252,7 +1255,9 @@ export interface components {
         WechatBindOutputBody: {
             /** @description Why that article could not be watched */
             submit_error?: string;
-            /** @description The article sent before binding, now watched */
+            /** @description The article sent before binding is now watched */
+            submitted?: boolean;
+            /** @description Its watch, once its first fetch is done; absent while that runs, as the watch may then merge into one the user already has */
             watch_id?: string;
         };
         WechatTokenInputBody: {

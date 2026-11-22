@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/netip"
 	"strings"
@@ -58,10 +59,16 @@ func TestLinkToken(t *testing.T) {
 		t.Errorf("token changed with the same key")
 	}
 	other := New(pool, nil, Config{Mode: ModeInvite, LinkKey: []byte(strings.Repeat("x", 32))}, storetest.Logger())
-	flipped := []byte(tok)
-	flipped[42] ^= 1
+	// Flip a bit of the MAC itself: changing the last character may only
+	// touch the padding bits the decoder ignores.
+	raw, err := base64.RawURLEncoding.DecodeString(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw[len(raw)-1] ^= 1
+	flipped := base64.RawURLEncoding.EncodeToString(raw)
 	for name, bad := range map[string]string{
-		"other key": other.LinkToken(id), "tampered": string(flipped), "short": tok[:42], "empty": "",
+		"other key": other.LinkToken(id), "tampered": flipped, "short": tok[:42], "empty": "",
 		"not base64": strings.Repeat("!", 43),
 	} {
 		if _, ok := s.parseLinkToken(bad); ok {
@@ -267,18 +274,41 @@ func TestInviteLinkCodeCap(t *testing.T) {
 		}
 	}
 	clk.advance(ResendAfter)
-	for _, email := range []string{"member@example.com", "new@example.com"} {
-		if _, err := s.RequestCode(ctx, email, token, noIP); !errors.Is(err, ErrInviteLink) {
+	// The link stays open (the same answer for every address), but sends
+	// no more codes.
+	for _, email := range []string{"member@example.com", "new@example.com", "a0@example.com"} {
+		if _, err := s.RequestCode(ctx, email, token, noIP); !errors.Is(err, ErrLinkCodes) {
 			t.Errorf("%s past the cap: %v", email, err)
 		}
 	}
 	if sender.count() != capacity {
 		t.Errorf("sent %d codes, cap %d", sender.count(), capacity)
 	}
+	got, _ := q.GetInviteLink(ctx, l.ID)
+	if LinkStatus(got, clk.now()) != LinkActive || LinkAdminStatus(got, clk.now()) != LinkNoCodes {
+		t.Errorf("status = %s, admin %s", LinkStatus(got, clk.now()), LinkAdminStatus(got, clk.now()))
+	}
+	if _, err := s.CheckInviteLink(ctx, token); err != nil {
+		t.Errorf("check past the cap: %v", err)
+	}
+	// A request that loses the race for the last code is told the same.
+	if err := s.closedLinkError(ctx, l.ID); !errors.Is(err, ErrLinkCodes) {
+		t.Errorf("lost race: %v", err)
+	}
 	// Codes already sent still work.
 	to, code := sender.last(t)
 	if _, err := s.Verify(ctx, to, code, token, ""); err != nil {
 		t.Errorf("code sent before the cap: %v", err)
+	}
+	// Once the link closes, that comes first.
+	if err := s.RevokeInviteLink(ctx, l.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestCode(ctx, "new@example.com", token, noIP); !errors.Is(err, ErrInviteLink) {
+		t.Errorf("revoked past the cap: %v", err)
+	}
+	if err := s.closedLinkError(ctx, l.ID); !errors.Is(err, ErrInviteLink) {
+		t.Errorf("lost race to a revocation: %v", err)
 	}
 }
 

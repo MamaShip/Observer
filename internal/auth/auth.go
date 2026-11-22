@@ -140,6 +140,8 @@ func today(t time.Time) time.Time {
 // open link, an address without an account receives a code too. Every
 // request through a link counts towards its cap, whoever it is for, and a
 // closed link is ErrInviteLink before anything is counted for the address.
+// An open link that has sent all its codes is ErrLinkCodes: the codes it
+// sent still work.
 func (s *Service) RequestCode(ctx context.Context, email, link string, ip netip.Addr) (CodeQuota, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
@@ -157,6 +159,9 @@ func (s *Service) RequestCode(ctx context.Context, email, link string, ip netip.
 		l, err := s.openLink(ctx, s.q, link, false)
 		if err != nil {
 			return CodeQuota{}, err
+		}
+		if l.CodesSent >= linkCodeCap(l.MaxUses) {
+			return CodeQuota{}, ErrLinkCodes
 		}
 		inviteLink = &l
 	}
@@ -198,7 +203,7 @@ func (s *Service) RequestCode(ctx context.Context, email, link string, ip netip.
 			release(false)
 			if err == nil {
 				log.Info("login code not sent: invitation link closed or at its cap", "link", inviteLink.ID)
-				err = ErrInviteLink
+				err = s.closedLinkError(ctx, inviteLink.ID)
 			}
 			return CodeQuota{}, err
 		}
@@ -423,6 +428,10 @@ func (s *Service) DeleteAccount(ctx context.Context, userID uuid.UUID) error {
 		// The binding and login links go with the user; bind links carry
 		// only the OpenID.
 		if b, err := q.GetWechatBindingByUser(ctx, u.ID); err == nil {
+			// The OpenID before its rows, as in useWechatToken.
+			if err := q.LockWechatOpenID(ctx, b.Openid); err != nil {
+				return err
+			}
 			if err := q.DeleteWechatTokensByOpenID(ctx, b.Openid); err != nil {
 				return err
 			}

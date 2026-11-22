@@ -14,7 +14,10 @@ const route = useRoute()
   </div>
   <div v-else class="zg-page">
     <AppHeader />
-    <main class="zg-container page" :class="{ 'reader-page': route.name === 'reader' }"><RouterView /></main>
+    <main class="zg-container page" :class="{ 'reader-page': route.name === 'reader' }">
+      <!-- Keyed by route name: /login and /join share LoginView, which reads its mode once. -->
+      <RouterView v-slot="{ Component, route: r }"><component :is="Component" :key="r.name" /></RouterView>
+    </main>
     <footer class="zg-footer">
       <div class="zg-container zg-footer__inner">
         <div>

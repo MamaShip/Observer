@@ -181,6 +181,9 @@ type Querier interface {
 	// PassInvitee hands an account to the oldest other invitation of its
 	// address, once the invitation that created it is withdrawn.
 	PassInvitee(ctx context.Context, arg PassInviteeParams) (int64, error)
+	// PeekWechatToken returns an unused, unexpired token without locking it,
+	// so the caller can lock its user and OpenID first, then use it.
+	PeekWechatToken(ctx context.Context, arg PeekWechatTokenParams) (WechatToken, error)
 	PendingNotifications(ctx context.Context, userID uuid.UUID) ([]PendingNotificationsRow, error)
 	// PostponeConfirmation keeps the first deleted answer and looks again once
 	// the confirmation delay after it is over.

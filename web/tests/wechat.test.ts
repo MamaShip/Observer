@@ -118,7 +118,7 @@ describe('the bind link (/wx/bind)', () => {
     let sent: Record<string, unknown> = {}
     routes['POST /api/v1/wechat/bind'] = (b) => {
       sent = b
-      return { status: 200, body: { watch_id: 'w9' } }
+      return { status: 200, body: { submitted: true, watch_id: 'w9' } }
     }
     session.user = user as never
     lib.takeToken('bind', '#t=' + token) // came back from the login page
@@ -131,6 +131,17 @@ describe('the bind link (/wx/bind)', () => {
     expect(w.find('h1').text()).toBe('已绑定')
     expect(w.find('a[href="/watches/w9"]').exists()).toBe(true)
     expect(lib.takeToken('bind', '')).toBeNull()
+  })
+
+  it('links to the list while the article is first fetched', async () => {
+    routes['POST /api/v1/wechat/bind'] = () => ({ status: 200, body: { submitted: true } })
+    session.user = user as never
+    const w = await open(`/wx/bind#t=${token}`, 'WechatBindView')
+    await w.find('button.zg-btn').trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('已经开始备份')
+    expect(w.findAll('a').some((a) => a.attributes('href')?.startsWith('/watches/'))).toBe(false)
+    expect(w.find('a[href="/watches"]').exists()).toBe(true)
   })
 
   it('says why the article was not watched', async () => {

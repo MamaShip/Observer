@@ -160,13 +160,24 @@ func TestWechatFlow(t *testing.T) {
 	alice.api(http.MethodPost, "/wechat/bind", map[string]string{"token": tok}, http.StatusUnauthorized, nil)
 	alice.login(mailer, "alice@example.com")
 	var bound struct {
+		Submitted   bool   `json:"submitted"`
 		WatchID     string `json:"watch_id"`
 		SubmitError string `json:"submit_error"`
 	}
 	alice.api(http.MethodPost, "/wechat/bind", map[string]string{"token": tok}, 200, &bound)
-	if bound.WatchID == "" || bound.SubmitError != "" {
+	// The new watch is still resolving (and could merge into another), so
+	// its id is not given yet; the list has it.
+	if !bound.Submitted || bound.WatchID != "" || bound.SubmitError != "" {
 		t.Fatalf("bind = %+v", bound)
 	}
+	var list struct {
+		Items []api.Watch `json:"items"`
+	}
+	alice.api(http.MethodGet, "/watches", nil, 200, &list)
+	if len(list.Items) != 1 {
+		t.Fatalf("watches after binding = %+v", list.Items)
+	}
+	bound.WatchID = list.Items[0].ID.String()
 	alice.api(http.MethodPost, "/wechat/bind", map[string]string{"token": tok}, http.StatusGone, nil)
 	var me api.Me
 	alice.api(http.MethodGet, "/me", nil, 200, &me)

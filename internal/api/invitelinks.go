@@ -44,7 +44,7 @@ type InviteLink struct {
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
 	CreatedBy string     `json:"created_by,omitempty" doc:"The creating admin's email; absent from the command line or once that account is deleted"`
-	Status    string     `json:"status" enum:"active,full,expired,revoked"`
+	Status    string     `json:"status" enum:"active,no_codes,full,expired,revoked" doc:"no_codes: still open, but has sent all the login codes it may (those sent still work)"`
 	URL       string     `json:"url" doc:"The link to share"`
 }
 
@@ -74,7 +74,7 @@ func (h *handlers) inviteLink(r db.ListInviteLinksRow, now time.Time) InviteLink
 	return InviteLink{
 		ID: l.ID, Note: l.Note, MaxUses: int(l.MaxUses), Used: int(l.Used), Accounts: int(r.Accounts),
 		ExpiresAt: l.ExpiresAt, RevokedAt: l.RevokedAt, CreatedAt: l.CreatedAt, CreatedBy: r.CreatorEmail,
-		Status: auth.LinkStatus(l, now), URL: InviteLinkURL(h.d.BaseURL, h.d.Auth, l.ID),
+		Status: auth.LinkAdminStatus(l, now), URL: InviteLinkURL(h.d.BaseURL, h.d.Auth, l.ID),
 	}
 }
 

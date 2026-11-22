@@ -17,7 +17,8 @@ const state = ref<State>('loading')
 const token = ref<string | null>(null)
 const busy = ref(false)
 const error = ref('')
-const watchID = ref<string | null>(null)
+const submitted = ref(false)
+const watchID = ref<string | null>(null) // absent while the article is first fetched: it may merge into another watch
 const submitError = ref('')
 const siteName = computed(() => session.site?.service_name || '折光观察者')
 const accountName = computed(() => session.site?.wechat?.name || siteName.value)
@@ -44,6 +45,7 @@ async function bind() {
   try {
     const r = await call(api.POST('/api/v1/wechat/bind', { body: { token: token.value } }))
     dropToken('bind')
+    submitted.value = !!r.submitted || !!r.watch_id
     watchID.value = r.watch_id ?? null
     submitError.value = r.submit_error ?? ''
     state.value = 'done'
@@ -94,7 +96,7 @@ async function switchAccount() {
     <template v-else-if="state === 'done'">
       <h1 class="zg-auth__title">已绑定</h1>
       <p class="zg-auth__lede">回到公众号「{{ accountName }}」，把文章链接发过去，就会开始观察。</p>
-      <p v-if="watchID" class="notice notice-ok">刚才发送的文章已经开始备份。</p>
+      <p v-if="submitted" class="notice notice-ok">刚才发送的文章已经开始备份{{ watchID ? '' : '，可以在「我的观察」里查看进度' }}。</p>
       <p v-if="submitError" class="notice notice-danger" role="alert">刚才发送的文章没能开始观察：{{ submitError }}</p>
       <div class="zg-actions">
         <RouterLink v-if="watchID" :to="`/watches/${watchID}`" class="zg-shard zg-btn">查看这篇文章</RouterLink>

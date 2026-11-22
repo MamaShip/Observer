@@ -2,6 +2,13 @@
 INSERT INTO wechat_tokens (token_hash, purpose, openid, user_id, pending_url, expires_at)
 VALUES (sqlc.arg(token_hash), sqlc.arg(purpose), sqlc.arg(openid), sqlc.narg(user_id), sqlc.narg(pending_url), sqlc.arg(expires_at));
 
+-- PeekWechatToken returns an unused, unexpired token without locking it,
+-- so the caller can lock its user and OpenID first, then use it.
+-- name: PeekWechatToken :one
+SELECT * FROM wechat_tokens
+WHERE token_hash = sqlc.arg(token_hash) AND purpose = sqlc.arg(purpose)
+  AND used_at IS NULL AND expires_at > sqlc.arg(now)::timestamptz;
+
 -- UseWechatToken marks an unused, unexpired token as used and returns it.
 -- No row means it is unknown, used, expired or for another purpose.
 -- name: UseWechatToken :one

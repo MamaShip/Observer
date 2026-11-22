@@ -453,14 +453,19 @@ func TestUnsubscribeForgets(t *testing.T) {
 func TestBind(t *testing.T) {
 	b, acc, ws, _ := newBot()
 	u := db.User{ID: uuid.New(), Role: "user"}
-	if r, err := b.Bind(context.Background(), u, "t"); err != nil || r.WatchID != nil || len(ws.calls) != 0 {
+	if r, err := b.Bind(context.Background(), u, "t"); err != nil || r.Submitted || r.WatchID != nil || len(ws.calls) != 0 {
 		t.Fatalf("no pending link: %+v %v", r, err)
 	}
 	acc.pending = "https://mp.weixin.qq.com/s/abcdefgh"
 	id := uuid.New()
-	ws.sub = watch.Submission{Watch: db.Watch{ID: id}}
-	if r, err := b.Bind(context.Background(), u, "t"); err != nil || r.WatchID == nil || *r.WatchID != id {
+	ws.sub = watch.Submission{Watch: db.Watch{ID: id, Status: "active"}}
+	if r, err := b.Bind(context.Background(), u, "t"); err != nil || !r.Submitted || r.WatchID == nil || *r.WatchID != id {
 		t.Fatalf("pending link: %+v %v", r, err)
+	}
+	// A resolving watch may be merged into one the user already has.
+	ws.sub = watch.Submission{Watch: db.Watch{ID: id, Status: "resolving"}}
+	if r, err := b.Bind(context.Background(), u, "t"); err != nil || !r.Submitted || r.WatchID != nil {
+		t.Fatalf("pending link, resolving: %+v %v", r, err)
 	}
 	ws.err = watch.ErrOpenLimit
 	if r, err := b.Bind(context.Background(), u, "t"); err != nil || !strings.Contains(r.SubmitError, "上限") {

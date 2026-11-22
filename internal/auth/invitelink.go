@@ -32,6 +32,7 @@ const (
 // Link states, as the admin console shows them.
 const (
 	LinkActive  = "active"
+	LinkNoCodes = "no_codes" // still open for codes already sent, but sends no more
 	LinkFull    = "full"
 	LinkExpired = "expired"
 	LinkRevoked = "revoked"
@@ -42,6 +43,10 @@ var (
 	ErrRegistrationOpen = errors.New("registration is open; invitations are not needed")
 	ErrLinkSettings     = errors.New("invitation link settings out of range")
 )
+
+// ErrLinkCodes means a link that is still open has sent all the login
+// codes it may: codes already sent still sign up, but no new ones go out.
+var ErrLinkCodes = errors.New("invitation link has sent all its login codes")
 
 // linkCodeCap is how many login codes requests through a link may send,
 // whichever addresses they are for: enough for everyone invited to retry,
@@ -97,6 +102,17 @@ func LinkStatus(l db.InviteLink, now time.Time) string {
 		return LinkFull
 	}
 	return LinkActive
+}
+
+// LinkAdminStatus is LinkStatus as the admin console shows it: an open
+// link that can send no more codes is told apart. Sign-ups go by LinkStatus,
+// since codes sent before the cap still work.
+func LinkAdminStatus(l db.InviteLink, now time.Time) string {
+	st := LinkStatus(l, now)
+	if st == LinkActive && l.CodesSent >= linkCodeCap(l.MaxUses) {
+		return LinkNoCodes
+	}
+	return st
 }
 
 // openLink returns the link a token names if it still accepts sign-ups;
@@ -185,4 +201,18 @@ func (s *Service) signUpThroughLink(ctx context.Context, q *db.Queries, email, t
 	}
 	s.log.Info("account created through invitation link", "link", l.ID)
 	return user, nil
+}
+
+// closedLinkError tells why a link refused to count a code it was asked
+// for (it closed meanwhile, or reached its cap): ErrInviteLink or
+// ErrLinkCodes.
+func (s *Service) closedLinkError(ctx context.Context, id uuid.UUID) error {
+	l, err := s.q.GetInviteLink(ctx, id)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err == nil && LinkStatus(l, s.now()) == LinkActive {
+		return ErrLinkCodes
+	}
+	return ErrInviteLink
 }

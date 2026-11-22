@@ -554,7 +554,8 @@ func (b *Bot) statusWord(w db.ListWatchesPageRow) string {
 
 // BindResult is what binding from the website did.
 type BindResult struct {
-	WatchID     *uuid.UUID // the article sent before binding, now watched
+	Submitted   bool       // the article sent before binding is now watched
+	WatchID     *uuid.UUID // its watch; nil while resolving, as it may be merged away (watchPath)
 	SubmitError string     // why that article could not be watched
 }
 
@@ -573,7 +574,11 @@ func (b *Bot) Bind(ctx context.Context, user db.User, token string) (BindResult,
 	if err != nil {
 		return BindResult{}, err
 	}
-	return BindResult{WatchID: &s.Watch.ID}, nil
+	r := BindResult{Submitted: true}
+	if s.Watch.Status != "resolving" {
+		r.WatchID = &s.Watch.ID
+	}
+	return r, nil
 }
 
 // maskEmail shows enough of an address for its owner to recognise it.

@@ -285,6 +285,36 @@ func (q *Queries) MarkWechatNews(ctx context.Context, arg MarkWechatNewsParams) 
 	return items, nil
 }
 
+const peekWechatToken = `-- name: PeekWechatToken :one
+SELECT token_hash, purpose, openid, user_id, pending_url, expires_at, used_at, created_at FROM wechat_tokens
+WHERE token_hash = $1 AND purpose = $2
+  AND used_at IS NULL AND expires_at > $3::timestamptz
+`
+
+type PeekWechatTokenParams struct {
+	TokenHash []byte
+	Purpose   string
+	Now       time.Time
+}
+
+// PeekWechatToken returns an unused, unexpired token without locking it,
+// so the caller can lock its user and OpenID first, then use it.
+func (q *Queries) PeekWechatToken(ctx context.Context, arg PeekWechatTokenParams) (WechatToken, error) {
+	row := q.db.QueryRow(ctx, peekWechatToken, arg.TokenHash, arg.Purpose, arg.Now)
+	var i WechatToken
+	err := row.Scan(
+		&i.TokenHash,
+		&i.Purpose,
+		&i.Openid,
+		&i.UserID,
+		&i.PendingUrl,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const useWechatToken = `-- name: UseWechatToken :one
 UPDATE wechat_tokens SET used_at = $1::timestamptz
 WHERE token_hash = $2 AND purpose = $3

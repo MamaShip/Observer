@@ -217,7 +217,7 @@ func adminInviteLink(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 		fmt.Fprintln(w, "ID\tSTATUS\tUSED\tEXPIRES\tNOTE\tURL")
 		for _, r := range rows {
 			l := r.InviteLink
-			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%s\t%s\t%s\n", l.ID, auth.LinkStatus(l, now), l.Used, l.MaxUses,
+			fmt.Fprintf(w, "%s\t%s\t%d/%d\t%s\t%s\t%s\n", l.ID, auth.LinkAdminStatus(l, now), l.Used, l.MaxUses,
 				l.ExpiresAt.Format(time.RFC3339), l.Note, api.InviteLinkURL(cfg.Origin(), svc, l.ID))
 		}
 		return w.Flush()

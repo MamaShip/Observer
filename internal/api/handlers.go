@@ -108,6 +108,8 @@ func (h *handlers) registerAuth(g huma.API) {
 			return nil, huma.Error429TooManyRequests(fmt.Sprintf("这个邮箱今天已获取过 %d 次验证码，请明天再试。", auth.CodesPerDay))
 		case errors.Is(err, auth.ErrInviteLink):
 			return nil, inviteLinkGone()
+		case errors.Is(err, auth.ErrLinkCodes):
+			return nil, huma.Error429TooManyRequests("这个邀请链接能发送的验证码已达上限，不能再获取新的验证码。已经收到的验证码仍然可以使用，已有账号可以在登录页正常登录。")
 		case errors.Is(err, notify.ErrJoinLimit):
 			return nil, huma.Error503ServiceUnavailable("今天通过邀请链接发送的验证码已达上限，请明天再试。已有账号可以在登录页正常登录。")
 		case errors.Is(err, notify.ErrDailyLimit):
