@@ -3,6 +3,7 @@ import { api, call, messageOf, type WatchDetail } from '@/api/client'
 import { session } from '@/session'
 import ZgIcon from '@/components/ZgIcon.vue'
 import { extractLink } from '@/lib/link'
+import copyLinkImage from '@/assets/help/copy-link.png'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const emit = defineEmits<{ submitted: [detail: WatchDetail] }>()
@@ -15,6 +16,8 @@ const busy = ref(false)
 const error = ref('')
 const box = ref<HTMLTextAreaElement | null>(null)
 const link = computed(() => extractLink(text.value))
+// The screenshot of WeChat's share menu loads only when asked for.
+const showHelp = ref(false)
 
 watch(text, (now, before) => {
   error.value = ''
@@ -97,6 +100,15 @@ async function submit() {
         <ZgIcon name="check" />已识别文章链接，点「开始观察」提交。
       </span>
       <span v-else id="link-hint" class="zg-field__hint" aria-live="polite">在微信里打开文章，点右上角「···」复制链接。提交后会立即备份。</span>
+      <template v-if="!link">
+        <button type="button" class="help-toggle zg-link" :aria-expanded="showHelp" aria-controls="copy-link-help"
+          @click="showHelp = !showHelp">{{ showHelp ? '收起图示' : '找不到「复制链接」？看图示' }}</button>
+        <figure v-if="showHelp" id="copy-link-help" class="help-figure">
+          <img :src="copyLinkImage" width="602" height="454"
+            alt="微信文章右上角「···」菜单的截图，第二行有「复制链接」按钮">
+          <figcaption>点右上角「···」后弹出的菜单，「复制链接」在第二行。</figcaption>
+        </figure>
+      </template>
     </div>
     <slot />
   </form>
@@ -112,6 +124,10 @@ textarea { display: block; resize: none; color: inherit; background: transparent
 .zg-field__label-row { flex-wrap: wrap; gap: var(--space-2); }
 .zg-field__hint.is-ok { display: flex; align-items: center; gap: var(--space-1); color: var(--ok); }
 .zg-field__hint.is-ok .zg-icon { width: 14px; height: 14px; flex: none; }
+.help-toggle { align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer; font: 400 12px/18px var(--font-sans); }
+.help-figure { margin: 0; max-width: 320px; }
+.help-figure img { display: block; width: 100%; height: auto; border-radius: 6px; }
+.help-figure figcaption { margin-top: var(--space-1); font: 400 12px/18px var(--font-sans); color: var(--ink-300); }
 @media (max-width: 480px) {
   .submit { padding: var(--space-4); }
   /* Stack the button under the input so the link gets the full width. */

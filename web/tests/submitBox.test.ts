@@ -64,6 +64,22 @@ describe('SubmitBox', () => {
     expect(w.get('#link-hint').classes()).not.toContain('is-error')
   })
 
+  it('shows the copy-link screenshot only on request', async () => {
+    const w = mount(SubmitBox)
+    expect(w.find('#copy-link-help').exists()).toBe(false)
+    const toggle = w.get('.help-toggle')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('click')
+    expect(w.get('#copy-link-help img').attributes('src')).toContain('copy-link')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+
+    // Once a link is recognised the help goes away.
+    await w.get('textarea').setValue(link)
+    expect(w.find('.help-toggle').exists()).toBe(false)
+    expect(w.find('#copy-link-help').exists()).toBe(false)
+  })
+
   it('submits the link and clears the box', async () => {
     const w = mount(SubmitBox)
     const box = w.get('textarea')
