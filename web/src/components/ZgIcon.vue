@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Inline Lucide 0.460.0 icons in the design system's style: 24 grid,
 // 1.5 stroke, square caps, sharp joins, colour from the text.
-type IconName = 'arrow-left' | 'download' | 'eye' | 'printer' | 'external-link' | 'mail' | 'log-out' | 'user-plus' | 'refresh' | 'chevron-down'
+type IconName = 'arrow-left' | 'download' | 'eye' | 'printer' | 'external-link' | 'mail' | 'log-out' | 'user-plus' | 'refresh' | 'chevron-down' | 'check'
 defineProps<{ name: IconName; size?: 16 | 20 | 24 }>()
 const icons: Record<IconName, string> = {
   'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
@@ -14,6 +14,7 @@ const icons: Record<IconName, string> = {
   'user-plus': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
   'chevron-down': '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
 }
 </script>
 
