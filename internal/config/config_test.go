@@ -45,6 +45,8 @@ func TestLoadErrors(t *testing.T) {
 		{"smtp without from", "SMTP_HOST", "smtp.example.com", "MAIL_FROM"},
 		{"bad wechat token", "WECHAT_TOKEN", "has space", "WECHAT_TOKEN"},
 		{"bad wechat account", "WECHAT_ACCOUNT_ID", "observer", "WECHAT_ACCOUNT_ID"},
+		{"bad toolkit URL", "TOOLKIT_URL", "tools.example.com", "TOOLKIT_URL must"},
+		{"toolkit without name", "TOOLKIT_URL", "https://tools.example.com/", "TOOLKIT_NAME"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

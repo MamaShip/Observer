@@ -8,6 +8,7 @@ const maxOpen = computed(() => session.site?.max_open_watches ?? 50)
 const monthlyEmails = computed(() => session.site?.monthly_emails ?? 20)
 const version = computed(() => session.site?.version)
 const versionURL = computed(() => sourceURL(version.value))
+const toolkit = computed(() => session.site?.toolkit)
 </script>
 
 <template>
@@ -16,6 +17,7 @@ const versionURL = computed(() => sourceURL(version.value))
         <a href="#how">它是怎么工作的</a>
         <a href="#limits">使用限制</a>
         <a href="#deploy">创建自己的独立观察者</a>
+        <a v-if="toolkit" href="#toolkit">更多工具</a>
       </nav>
       <article class="zg-prose">
         <h1>关于{{ serviceName() }}</h1>
@@ -47,6 +49,12 @@ const versionURL = computed(() => sourceURL(version.value))
           项目采用 GPL-3.0 许可证。部署指南和源代码都在
           <a href="https://github.com/MamaShip/Observer" target="_blank" rel="noopener noreferrer">GitHub 项目主页</a>。
         </p>
+        <template v-if="toolkit">
+          <h2 id="toolkit">更多工具</h2>
+          <p>
+            {{ serviceName() }}是 <a :href="toolkit.url">{{ toolkit.name }}</a> 中的一个小工具。工具集里还有其他实用的小工具，欢迎去看看。
+          </p>
+        </template>
         <p v-if="version" class="muted small">
           当前版本：<a v-if="versionURL" :href="versionURL" target="_blank" rel="noopener noreferrer">{{ version }}</a><template
             v-else>{{ version }}</template>

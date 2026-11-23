@@ -64,15 +64,22 @@ type Deps struct {
 
 // Site is public information the web app needs before login.
 type Site struct {
-	ServiceName      string      `json:"service_name"`
-	RegistrationMode string      `json:"registration_mode" enum:"open,invite" doc:"invite: only addresses an admin invited receive login codes"`
-	WatchDays        int         `json:"watch_days" doc:"How long each article is watched"`
-	CodesPerDay      int         `json:"codes_per_day" doc:"Login codes one email can request per day (Beijing time)"`
-	CodeTTLMinutes   int         `json:"code_ttl_minutes"`
-	MaxOpenWatches   int         `json:"max_open_watches"`
-	MonthlyEmails    int         `json:"monthly_emails" doc:"Notification emails per account per month by default; 0 means no limit"`
-	Version          string      `json:"version" doc:"The running release (v1.2.3), or a development build (git describe output, or dev)"`
-	Wechat           *SiteWechat `json:"wechat,omitempty" doc:"Present when users can use the Official Account"`
+	ServiceName      string       `json:"service_name"`
+	RegistrationMode string       `json:"registration_mode" enum:"open,invite" doc:"invite: only addresses an admin invited receive login codes"`
+	WatchDays        int          `json:"watch_days" doc:"How long each article is watched"`
+	CodesPerDay      int          `json:"codes_per_day" doc:"Login codes one email can request per day (Beijing time)"`
+	CodeTTLMinutes   int          `json:"code_ttl_minutes"`
+	MaxOpenWatches   int          `json:"max_open_watches"`
+	MonthlyEmails    int          `json:"monthly_emails" doc:"Notification emails per account per month by default; 0 means no limit"`
+	Version          string       `json:"version" doc:"The running release (v1.2.3), or a development build (git describe output, or dev)"`
+	Wechat           *SiteWechat  `json:"wechat,omitempty" doc:"Present when users can use the Official Account"`
+	Toolkit          *SiteToolkit `json:"toolkit,omitempty" doc:"Present when the site belongs to a collection of tools"`
+}
+
+// SiteToolkit is the collection of tools the site belongs to.
+type SiteToolkit struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 type siteOutput struct{ Body Site }

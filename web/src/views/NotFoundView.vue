@@ -1,3 +1,10 @@
+<script setup lang="ts">
+import { session } from '@/session'
+import { computed } from 'vue'
+
+const toolkit = computed(() => session.site?.toolkit)
+</script>
+
 <template>
   <section class="zg-empty">
     <div class="zg-empty__art" aria-hidden="true"><i /><i /><i /><i /></div>
@@ -8,8 +15,10 @@
       <RouterLink to="/" class="zg-shard zg-btn">返回首页</RouterLink>
       <RouterLink to="/watches" class="zg-shard zg-btn zg-btn--ghost">我的观察</RouterLink>
     </div>
+    <p v-if="toolkit" class="zg-empty__body toolkit">也可以去 <a :href="toolkit.url">{{ toolkit.name }}</a> 看看其他小工具。</p>
   </section>
 </template>
 <style scoped>
 .zg-empty { padding: var(--space-8) 0; max-width: 480px; }
+.toolkit { margin-top: var(--space-5); }
 </style>

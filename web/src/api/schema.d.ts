@@ -1172,6 +1172,8 @@ export interface components {
              */
             registration_mode: "open" | "invite";
             service_name: string;
+            /** @description Present when the site belongs to a collection of tools */
+            toolkit?: components["schemas"]["SiteToolkit"];
             /** @description The running release (v1.2.3), or a development build (git describe output, or dev) */
             version: string;
             /**
@@ -1181,6 +1183,10 @@ export interface components {
             watch_days: number;
             /** @description Present when users can use the Official Account */
             wechat?: components["schemas"]["SiteWechat"];
+        };
+        SiteToolkit: {
+            name: string;
+            url: string;
         };
         SiteWechat: {
             /** @description The account users follow */

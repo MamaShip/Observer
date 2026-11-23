@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import AppHeader from '@/components/AppHeader.vue'
 import AdminNav from '@/components/admin/AdminNav.vue'
-import { serviceName } from '@/session'
+import { serviceName, session } from '@/session'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
+const toolkit = computed(() => session.site?.toolkit)
 </script>
 
 <template>
@@ -22,7 +24,11 @@ const route = useRoute()
       <div class="zg-container zg-footer__inner">
         <div>
           <p v-if="route.name === 'home'" class="footer-motto">时间从来不回答。</p>
-          <p class="zg-footer__fine">© {{ new Date().getFullYear() }} {{ serviceName() }} · 开源项目，可自行部署</p>
+          <p class="zg-footer__fine">
+            © {{ new Date().getFullYear() }} {{ serviceName() }} ·
+            <template v-if="toolkit"><a :href="toolkit.url">{{ toolkit.name }}</a> 成员</template>
+            <template v-else>开源项目，可自行部署</template>
+          </p>
         </div>
         <nav class="zg-footer__links" aria-label="页脚">
           <RouterLink to="/about">关于</RouterLink>

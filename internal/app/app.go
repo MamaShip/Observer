@@ -129,6 +129,10 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 
 	a := &App{cfg: cfg, log: log, pool: pool, river: rc, hb: hb, started: time.Now(), Watch: svc, Notify: notifier, Auth: authSvc}
 	var bot *mp.Bot
+	var toolkit *api.SiteToolkit
+	if cfg.ToolkitURL != "" {
+		toolkit = &api.SiteToolkit{Name: cfg.ToolkitName, URL: cfg.ToolkitURL}
+	}
 	var siteWechat *api.SiteWechat
 	wechatHandler := http.NotFoundHandler()
 	if cfg.Wechat() {
@@ -145,7 +149,7 @@ func build(ctx context.Context, cfg config.Config, log *slog.Logger, version str
 		Limits: api.Limits{MaxOpenWatches: cfg.MaxOpenWatches, MaxDailySubmission: cfg.MaxDailySubmissions, DailyEmails: cfg.DailyEmailLimit,
 			MonthlyInvites: cfg.MonthlyInviteLimit},
 		Site: api.Site{ServiceName: cfg.ServiceName, RegistrationMode: cfg.RegistrationMode, WatchDays: cfg.WatchDays, MaxOpenWatches: cfg.MaxOpenWatches,
-			MonthlyEmails: cfg.MonthlyEmailLimit, Wechat: siteWechat},
+			MonthlyEmails: cfg.MonthlyEmailLimit, Wechat: siteWechat, Toolkit: toolkit},
 		MP: bot,
 	})
 	web := webui.Handler(webui.CSP(cfg.SnapOrigin()))

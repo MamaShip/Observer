@@ -130,6 +130,8 @@ body { margin: 0; font-family: var(--font-sans); background: var(--surface-000);
 .zg-footer__links a:hover { color: var(--ink-100); }
 .zg-footer__fine { font: 400 12px/18px var(--font-sans); color: var(--ink-300); margin: 0; }
 .zg-footer__fine code { font-family: var(--font-mono); }
+.zg-footer__fine a { color: var(--ink-200); text-decoration: none; }
+.zg-footer__fine a:hover { color: var(--ink-100); text-decoration: underline; }
 
 /* Admin shell */
 .zg-admin { display: grid; grid-template-columns: 1fr; min-height: 100vh; }

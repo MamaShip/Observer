@@ -33,7 +33,7 @@
    openssl rand -hex 32   # SIGNING_KEY
    chmod 600 .env
    ```
-   在 `.env` 中将 `DOMAIN` 改为你的站点域名，`SERVICE_NAME` 改为你想展示的名称。选择 `REGISTRATION_MODE=invite`（受邀邮箱才能登录）或 `open`（开放注册）。
+   在 `.env` 中将 `DOMAIN` 改为你的站点域名，`SERVICE_NAME` 改为你想展示的名称，并清空 `TOOLKIT_URL` 和 `TOOLKIT_NAME`（它们让页脚链接到折光观察者所属的工具集，自己的站点用不上）。选择 `REGISTRATION_MODE=invite`（受邀邮箱才能登录）或 `open`（开放注册）。
 
    填写自己的 SMTP 发信配置和已验证的发件地址（`MAIL_FROM`），供站点发送验证码和删除提醒。将 `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET` 和访问密钥改为自己的 S3 兼容对象存储配置。文章、图片和数据库备份会写入这个存储桶。
 4. **选择镜像。** 默认使用项目发布的 `ghcr.io/mamaship/observer:latest`。如果使用私有镜像，先在服务器上用有读取权限的账号运行 `docker login ghcr.io`。也可以在开发机上运行 `make image`，将自行构建的镜像传到服务器。

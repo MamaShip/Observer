@@ -603,7 +603,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 | `/watches/:id/backup/:version` | 独立阅读 | 版本地址使用快照 ID；可切换版本、下载当前版本或打开对应的快照打印。正文继续由隔离的快照域通过 sandbox iframe 提供 |
 | `/wx/bind`、`/wx/go` | 公众号链接 | 公众号回复里的绑定链接与免登录链接（§6.7）：令牌在 `#` 之后，读出后立即去掉；绑定前确认当前邮箱，可换账号；绑定后显示绑定前发送的文章是否已开始观察 |
 | `/settings` | 设置 | 邮箱、退出登录、本月通知邮件数与上限、开启公众号入口时的「微信公众号」（未绑定说明如何绑定，已绑定显示日期、可解除）、邀请朋友（邀请制下：本月剩余名额、邮件邀请表单、邀请记录及其"待接受 / 已注册"状态，待接受的可撤回）、删除账号（在确认弹窗输入当前账号邮箱） |
-| `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载）；关于页末尾显示当前版本，正式版本链接到 GitHub 上对应标签的源代码 |
+| `/about`、`/privacy`、`/terms` | 关于 / 隐私说明 / 服务条款 | 静态页（按需加载）；关于页末尾显示当前版本，正式版本链接到 GitHub 上对应标签的源代码；配置了工具集时，关于页末尾另有「更多工具」一节 |
 
 - 技术：Vue 3 + vue-router + TypeScript，原生 CSS（浅色 / 深色跟随系统），不引入组件库；API 类型由 `observer openapi` → `openapi-typescript` 生成，请求用 `openapi-fetch`。品牌标识、得意黑标题字体和 JetBrains Mono 随前端提供，桌面双栏在手机上改为单栏，主导航可展开。生产包脚本约 60 KB、样式约 9 KB（gzip）。
 - 界面遵循折光观察者设计系统：时间一律 24 小时制，当天 `HH:mm`、跨天 `MM-DD HH:mm`、完整日期 `YYYY-MM-DD`；图标为内联 Lucide（`ZgIcon`）。
@@ -612,6 +612,7 @@ backups/postgres/<YYYY-MM-DD>.sql.gz                 数据库备份
 - 主域 CSP：`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src <快照域>; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`，不需要任何 `unsafe-*`。
 - 会话过期时，任何 API 请求返回 401 都会把用户带回登录页，登录后回到原来的页面（只允许站内路径）。
 - 移动端优先：大部分用户会在微信内置浏览器或手机浏览器中使用。
+- 所属工具集（2026-11-23）：设置 `TOOLKIT_URL` 与 `TOOLKIT_NAME` 后，页脚版权行写"© 年份 服务名 · 工具集名 成员"（工具集名链接到主站，当前标签页打开），关于页末尾加「更多工具」一节，404 页加一句去工具集看看。没设置时（自行部署的默认情况）版权行仍写"开源项目，可自行部署"，其他两处不显示。顶部导航、快照、阅读页、邮件和管理后台都不放这个链接。
 
 ### 10.1 管理后台（2026-11-20 提前实现）
 
@@ -729,6 +730,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 
 已实现（M3）：`SNAP_BASE_URL`（必须与 `BASE_URL` 不同主机）、`SIGNING_KEY`（≥32 字符；快照链接签名，也用于派生公共邀请链接的令牌，轮换后两者都失效）、`TRUST_PROXY_HEADERS`（在 Caddy 后面时设为 true）、`SERVICE_NAME`、`REGISTRATION_MODE`（`open` / `invite`，默认 `invite`）、`MAX_OPEN_WATCHES`（50）、`MAX_DAILY_SUBMISSIONS`（30）、`SMTP_HOST`、`SMTP_PORT`（587；465 走隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`、`MAIL_FROM`、`DAILY_EMAIL_LIMIT`（100）、`MONTHLY_EMAIL_LIMIT`（每个账号每月通知邮件数，20；0 表示不限）、`MONTHLY_INVITE_LIMIT`（每个用户每月邀请数，5；0 表示只有管理员能邀请）、`ADMIN_EMAILS`（逗号分隔）、`CACHE_DIR`、`CACHE_MAX_BYTES`（5 GiB）、`HEALTHCHECK_URL`。
 公众号入口（2026-11-21，§6.7）：`WECHAT_TOKEN`（公众平台服务器配置的 Token，3–32 位字母或数字；设置了才开启）、`WECHAT_ACCOUNT_ID`（原始 ID `gh_…`，可选，用于核对消息）、`WECHAT_NAME`（公众号名称，网页上提示关注；默认同 `SERVICE_NAME`）。
+所属工具集（2026-11-23）：`TOOLKIT_URL`（http(s) 地址；设置了才显示链接）、`TOOLKIT_NAME`（设置 `TOOLKIT_URL` 时必填）。生产环境为 `https://tools.portkey.click/` 与 `Portkey 工具集`。
 生产环境取值：`BASE_URL=https://ob.portkey.click`、`SNAP_BASE_URL=https://snap.ob.portkey.click`、`SMTP_HOST=smtp.resend.com`、`SMTP_PORT=465`、`SMTP_USER=resend`、`SMTP_PASSWORD=<Resend API Key，只给发信权限并限定发件域名>`、`MAIL_FROM=折光观察者 <noreply@ob.portkey.click>`。env 文件按 Docker Compose `env_file` 的格式书写（值不加引号，可含空格和 `<>`），`observer mailtest -env-file <文件>` 可直接读取。
 `BASE_URL` 为 https 时视为生产环境：`SIGNING_KEY`、`SMTP_HOST` 必填，`SNAP_BASE_URL` 也必须是 https；开发环境缺少它们时，分别退化为随机签名密钥、只把邮件写进日志。
 

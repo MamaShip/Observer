@@ -37,6 +37,10 @@ type Config struct {
 	SigningKey        string `env:"SIGNING_KEY"` // HMAC key for snapshot links, at least 32 characters
 	TrustProxyHeaders bool   `env:"TRUST_PROXY_HEADERS"`
 	ServiceName       string `env:"SERVICE_NAME" envDefault:"折光观察者"`
+	// The collection of tools this site belongs to; the web app links to it
+	// when TOOLKIT_URL is set. Self-hosted sites leave both empty.
+	ToolkitURL  string `env:"TOOLKIT_URL"`
+	ToolkitName string `env:"TOOLKIT_NAME"`
 
 	RegistrationMode    string `env:"REGISTRATION_MODE" envDefault:"invite"` // open or invite
 	MaxOpenWatches      int    `env:"MAX_OPEN_WATCHES" envDefault:"50"`
@@ -164,6 +168,14 @@ func Load() (Config, error) {
 	}
 	if c.WechatName == "" {
 		c.WechatName = c.ServiceName
+	}
+	if c.ToolkitURL != "" {
+		if u, err := url.Parse(c.ToolkitURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			errs = append(errs, fmt.Errorf("TOOLKIT_URL must be an http(s) URL, got %q", c.ToolkitURL))
+		}
+		if c.ToolkitName == "" {
+			errs = append(errs, errors.New("TOOLKIT_URL needs TOOLKIT_NAME"))
+		}
 	}
 	for _, u := range []string{c.CanaryAliveURL, c.CanaryDeletedURL} {
 		if u == "" {
