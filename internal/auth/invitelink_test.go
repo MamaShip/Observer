@@ -292,7 +292,7 @@ func TestInviteLinkCodeCap(t *testing.T) {
 		t.Errorf("check past the cap: %v", err)
 	}
 	// A request that loses the race for the last code is told the same.
-	if err := s.closedLinkError(ctx, l.ID); !errors.Is(err, ErrLinkCodes) {
+	if err := s.closedLinkError(ctx, q, l.ID); !errors.Is(err, ErrLinkCodes) {
 		t.Errorf("lost race: %v", err)
 	}
 	// Codes already sent still work.
@@ -307,7 +307,7 @@ func TestInviteLinkCodeCap(t *testing.T) {
 	if _, err := s.RequestCode(ctx, "new@example.com", token, noIP); !errors.Is(err, ErrInviteLink) {
 		t.Errorf("revoked past the cap: %v", err)
 	}
-	if err := s.closedLinkError(ctx, l.ID); !errors.Is(err, ErrInviteLink) {
+	if err := s.closedLinkError(ctx, q, l.ID); !errors.Is(err, ErrInviteLink) {
 		t.Errorf("lost race to a revocation: %v", err)
 	}
 }
@@ -402,5 +402,105 @@ func TestInviteLinkOpenMode(t *testing.T) {
 	sess, err := signUp(t, s, sender, "free@example.com", "anything")
 	if err != nil || sess.User.InviteLinkID != nil {
 		t.Errorf("open sign-up = %+v, %v", sess.User, err)
+	}
+}
+
+// When today's email budget is used up, a request that would send nothing
+// (disabled account, address not invited) fails like the others, and none
+// of them counts.
+func TestBudgetAnswersAlike(t *testing.T) {
+	ctx := context.Background()
+	s, sender, q, clk := newService(t, ModeInvite)
+	for _, email := range []string{"member@example.com", "off@example.com"} {
+		if _, err := q.CreateUser(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := q.SetUserStatus(ctx, db.SetUserStatusParams{Email: "off@example.com", Status: "disabled"}); err != nil {
+		t.Fatal(err)
+	}
+	l, token := newLink(t, s, 5)
+	emails := []string{"member@example.com", "off@example.com", "stranger@example.com"}
+
+	errBudget := errors.New("daily budget")
+	sender.budgetFail = errBudget
+	for _, email := range emails {
+		if _, err := s.RequestCode(ctx, email, "", noIP); !errors.Is(err, errBudget) {
+			t.Errorf("%s, no link, over the budget: %v", email, err)
+		}
+	}
+	sender.budgetFail = nil
+	sender.joinFail = errJoinBudget
+	clk.advance(ResendAfter) // a refused request starts the wait too
+	for _, email := range emails {
+		if _, err := s.RequestCode(ctx, email, token, noIP); !errors.Is(err, errJoinBudget) {
+			t.Errorf("%s, through the link, over its budget: %v", email, err)
+		}
+	}
+	sender.joinFail = nil
+	if got, _ := q.GetInviteLink(ctx, l.ID); got.CodesSent != 0 {
+		t.Errorf("codes_sent = %d, want the refused requests given back", got.CodesSent)
+	}
+	if sender.count() != 0 {
+		t.Errorf("%d codes sent", sender.count())
+	}
+
+	// Within budget, all three succeed alike, with their day's codes intact.
+	clk.advance(ResendAfter)
+	for _, email := range emails {
+		if quota, err := s.RequestCode(ctx, email, "", noIP); err != nil || quota.Remaining != CodesPerDay-1 {
+			t.Errorf("%s within budget: %+v, %v", email, quota, err)
+		}
+	}
+	if sender.count() != 1 {
+		t.Errorf("%d codes sent, want only the active member's", sender.count())
+	}
+}
+
+// A resend that cannot be sent leaves the code already received working.
+func TestFailedResendKeepsCode(t *testing.T) {
+	ctx := context.Background()
+	s, sender, _, clk := newService(t, ModeOpen)
+	if _, err := s.RequestCode(ctx, "a@example.com", "", noIP); err != nil {
+		t.Fatal(err)
+	}
+	_, first := sender.last(t)
+	clk.advance(ResendAfter)
+	sender.budgetFail = errors.New("daily budget")
+	if _, err := s.RequestCode(ctx, "a@example.com", "", noIP); err == nil {
+		t.Fatal("budget failure not reported")
+	}
+	sender.budgetFail = nil
+	if _, err := s.Verify(ctx, "a@example.com", first, "", ""); err != nil {
+		t.Errorf("code received before the failed resend: %v", err)
+	}
+}
+
+// A database error before the email goes out uses up neither the address's
+// codes nor the link's.
+func TestRequestCodeDatabaseError(t *testing.T) {
+	ctx := context.Background()
+	s, sender, q, _ := newService(t, ModeInvite)
+	l, token := newLink(t, s, 5)
+	if _, err := s.pool.Exec(ctx, `
+		CREATE FUNCTION fail_login_code() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'disk full'; END $$;
+		CREATE TRIGGER fail_login_code BEFORE INSERT ON login_codes FOR EACH ROW EXECUTE FUNCTION fail_login_code();`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestCode(ctx, "new@example.com", token, noIP); err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("request with a failing database: %v", err)
+	}
+	if got, _ := q.GetInviteLink(ctx, l.ID); got.CodesSent != 0 {
+		t.Errorf("codes_sent = %d after a database error", got.CodesSent)
+	}
+	if _, err := s.pool.Exec(ctx, `DROP TRIGGER fail_login_code ON login_codes`); err != nil {
+		t.Fatal(err)
+	}
+	// No wait and no code used: the failed request left nothing behind.
+	if quota, err := s.RequestCode(ctx, "new@example.com", token, noIP); err != nil || quota.Remaining != CodesPerDay-1 {
+		t.Errorf("after the error: %+v, %v", quota, err)
+	}
+	if sender.count() != 1 {
+		t.Errorf("%d codes sent", sender.count())
 	}
 }

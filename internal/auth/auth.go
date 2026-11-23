@@ -69,6 +69,9 @@ type MailSender interface {
 	// SendJoinCode sends a code requested through a public invitation
 	// link, from that use's own daily budget.
 	SendJoinCode(ctx context.Context, to, code string, userID *uuid.UUID, valid time.Duration) error
+	// CheckLoginBudget returns the error SendLogin (or SendJoinCode, for
+	// join) would return now for today's budget being used up, or nil.
+	CheckLoginBudget(ctx context.Context, join bool) error
 	SendInvite(ctx context.Context, to, token string, valid time.Duration) error
 }
 
@@ -134,7 +137,13 @@ func today(t time.Time) time.Time {
 // ErrTooSoon (with the quota filled in). The limit is counted the same way
 // for every address, and the request succeeds silently when no email is sent
 // (unknown address in invite mode, disabled account), so the answers do not
-// reveal which addresses have accounts.
+// reveal which addresses have accounts; for the same reason, a request that
+// sends nothing still fails like the others when today's email budget is
+// used up.
+//
+// What a request counts and the code it makes are written together, and
+// given back together when the email cannot be sent: nothing is used up by
+// an error, and the address's previous code stays its latest.
 //
 // In invite mode, link is a public invitation link's token (or ""): with an
 // open link, an address without an account receives a code too. Every
@@ -165,95 +174,132 @@ func (s *Service) RequestCode(ctx context.Context, email, link string, ip netip.
 		}
 		inviteLink = &l
 	}
-	// release gives back what this request counted, when it is not the
-	// user's fault or the link turns out to be closed.
-	release := func(link bool) {
-		ctx := context.WithoutCancel(ctx)
-		if err := s.q.ReleaseLoginRequest(ctx, db.ReleaseLoginRequestParams{Email: email, Day: day}); err != nil {
-			log.Error("could not release login request", "err", err)
-		}
-		if link {
-			if err := s.q.ReleaseInviteLinkCode(ctx, inviteLink.ID); err != nil {
-				log.Error("could not release invitation link code", "err", err)
-			}
-		}
-	}
 
-	sent, err := s.q.ClaimLoginRequest(ctx, db.ClaimLoginRequestParams{
-		Email: email, Day: day, Now: now, PerDay: CodesPerDay, ResendBefore: now.Add(-ResendAfter),
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		r, err := s.q.GetLoginRequest(ctx, db.GetLoginRequestParams{Email: email, Day: day})
-		if err != nil {
-			return CodeQuota{}, err
-		}
-		if r.Sent >= CodesPerDay {
-			return CodeQuota{}, ErrTryTomorrow
-		}
-		return CodeQuota{Remaining: CodesPerDay - int(r.Sent), ResendIn: r.LastAt.Add(ResendAfter).Sub(now)}, ErrTooSoon
-	}
-	if err != nil {
-		return CodeQuota{}, err
-	}
-	if inviteLink != nil {
-		n, err := s.q.ClaimInviteLinkCode(ctx, db.ClaimInviteLinkCodeParams{
-			ID: inviteLink.ID, Now: now, MaxCodes: linkCodeCap(inviteLink.MaxUses),
+	var (
+		quota  CodeQuota
+		userID *uuid.UUID
+		code   string
+		codeID uuid.UUID
+		skip   string // why no email goes out, if none does
+	)
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		sent, err := q.ClaimLoginRequest(ctx, db.ClaimLoginRequestParams{
+			Email: email, Day: day, Now: now, PerDay: CodesPerDay, ResendBefore: now.Add(-ResendAfter),
 		})
-		if err != nil || n == 0 {
-			release(false)
-			if err == nil {
-				log.Info("login code not sent: invitation link closed or at its cap", "link", inviteLink.ID)
-				err = s.closedLinkError(ctx, inviteLink.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			r, err := q.GetLoginRequest(ctx, db.GetLoginRequestParams{Email: email, Day: day})
+			if err != nil {
+				return err
 			}
-			return CodeQuota{}, err
+			if r.Sent >= CodesPerDay {
+				return ErrTryTomorrow
+			}
+			quota = CodeQuota{Remaining: CodesPerDay - int(r.Sent), ResendIn: r.LastAt.Add(ResendAfter).Sub(now)}
+			return ErrTooSoon
 		}
-	}
-	quota := CodeQuota{Remaining: CodesPerDay - int(sent)}
-	if quota.Remaining > 0 {
-		quota.ResendIn = ResendAfter
-	}
+		if err != nil {
+			return err
+		}
+		if inviteLink != nil {
+			n, err := q.ClaimInviteLinkCode(ctx, db.ClaimInviteLinkCodeParams{
+				ID: inviteLink.ID, Now: now, MaxCodes: linkCodeCap(inviteLink.MaxUses),
+			})
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				// Rolling back also gives the address's claim back.
+				log.Info("login code not sent: invitation link closed or at its cap", "link", inviteLink.ID)
+				return s.closedLinkError(ctx, q, inviteLink.ID)
+			}
+		}
+		quota = CodeQuota{Remaining: CodesPerDay - int(sent)}
+		if quota.Remaining > 0 {
+			quota.ResendIn = ResendAfter
+		}
 
-	var userID *uuid.UUID
-	user, err := s.q.GetUserByEmail(ctx, email)
-	switch {
-	case err == nil:
-		if user.Status != "active" {
-			log.Info("login code not sent: account disabled")
-			return quota, nil
+		user, err := q.GetUserByEmail(ctx, email)
+		switch {
+		case err == nil:
+			if user.Status != "active" {
+				skip = "account disabled"
+				return nil
+			}
+			userID = &user.ID
+		case errors.Is(err, pgx.ErrNoRows):
+			if s.cfg.Mode != ModeOpen && inviteLink == nil {
+				skip = "not invited"
+				return nil
+			}
+		default:
+			return err
 		}
-		userID = &user.ID
-	case errors.Is(err, pgx.ErrNoRows):
-		if s.cfg.Mode != ModeOpen && inviteLink == nil {
-			log.Info("login code not sent: not invited")
-			return quota, nil
-		}
-	default:
-		return CodeQuota{}, err
-	}
 
-	code, err := newCode()
+		if code, err = newCode(); err != nil {
+			return err
+		}
+		p := db.CreateLoginCodeParams{Email: email, CodeHash: hashCode(email, code), ExpiresAt: now.Add(CodeTTL)}
+		if ip.IsValid() {
+			p.RequestIp = &ip
+		}
+		codeID, err = q.CreateLoginCode(ctx, p)
+		return err
+	})
+	if errors.Is(err, ErrTooSoon) {
+		return quota, err
+	}
 	if err != nil {
 		return CodeQuota{}, err
 	}
-	p := db.CreateLoginCodeParams{Email: email, CodeHash: hashCode(email, code), ExpiresAt: now.Add(CodeTTL)}
-	if ip.IsValid() {
-		p.RequestIp = &ip
-	}
-	if err := s.q.CreateLoginCode(ctx, p); err != nil {
-		return CodeQuota{}, err
+
+	// Codes through a link use its own budget, account or not, so running
+	// out of that budget says nothing about the address.
+	join := inviteLink != nil
+	if skip != "" {
+		// Answer as if an email were sent, including when none could be.
+		if err := s.sender.CheckLoginBudget(ctx, join); err != nil {
+			s.giveBack(ctx, log, email, day, inviteLink, nil)
+			return CodeQuota{}, err
+		}
+		log.Info("login code not sent: " + skip)
+		return quota, nil
 	}
 	send := s.sender.SendLogin
-	if inviteLink != nil {
-		// Every code through a link, account or not, so running out of
-		// that budget says nothing about the address.
+	if join {
 		send = s.sender.SendJoinCode
 	}
 	if err := send(ctx, email, code, userID, CodeTTL); err != nil {
 		// Not the user's fault: give the attempt back.
-		release(inviteLink != nil)
+		s.giveBack(ctx, log, email, day, inviteLink, &codeID)
 		return CodeQuota{}, err
 	}
 	return quota, nil
+}
+
+// giveBack undoes what a code request counted when its email could not be
+// sent: the address's claim, the link's (if any) and the code made for it
+// (if any), so the address's previous code is its latest again.
+func (s *Service) giveBack(ctx context.Context, log *slog.Logger, email string, day time.Time, link *db.InviteLink, codeID *uuid.UUID) {
+	ctx = context.WithoutCancel(ctx)
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		if err := q.ReleaseLoginRequest(ctx, db.ReleaseLoginRequestParams{Email: email, Day: day}); err != nil {
+			return err
+		}
+		if link != nil {
+			if err := q.ReleaseInviteLinkCode(ctx, link.ID); err != nil {
+				return err
+			}
+		}
+		if codeID != nil {
+			return q.DeleteLoginCode(ctx, *codeID)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Error("could not give back a code request", "err", err)
+	}
 }
 
 // Session is a newly created session.

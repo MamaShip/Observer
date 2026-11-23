@@ -26,12 +26,16 @@ type fakeSender struct {
 	codes       []sentCode
 	inviteToken string
 	fail        error
-	joinFail    error // only for codes through invitation links
+	budgetFail  error // today's email budget is used up
+	joinFail    error // only the budget for codes through invitation links
 }
 
 func (f *fakeSender) SendLogin(_ context.Context, to, code string, _ *uuid.UUID, valid time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.budgetFail != nil {
+		return f.budgetFail
+	}
 	if f.fail != nil {
 		return f.fail
 	}
@@ -48,6 +52,9 @@ func (f *fakeSender) SendJoinCode(_ context.Context, to, code string, _ *uuid.UU
 	if f.joinFail != nil {
 		return f.joinFail
 	}
+	if f.budgetFail != nil {
+		return f.budgetFail
+	}
 	if f.fail != nil {
 		return f.fail
 	}
@@ -56,6 +63,15 @@ func (f *fakeSender) SendJoinCode(_ context.Context, to, code string, _ *uuid.UU
 	}
 	f.codes = append(f.codes, sentCode{to: to, code: code, join: true})
 	return nil
+}
+
+func (f *fakeSender) CheckLoginBudget(_ context.Context, join bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if join && f.joinFail != nil {
+		return f.joinFail
+	}
+	return f.budgetFail
 }
 
 func (f *fakeSender) SendInvite(_ context.Context, _, token string, valid time.Duration) error {

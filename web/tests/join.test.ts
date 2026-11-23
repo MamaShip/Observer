@@ -99,6 +99,31 @@ describe('/join', () => {
     expect(w.find('a[href="/login"]').exists()).toBe(true)
   })
 
+  it('checks another link opened in the same tab', async () => {
+    routes['POST /api/v1/auth/code'] = () => ({ status: 202, body: { message: '如果该邮箱可以登录，几分钟内会收到验证码，10 分钟内有效。', remaining: 1, resend_after: 60 } })
+    const w = await mountAt('/join#t=nope')
+    expect(w.text()).toContain('邀请已失效')
+
+    // Only the fragment changes, so the page stays mounted.
+    await router.push(`/join#t=${token}`)
+    await flushPromises()
+    expect(bodyOf('/api/v1/auth/invite-link')).toEqual({ token })
+    expect(router.currentRoute.value.hash).toBe('')
+    expect(w.text()).not.toContain('邀请已失效')
+    expect(w.text()).toContain('邀请有效期至 2026-11-29')
+    await w.find('input[name=email]').setValue('new@example.com')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(bodyOf('/api/v1/auth/code')).toEqual({ email: 'new@example.com', invite_token: token })
+
+    // And back to a dead one: the form goes.
+    await router.push('/join#t=nope')
+    await flushPromises()
+    expect(w.text()).toContain('邀请已失效')
+    expect(w.find('input[name=email]').exists()).toBe(false)
+    expect(w.find('input[name=code]').exists()).toBe(false)
+  })
+
   it('says so when the link closes before the code is sent', async () => {
     routes['POST /api/v1/auth/code'] = () => gone
     const w = await mountAt(`/join#t=${token}`)

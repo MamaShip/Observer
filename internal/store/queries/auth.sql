@@ -16,9 +16,15 @@ SELECT * FROM login_requests WHERE email = sqlc.arg(email) AND day = sqlc.arg(da
 UPDATE login_requests SET sent = greatest(sent - 1, 0)
 WHERE email = sqlc.arg(email) AND day = sqlc.arg(day)::date;
 
--- name: CreateLoginCode :exec
+-- name: CreateLoginCode :one
 INSERT INTO login_codes (email, code_hash, expires_at, request_ip)
-VALUES (sqlc.arg(email), sqlc.arg(code_hash), sqlc.arg(expires_at), sqlc.narg(request_ip));
+VALUES (sqlc.arg(email), sqlc.arg(code_hash), sqlc.arg(expires_at), sqlc.narg(request_ip))
+RETURNING id;
+
+-- DeleteLoginCode removes a code whose email could not be sent, so the
+-- address's previous code is its latest again.
+-- name: DeleteLoginCode :exec
+DELETE FROM login_codes WHERE id = $1;
 
 -- AttemptLoginCode counts one guess against the address's latest code and
 -- returns it, unless that code expired, was used or has no guesses left.

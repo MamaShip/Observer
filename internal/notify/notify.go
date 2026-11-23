@@ -127,26 +127,53 @@ const JoinShare = 0.3
 // JoinLimit is how many codes invitation links may send per UTC day.
 func (n *Notifier) JoinLimit() int { return int(float64(n.cfg.DailyLimit) * JoinShare) }
 
-// send delivers one message and records it in email_log.
-func (n *Notifier) send(ctx context.Context, kind string, userID *uuid.UUID, m mail.Message) error {
-	day := startOfDay(n.now())
-	sent, err := n.q.CountEmailsSince(ctx, day)
+// budget returns how many messages count against today's limit, and
+// ErrJoinLimit or ErrDailyLimit when one more of kind would go over it.
+func (n *Notifier) budget(ctx context.Context, q *db.Queries, kind string) (int, error) {
+	c, err := q.CountEmailBudget(ctx, startOfDay(n.now()))
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if kind == "join" {
-		joins, err := n.q.CountEmailsOfKindSince(ctx, db.CountEmailsOfKindSinceParams{Kind: kind, Since: day})
-		if err != nil {
+	sent := int(c.Total)
+	if kind == "join" && (int(c.Joins) >= n.JoinLimit() || sent >= n.limitFor(kind)) {
+		return sent, ErrJoinLimit
+	}
+	if sent >= n.limitFor(kind) {
+		return sent, ErrDailyLimit
+	}
+	return sent, nil
+}
+
+// CheckLoginBudget returns the error SendLogin, or SendJoinCode when join
+// is set, would return now because today's budget is used up, or nil. It
+// claims nothing; requests that send no email use it to answer the same.
+func (n *Notifier) CheckLoginBudget(ctx context.Context, join bool) error {
+	kind := "login"
+	if join {
+		kind = "join"
+	}
+	_, err := n.budget(ctx, n.q, kind)
+	return err
+}
+
+// send delivers one message and records it in email_log. Its place in
+// today's budget is claimed first, under a lock, so concurrent messages
+// cannot go over the limit; a failed message gives it back.
+func (n *Notifier) send(ctx context.Context, kind string, userID *uuid.UUID, m mail.Message) error {
+	var sent int
+	var logID uuid.UUID
+	err := pgx.BeginFunc(ctx, n.pool, func(tx pgx.Tx) error {
+		q := n.q.WithTx(tx)
+		if err := q.LockEmailBudget(ctx); err != nil {
 			return err
 		}
-		if int(joins) >= n.JoinLimit() || int(sent) >= n.limitFor(kind) {
-			return ErrJoinLimit
+		var err error
+		if sent, err = n.budget(ctx, q, kind); err != nil {
+			return err
 		}
-	}
-	if int(sent) >= n.limitFor(kind) {
-		return ErrDailyLimit
-	}
-	logID, err := n.q.InsertEmailLog(ctx, db.InsertEmailLogParams{UserID: userID, Kind: kind, ToEmail: m.To, Subject: m.Subject})
+		logID, err = q.InsertEmailLog(ctx, db.InsertEmailLogParams{UserID: userID, Kind: kind, ToEmail: m.To, Subject: m.Subject})
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -165,7 +192,7 @@ func (n *Notifier) send(ctx context.Context, kind string, userID *uuid.UUID, m m
 	if errors.Is(sendErr, mail.ErrQuota) {
 		return fmt.Errorf("%w: %w", ErrDailyLimit, sendErr)
 	}
-	if sendErr == nil && kind != "alert" && int(sent)+1 == n.cfg.DailyLimit*8/10 {
+	if sendErr == nil && kind != "alert" && sent+1 == n.cfg.DailyLimit*8/10 {
 		// This message reached 80% of the daily limit.
 		n.Alert(ctx, "email-80", "今日邮件用量达到 80%",
 			fmt.Sprintf("今天已发送 %d 封，额度 %d。经常出现时请考虑更换邮件服务商或升级套餐。", sent+1, n.cfg.DailyLimit))

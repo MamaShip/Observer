@@ -19,9 +19,19 @@ UPDATE watches SET notified_at = sqlc.arg(now)::timestamptz WHERE id = ANY(sqlc.
 -- name: CountEmailsSince :one
 SELECT count(*)::bigint FROM email_log WHERE status = 'sent' AND sent_at >= sqlc.arg(since)::timestamptz;
 
--- name: CountEmailsOfKindSince :one
-SELECT count(*)::bigint FROM email_log
-WHERE status = 'sent' AND kind = sqlc.arg(kind) AND sent_at >= sqlc.arg(since)::timestamptz;
+-- LockEmailBudget serialises claims on the day's sending budget, so two
+-- messages cannot both take its last place.
+-- name: LockEmailBudget :exec
+SELECT pg_advisory_xact_lock(hashtextextended('email-budget', 0));
+
+-- CountEmailBudget counts the day's email against the sending limit: sent,
+-- and being sent (queued, sent_at not yet set). Failed messages give their
+-- place back.
+-- name: CountEmailBudget :one
+SELECT count(*)::bigint AS total, count(*) FILTER (WHERE kind = 'join')::bigint AS joins
+FROM email_log
+WHERE (status = 'sent' AND sent_at >= sqlc.arg(since)::timestamptz)
+   OR (status = 'queued' AND created_at >= sqlc.arg(since)::timestamptz);
 
 -- name: InsertEmailLog :one
 INSERT INTO email_log (user_id, kind, to_email, subject, status)

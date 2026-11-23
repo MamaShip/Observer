@@ -4,7 +4,7 @@ import { formatDateTime } from '@/lib/format'
 import * as storage from '@/lib/storage'
 import { safeNext } from '@/router'
 import { session, setUser } from '@/session'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 // Login state survives a reload: on phones the page is often reloaded
@@ -50,9 +50,19 @@ const accountName = computed(() => session.site?.wechat?.name || siteName.value)
 const emailLooksValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim()))
 
 let timer: ReturnType<typeof setInterval> | undefined
-onMounted(async () => {
+onMounted(() => {
   timer = setInterval(() => (now.value = Date.now()), 1000)
-  if (joining && !(await checkLink())) return
+  void start()
+})
+onBeforeUnmount(() => clearInterval(timer))
+
+// Each start (mount, or another invitation link opened in this tab) gets a
+// number; a check still running for an earlier one leaves the page alone.
+let started = 0
+
+async function start() {
+  const run = ++started
+  if (joining && !(await checkLink(() => run !== started))) return
   const saved = storage.load<Saved>(storageKey)
   if (saved && Date.now() - saved.sentAt < ttlMinutes.value * 60_000) {
     email.value = saved.email
@@ -61,11 +71,33 @@ onMounted(async () => {
     step.value = 'code'
     info.value = '如果该邮箱可以登录，几分钟内会收到验证码。'
   }
-})
-onBeforeUnmount(() => clearInterval(timer))
+}
 
-/** checkLink reads the invitation token and asks whether its link is open. */
-async function checkLink(): Promise<boolean> {
+// Another link only changes the fragment, so the router keeps this page:
+// start over as if it had just opened.
+watch(
+  () => route.hash,
+  (hash) => {
+    if (!joining || !new URLSearchParams(hash.slice(1)).get('t')) return
+    step.value = 'email'
+    email.value = ''
+    code.value = ''
+    error.value = ''
+    info.value = ''
+    remaining.value = null
+    resendAt.value = 0
+    linkExpires.value = ''
+    linkState.value = 'checking'
+    void start()
+  },
+)
+
+/**
+ * checkLink reads the invitation token and asks whether its link is open.
+ * It returns false, without touching the page, once stale() says a newer
+ * start has taken over.
+ */
+async function checkLink(stale: () => boolean): Promise<boolean> {
   const t = new URLSearchParams(route.hash.slice(1)).get('t')
   if (t) {
     inviteToken = t
@@ -74,6 +106,7 @@ async function checkLink(): Promise<boolean> {
   } else {
     inviteToken = storage.load<string>(linkKey) ?? ''
   }
+  if (stale()) return false
   if (session.site && session.site.registration_mode !== 'invite') {
     await router.replace('/login')
     return false
@@ -84,10 +117,12 @@ async function checkLink(): Promise<boolean> {
   }
   try {
     const r = await call(api.POST('/api/v1/auth/invite-link', { body: { token: inviteToken } }))
+    if (stale()) return false
     linkExpires.value = r.expires_at
     linkState.value = 'open'
     return true
   } catch (e) {
+    if (stale()) return false
     if (e instanceof ApiError && e.status === 409) {
       await router.replace('/login')
     } else if (e instanceof ApiError && e.status === 410) {

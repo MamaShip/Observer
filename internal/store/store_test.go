@@ -77,6 +77,46 @@ func TestMigrateRoundTrip(t *testing.T) {
 	}
 }
 
+// Links made before 00014 could have up to 1000 places; upgrading cuts them
+// down to the new cap instead of failing.
+func TestMigrateOldInviteLinkCap(t *testing.T) {
+	ctx := context.Background()
+	pool, err := store.Open(ctx, storetest.EmptyDB(t), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	p, closeDB, err := store.Migrations(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeDB()
+	if _, err := p.UpTo(ctx, 13); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO invite_links (max_uses, expires_at, revoked_at) VALUES (101, now(), now()), (20, now(), NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 14); err != nil {
+		t.Fatalf("migrate with an old link: %v", err)
+	}
+	var caps []int32
+	rows, _ := pool.Query(ctx, `SELECT max_uses FROM invite_links ORDER BY max_uses`)
+	for rows.Next() {
+		var c int32
+		if err := rows.Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		caps = append(caps, c)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(caps) != 2 || caps[0] != 20 || caps[1] != 100 {
+		t.Errorf("max_uses after migrating = %v, want [20 100]", caps)
+	}
+}
+
 func TestSchemaDefaultsAndStats(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := storetest.NewPool(t)

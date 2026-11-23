@@ -49,7 +49,10 @@ type Querier interface {
 	ConfirmArticleDeleted(ctx context.Context, arg ConfirmArticleDeletedParams) error
 	ConsumeInviteToken(ctx context.Context, arg ConsumeInviteTokenParams) (int64, error)
 	ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodeParams) (int64, error)
-	CountEmailsOfKindSince(ctx context.Context, arg CountEmailsOfKindSinceParams) (int64, error)
+	// CountEmailBudget counts the day's email against the sending limit: sent,
+	// and being sent (queued, sent_at not yet set). Failed messages give their
+	// place back.
+	CountEmailBudget(ctx context.Context, since time.Time) (CountEmailBudgetRow, error)
 	CountEmailsSince(ctx context.Context, since time.Time) (int64, error)
 	// CountInvitesSince also counts revoked invitations that had queued an email.
 	CountInvitesSince(ctx context.Context, arg CountInvitesSinceParams) (int32, error)
@@ -67,7 +70,7 @@ type Querier interface {
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	// Public invitation links (docs/design.md §6.1).
 	CreateInviteLink(ctx context.Context, arg CreateInviteLinkParams) (InviteLink, error)
-	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error
+	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) (uuid.UUID, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
 	CreateUser(ctx context.Context, email string) (User, error)
 	// CreateUserFromLink returns no row when the address got an account
@@ -81,6 +84,9 @@ type Querier interface {
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 	DeleteExpiredWechatTokens(ctx context.Context, now time.Time) (int64, error)
 	DeleteInvite(ctx context.Context, id uuid.UUID) error
+	// DeleteLoginCode removes a code whose email could not be sent, so the
+	// address's previous code is its latest again.
+	DeleteLoginCode(ctx context.Context, id uuid.UUID) error
 	DeleteLoginCodesFor(ctx context.Context, email string) error
 	DeleteOldCheckRuns(ctx context.Context, before time.Time) (int64, error)
 	DeleteOldEmailLog(ctx context.Context, before time.Time) (int64, error)
@@ -157,6 +163,9 @@ type Querier interface {
 	// A confirmation ends active watches and records its check at the same
 	// instant. A submission of an already deleted article has no such check.
 	ListWechatNews(ctx context.Context, arg ListWechatNewsParams) ([]ListWechatNewsRow, error)
+	// LockEmailBudget serialises claims on the day's sending budget, so two
+	// messages cannot both take its last place.
+	LockEmailBudget(ctx context.Context) error
 	// LockInviteLink serialises sign-ups through one link so its places hold.
 	LockInviteLink(ctx context.Context, id uuid.UUID) (InviteLink, error)
 	// LockUser serialises one user's invitations so the monthly count holds.

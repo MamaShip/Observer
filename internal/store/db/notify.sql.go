@@ -12,21 +12,26 @@ import (
 	"github.com/google/uuid"
 )
 
-const countEmailsOfKindSince = `-- name: CountEmailsOfKindSince :one
-SELECT count(*)::bigint FROM email_log
-WHERE status = 'sent' AND kind = $1 AND sent_at >= $2::timestamptz
+const countEmailBudget = `-- name: CountEmailBudget :one
+SELECT count(*)::bigint AS total, count(*) FILTER (WHERE kind = 'join')::bigint AS joins
+FROM email_log
+WHERE (status = 'sent' AND sent_at >= $1::timestamptz)
+   OR (status = 'queued' AND created_at >= $1::timestamptz)
 `
 
-type CountEmailsOfKindSinceParams struct {
-	Kind  string
-	Since time.Time
+type CountEmailBudgetRow struct {
+	Total int64
+	Joins int64
 }
 
-func (q *Queries) CountEmailsOfKindSince(ctx context.Context, arg CountEmailsOfKindSinceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countEmailsOfKindSince, arg.Kind, arg.Since)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
+// CountEmailBudget counts the day's email against the sending limit: sent,
+// and being sent (queued, sent_at not yet set). Failed messages give their
+// place back.
+func (q *Queries) CountEmailBudget(ctx context.Context, since time.Time) (CountEmailBudgetRow, error) {
+	row := q.db.QueryRow(ctx, countEmailBudget, since)
+	var i CountEmailBudgetRow
+	err := row.Scan(&i.Total, &i.Joins)
+	return i, err
 }
 
 const countEmailsSince = `-- name: CountEmailsSince :one
@@ -108,6 +113,17 @@ func (q *Queries) InsertEmailLog(ctx context.Context, arg InsertEmailLogParams) 
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const lockEmailBudget = `-- name: LockEmailBudget :exec
+SELECT pg_advisory_xact_lock(hashtextextended('email-budget', 0))
+`
+
+// LockEmailBudget serialises claims on the day's sending budget, so two
+// messages cannot both take its last place.
+func (q *Queries) LockEmailBudget(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockEmailBudget)
+	return err
 }
 
 const markWatchesNotified = `-- name: MarkWatchesNotified :exec

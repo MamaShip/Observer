@@ -206,8 +206,8 @@ func (s *Service) signUpThroughLink(ctx context.Context, q *db.Queries, email, t
 // closedLinkError tells why a link refused to count a code it was asked
 // for (it closed meanwhile, or reached its cap): ErrInviteLink or
 // ErrLinkCodes.
-func (s *Service) closedLinkError(ctx context.Context, id uuid.UUID) error {
-	l, err := s.q.GetInviteLink(ctx, id)
+func (s *Service) closedLinkError(ctx context.Context, q *db.Queries, id uuid.UUID) error {
+	l, err := q.GetInviteLink(ctx, id)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}

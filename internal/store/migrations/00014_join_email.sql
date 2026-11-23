@@ -1,11 +1,13 @@
 -- Login codes requested through a public invitation link (plan.md §5.6,
 -- §6.1) are counted apart, so one shared link cannot use up the day's
 -- email budget that logins and notifications need. A link now opens at
--- most 100 places.
+-- most 100 places; links made before, which could have up to 1000, are
+-- cut down to that so the new check holds.
 -- +goose Up
 ALTER TABLE email_log DROP CONSTRAINT email_log_kind_check;
 ALTER TABLE email_log ADD CHECK (kind IN ('login', 'join', 'invite', 'deleted', 'expired', 'alert'));
 ALTER TABLE invite_links DROP CONSTRAINT invite_links_max_uses_check;
+UPDATE invite_links SET max_uses = 100 WHERE max_uses > 100;
 ALTER TABLE invite_links ADD CHECK (max_uses BETWEEN 1 AND 100);
 
 -- +goose Down

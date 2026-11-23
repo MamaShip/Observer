@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,6 +177,76 @@ func TestJoinCodeBudget(t *testing.T) {
 	}
 	if err := e.n.SendLogin(e.ctx, "member@example.com", "123456", nil, 15*time.Minute); err != nil {
 		t.Fatalf("login in the reserved share: %v", err)
+	}
+}
+
+// slowMailer takes a while to deliver, like a real provider.
+type slowMailer struct{ mail.Mailer }
+
+func (s slowMailer) Send(ctx context.Context, m mail.Message) (string, error) {
+	time.Sleep(50 * time.Millisecond)
+	return s.Mailer.Send(ctx, m)
+}
+
+// Messages sent at the same time cannot all take the budget's last place;
+// one that fails gives its place back.
+func TestConcurrentBudget(t *testing.T) {
+	e := newEnv(t, 10) // invitation links may send 3
+	e.n.mailer = slowMailer{e.mailer}
+	errs := make([]error, 8)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() { errs[i] = e.n.SendJoinCode(e.ctx, "new@example.com", "123456", nil, 15*time.Minute) })
+	}
+	wg.Wait()
+	ok := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case !errors.Is(err, ErrJoinLimit):
+			t.Error(err)
+		}
+	}
+	if ok != 3 || len(e.mailer.Sent()) != 3 {
+		t.Errorf("%d join codes sent (%d delivered), want 3", ok, len(e.mailer.Sent()))
+	}
+	if err := e.n.CheckLoginBudget(e.ctx, true); !errors.Is(err, ErrJoinLimit) {
+		t.Errorf("check join budget: %v, want ErrJoinLimit", err)
+	}
+	if err := e.n.CheckLoginBudget(e.ctx, false); err != nil {
+		t.Errorf("check login budget: %v", err)
+	}
+
+	// The whole day: logins may use the rest, and a failed message does not
+	// count.
+	e.mailer.FailWith(errors.New("temporary SMTP failure"))
+	if err := e.n.SendLogin(e.ctx, "member@example.com", "123456", nil, 15*time.Minute); err == nil {
+		t.Fatal("missing SMTP failure")
+	}
+	e.mailer.FailWith(nil)
+	errs = make([]error, 10)
+	for i := range errs {
+		wg.Go(func() { errs[i] = e.n.SendLogin(e.ctx, "member@example.com", "123456", nil, 15*time.Minute) })
+	}
+	wg.Wait()
+	ok = 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case !errors.Is(err, ErrDailyLimit):
+			t.Error(err)
+		}
+	}
+	if ok != 7 {
+		t.Errorf("%d logins sent, want the 7 left of 10", ok)
+	}
+	if err := e.n.CheckLoginBudget(e.ctx, false); !errors.Is(err, ErrDailyLimit) {
+		t.Errorf("check login budget: %v, want ErrDailyLimit", err)
+	}
+	if err := e.n.CheckLoginBudget(e.ctx, true); !errors.Is(err, ErrJoinLimit) {
+		t.Errorf("check join budget: %v, want ErrJoinLimit", err)
 	}
 }
 

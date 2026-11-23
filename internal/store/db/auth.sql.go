@@ -92,9 +92,10 @@ func (q *Queries) ConsumeLoginCode(ctx context.Context, arg ConsumeLoginCodePara
 	return result.RowsAffected(), nil
 }
 
-const createLoginCode = `-- name: CreateLoginCode :exec
+const createLoginCode = `-- name: CreateLoginCode :one
 INSERT INTO login_codes (email, code_hash, expires_at, request_ip)
 VALUES ($1, $2, $3, $4)
+RETURNING id
 `
 
 type CreateLoginCodeParams struct {
@@ -104,14 +105,16 @@ type CreateLoginCodeParams struct {
 	RequestIp *netip.Addr
 }
 
-func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error {
-	_, err := q.db.Exec(ctx, createLoginCode,
+func (q *Queries) CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createLoginCode,
 		arg.Email,
 		arg.CodeHash,
 		arg.ExpiresAt,
 		arg.RequestIp,
 	)
-	return err
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createSession = `-- name: CreateSession :exec
@@ -180,6 +183,17 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, now time.Time) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteLoginCode = `-- name: DeleteLoginCode :exec
+DELETE FROM login_codes WHERE id = $1
+`
+
+// DeleteLoginCode removes a code whose email could not be sent, so the
+// address's previous code is its latest again.
+func (q *Queries) DeleteLoginCode(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteLoginCode, id)
+	return err
 }
 
 const deleteLoginCodesFor = `-- name: DeleteLoginCodesFor :exec
