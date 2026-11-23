@@ -137,7 +137,7 @@ dc up -d
 | 告警 | 含义 | 处理 |
 |---|---|---|
 | 金丝雀检测失败 | 已知存活或已删除的文章判定结果不符，微信页面结构可能变了 | 用 `observer probe <链接>` 看微信返回什么；必要时补样本、改检测规则 |
-| 微信频繁拦截，抓取暂停 | 熔断：短时间内多次被拦截，暂停 30 分钟 | 看日志里 `blocked` 的频率；持续出现时调大 `FETCH_MIN_INTERVAL`，参考 plan.md §11.3 |
+| 微信频繁拦截，抓取暂停 | 熔断：短时间内多次被拦截，暂停 30 分钟 | 看日志里 `blocked` 的频率；持续出现时调大 `FETCH_MIN_INTERVAL`，参考[设计文档](design.md) §11.3 |
 | 文章连续检查失败 | 同一篇文章连续 6 次出错 | `observer admin articles` 查看，`observer probe` 复现 |
 | 今日邮件用量达到 80% | 接近 Resend 免费档每天 100 封 | 偶发可忽略；经常出现时升级套餐或换服务商 |
 | 数据库备份失败 | 每日 `pg_dump` 或上传失败 | `dc logs app | grep backup`；手动 `observer admin backup` 复现 |
@@ -145,7 +145,7 @@ dc up -d
 
 ## 公众号入口
 
-用户可以在个人订阅号里发送文章链接、绑定邮箱（plan.md §6.7）。只用被动回复，不需要 AppSecret 和 IP 白名单。
+用户可以在个人订阅号里发送文章链接、绑定邮箱（[设计文档](design.md) §6.7）。只用被动回复，不需要 AppSecret 和 IP 白名单。
 
 1. 在 `.env` 设置 `WECHAT_TOKEN`（自己生成，3–32 位字母或数字，如 `openssl rand -hex 16`）、`WECHAT_ACCOUNT_ID`（公众号原始 ID，`gh_` 开头，在「设置与开发 → 公众号设置」里）、`WECHAT_NAME`（公众号名称），然后 `dc up -d app`。
 2. 在能访问站点的开发机上，通过环境变量 `WECHAT_TOKEN` 提供 Token 后运行 `observer mpsim -url https://<域名> -account <gh_…> 帮助`，应打印用法说明。这会生成一个 30 分钟有效的绑定链接，不影响别人。

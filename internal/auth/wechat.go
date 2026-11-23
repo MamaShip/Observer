@@ -11,7 +11,7 @@ import (
 	"github.com/MamaShip/Observer/internal/store/db"
 )
 
-// WeChat Official Account binding (plan.md §6.7). A WeChat user, known by
+// WeChat Official Account binding (docs/design.md §6.7). A WeChat user, known by
 // the OpenID our account sees, is bound to one user and a user to one WeChat
 // user. Replies carry one-time links: a bind link lets whoever is logged in
 // on the website take the binding (and submit the article the WeChat user

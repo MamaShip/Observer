@@ -27,7 +27,7 @@ export const router = createRouter({
     { path: '/', name: 'home', component: HomeView },
     { path: '/invite', name: 'invite', component: () => import('./views/InviteView.vue'), meta: { title: '接受邀请' } },
     { path: '/login', name: 'login', component: LoginView, meta: { title: '登录', guest: true } },
-    // A public invitation link (plan.md, 6.1): the login page, signing up through the link.
+    // A public invitation link (docs/design.md, 6.1): the login page, signing up through the link.
     { path: '/join', name: 'join', component: LoginView, meta: { title: '接受邀请' } },
     { path: '/watches', name: 'watches', component: WatchListView, meta: { title: '我的观察', auth: true } },
     { path: '/watches/:id', name: 'watch', component: WatchDetailView, meta: { title: '观察详情', auth: true } },
@@ -63,7 +63,7 @@ export const router = createRouter({
       component: () => import('./views/admin/AdminArticleView.vue'),
       meta: { title: '文章详情 · 管理后台', auth: true, admin: true, wide: true },
     },
-    // Links from the Official Account's replies (plan.md, 6.7). They check
+    // Links from the Official Account's replies (docs/design.md, 6.7). They check
     // the login themselves, so the token never goes into a login redirect.
     { path: '/wx/bind', name: 'wechat-bind', component: () => import('./views/WechatBindView.vue'), meta: { title: '绑定公众号' } },
     { path: '/wx/go', name: 'wechat-go', component: () => import('./views/WechatGoView.vue'), meta: { title: '正在打开' } },

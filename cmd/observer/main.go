@@ -30,7 +30,7 @@ Usage:
   observer openapi                   print the API's OpenAPI document (JSON)
   observer version
 
-Configuration comes from environment variables; see plan.md §13.3.
+Configuration comes from environment variables; see docs/design.md §13.3.
 Run "observer <command> -h" for command flags.
 `
 

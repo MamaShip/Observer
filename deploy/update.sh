@@ -1,5 +1,5 @@
 #!/bin/sh
-# Switch the running service to another image version (plan.md §13.6).
+# Switch the running service to another image version (docs/design.md §13.6).
 #
 #   /opt/observer/update.sh v1.2.3          # ghcr.io/mamaship/observer:v1.2.3
 #   /opt/observer/update.sh observer:local  # an image loaded with docker load

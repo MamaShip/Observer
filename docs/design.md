@@ -806,7 +806,7 @@ app 与 Postgres 只在 Compose 内部网络通信，不映射到宿主机端口
 ├── Makefile                 # 常用命令：dev、test、lint、sqlc、build
 ├── go.mod
 ├── sqlc.yaml
-├── plan.md
+├── docs/design.md
 ├── README.md
 └── LICENSE                  # 保持 GPL-3.0
 ```

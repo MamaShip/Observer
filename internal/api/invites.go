@@ -14,7 +14,7 @@ import (
 	"github.com/MamaShip/Observer/internal/store/db"
 )
 
-// Invitations by users (plan.md §6.1). Answers are the same whether or not
+// Invitations by users (docs/design.md §6.1). Answers are the same whether or not
 // the address already had an account.
 
 // Invitation is one address a user invited.

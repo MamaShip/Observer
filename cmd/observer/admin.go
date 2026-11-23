@@ -175,7 +175,7 @@ func runAdmin(ctx context.Context, args []string) error {
 	}
 }
 
-// adminInviteLink manages public invitation links (plan.md §6.1). Their
+// adminInviteLink manages public invitation links (docs/design.md §6.1). Their
 // URLs are derived with SIGNING_KEY, so it must match the server's.
 func adminInviteLink(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, q *db.Queries, args []string) error {
 	const usage = "usage: observer admin invite-link create -n N [-valid 72h] [-note TEXT] | list | revoke <id>"

@@ -1,4 +1,4 @@
--- Queries for the admin console (plan.md §10.1). Months and days are counted
+-- Queries for the admin console (docs/design.md §10.1). Months and days are counted
 -- in Beijing time; the caller passes the boundaries.
 
 -- name: AdminTotals :one

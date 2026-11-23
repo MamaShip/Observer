@@ -28,7 +28,7 @@ type Querier interface {
 	// issue keeps only one kind of problem, by the same rules.
 	AdminListArticles(ctx context.Context, arg AdminListArticlesParams) ([]AdminListArticlesRow, error)
 	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
-	// Queries for the admin console (plan.md §10.1). Months and days are counted
+	// Queries for the admin console (docs/design.md §10.1). Months and days are counted
 	// in Beijing time; the caller passes the boundaries.
 	AdminTotals(ctx context.Context) (AdminTotalsRow, error)
 	AdminUsage(ctx context.Context, since time.Time) (AdminUsageRow, error)
@@ -65,7 +65,7 @@ type Querier interface {
 	CreateArticle(ctx context.Context) (Article, error)
 	CreateCapture(ctx context.Context, arg CreateCaptureParams) error
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
-	// Public invitation links (plan.md §6.1).
+	// Public invitation links (docs/design.md §6.1).
 	CreateInviteLink(ctx context.Context, arg CreateInviteLinkParams) (InviteLink, error)
 	CreateLoginCode(ctx context.Context, arg CreateLoginCodeParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) error

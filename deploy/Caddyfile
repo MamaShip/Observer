@@ -1,7 +1,7 @@
 # The site and the snapshot origin, both served by the app, which tells them
 # apart by Host. TLS certificates are obtained automatically.
 #
-# Visitors' IP addresses are not recorded (promised on /privacy, plan.md §12):
+# Visitors' IP addresses are not recorded (promised on /privacy, docs/design.md §12):
 # there is no `log` directive in the sites, so no access log, and the filter
 # below strips the request details that Caddy adds to its own warnings and
 # errors (e.g. when a client disconnects mid-response). Signed snapshot

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The production image: the observer binary with the web app embedded, and
-# the PostgreSQL client tools for backups (plan.md §13.1, §13.4).
+# the PostgreSQL client tools for backups (docs/design.md §13.1, §13.4).
 
 FROM node:22-alpine AS web
 WORKDIR /src/web

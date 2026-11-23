@@ -1,4 +1,4 @@
--- Public invitation links (plan.md §6.1).
+-- Public invitation links (docs/design.md §6.1).
 
 -- name: CreateInviteLink :one
 INSERT INTO invite_links (creator_id, note, max_uses, expires_at)

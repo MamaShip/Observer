@@ -1,6 +1,6 @@
 // Package webui serves the web app (web/, built by Vite into dist/app) from
 // the binary: hashed assets with long caching, and index.html for every
-// other path so the client-side router can handle it (plan.md §10).
+// other path so the client-side router can handle it (docs/design.md §10).
 package webui
 
 import (

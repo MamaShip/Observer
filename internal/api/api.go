@@ -1,5 +1,5 @@
 // Package api implements the JSON API under /api/v1 with Huma, which also
-// serves the OpenAPI document at /api/v1/openapi.json (plan.md §9).
+// serves the OpenAPI document at /api/v1/openapi.json (docs/design.md §9).
 package api
 
 import (
@@ -32,7 +32,7 @@ func init() {
 // Prefix is the path prefix of every API operation.
 const Prefix = "/api/v1"
 
-// Limits are per-user quotas (plan.md §18); admins are exempt.
+// Limits are per-user quotas (docs/design.md §18); admins are exempt.
 type Limits struct {
 	MaxOpenWatches     int
 	MaxDailySubmission int

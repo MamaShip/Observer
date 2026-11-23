@@ -1,5 +1,5 @@
 // Package backup dumps the database to object storage every day and
-// restores a dump (plan.md §13.4). It runs the PostgreSQL client tools,
+// restores a dump (docs/design.md §13.4). It runs the PostgreSQL client tools,
 // which the production image carries in the server's major version.
 package backup
 

@@ -1,4 +1,4 @@
-// Package notify decides what email to send and when (plan.md §5.6): login
+// Package notify decides what email to send and when (docs/design.md §5.6): login
 // codes, invitations, deletion digests and operator alerts, within the daily
 // sending limit, recording every message in email_log.
 package notify

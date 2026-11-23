@@ -18,7 +18,7 @@ interface Saved {
 const route = useRoute()
 const router = useRouter()
 
-// /join is this page for a public invitation link (plan.md, 6.1): the token
+// /join is this page for a public invitation link (docs/design.md, 6.1): the token
 // from the fragment goes with the code request and the login, so an address
 // without an account can sign up. It is kept in storage across reloads.
 const joining = route.name === 'join'

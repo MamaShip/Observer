@@ -24,7 +24,7 @@ import (
 )
 
 // Config is the configuration of `observer serve` and the commands that
-// need the database. Fields are added as milestones need them (plan.md §13.3).
+// need the database. Fields are added as milestones need them (docs/design.md §13.3).
 type Config struct {
 	DatabaseURL string `env:"DATABASE_URL,required,notEmpty"`
 	DBMaxConns  int32  `env:"DB_MAX_CONNS" envDefault:"10"`
@@ -75,7 +75,7 @@ type Config struct {
 	S3SecretKey string `env:"S3_SECRET_KEY"`
 	BlobDir     string `env:"BLOB_DIR"`
 
-	// WeChat Official Account entry (plan.md §6.7), on when WECHAT_TOKEN is
+	// WeChat Official Account entry (docs/design.md §6.7), on when WECHAT_TOKEN is
 	// set: the token from the platform's server configuration. The original
 	// ID (gh_…) is checked against incoming messages when set; the name is
 	// what the website tells users to follow.

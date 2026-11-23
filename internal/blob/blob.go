@@ -1,5 +1,5 @@
 // Package blob stores snapshot files and images: Wasabi (S3) in production,
-// a local directory in development and tests. Object layout: plan.md §8.
+// a local directory in development and tests. Object layout: docs/design.md §8.
 package blob
 
 import (

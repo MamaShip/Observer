@@ -1,5 +1,5 @@
 // Package watch is the business core: submitting links, the first fetch,
-// periodic checks, snapshots and the end of watches (plan.md §5–6). It
+// periodic checks, snapshots and the end of watches (docs/design.md §5–6). It
 // talks to WeChat through Session and queues work through JobInserter, so
 // tests can replace both.
 package watch
@@ -109,7 +109,7 @@ var (
 	ErrDailyLimit = errors.New("too many watches created today")
 )
 
-// Quota limits one user's watches (plan.md §18). Zero means no limit.
+// Quota limits one user's watches (docs/design.md §18). Zero means no limit.
 type Quota struct {
 	MaxOpen  int // resolving or active watches
 	MaxDaily int // watches created in the last 24 hours
@@ -288,7 +288,7 @@ func (s *Service) fetchPage(ctx context.Context, url string, mode wechat.FetchMo
 		until := s.breaker.OpenUntil()
 		s.log.Warn("WeChat is blocking requests; pausing all fetches", "until", until)
 		s.alert.Alert(ctx, "breaker", "微信频繁返回验证页，抓取已暂停",
-			fmt.Sprintf("10 分钟内多次遇到验证页或限流，所有抓取暂停到 %s。最近一次：%s（%s）。\n频繁出现时考虑加大 FETCH_MIN_INTERVAL，或启用本地抓取节点（plan.md §11.3）。",
+			fmt.Sprintf("10 分钟内多次遇到验证页或限流，所有抓取暂停到 %s。最近一次：%s（%s）。\n频繁出现时考虑加大 FETCH_MIN_INTERVAL，或启用本地抓取节点（docs/design.md §11.3）。",
 				until.Format(time.RFC3339), url, f.result.Rule))
 	}
 	return f, nil

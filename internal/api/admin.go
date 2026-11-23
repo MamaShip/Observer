@@ -16,7 +16,7 @@ import (
 	"github.com/MamaShip/Observer/internal/watch"
 )
 
-// The admin console's API (plan.md §10.1). Every operation needs a session
+// The admin console's API (docs/design.md §10.1). Every operation needs a session
 // of an account with role admin.
 
 // Thresholds for flagging a backup as possibly incomplete; keep in step

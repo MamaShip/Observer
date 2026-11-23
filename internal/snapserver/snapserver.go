@@ -1,6 +1,6 @@
 // Package snapserver serves snapshots on their own origin (snap.<domain>),
 // which never sees login cookies: pages behind short-lived signed links,
-// images by content hash, everything under a sandboxing CSP (plan.md §12).
+// images by content hash, everything under a sandboxing CSP (docs/design.md §12).
 package snapserver
 
 import (

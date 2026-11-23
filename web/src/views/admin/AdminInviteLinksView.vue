@@ -5,7 +5,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import { session } from '@/session'
 import { computed, onMounted, ref } from 'vue'
 
-// Public invitation links (plan.md, 6.1): anyone with one can sign up until
+// Public invitation links (docs/design.md, 6.1): anyone with one can sign up until
 // it expires or its places run out.
 
 const links = ref<InviteLink[]>([])

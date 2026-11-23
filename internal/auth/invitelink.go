@@ -16,7 +16,7 @@ import (
 	"github.com/MamaShip/Observer/internal/store/db"
 )
 
-// Public invitation links (plan.md §6.1): an admin opens a link for a
+// Public invitation links (docs/design.md §6.1): an admin opens a link for a
 // number of new accounts and a period. Holders still prove their address
 // with a login code; the link only lets an unknown address receive one and
 // create its account. A place is used only when an account is created.

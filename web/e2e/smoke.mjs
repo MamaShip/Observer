@@ -1,4 +1,4 @@
-// Manual acceptance run of the whole web app in a real browser (plan.md §15):
+// Manual acceptance run of the whole web app in a real browser (docs/design.md §15):
 // log in, submit a real article, wait for its backup, read it, download it,
 // print it to PDF, visit every page — on a phone-sized screen, then again as
 // WeChat's in-app browser. Fails on console errors, CSP violations, 5xx

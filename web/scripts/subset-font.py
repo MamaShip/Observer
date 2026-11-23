@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Subset 得意黑 Smiley Sans to the characters the web app's own text uses.
 
-The display face is only for our headings (plan.md §10), so the full font
+The display face is only for our headings (docs/design.md §10), so the full font
 (fonts/SmileySans-Oblique.woff2, about 1.1 MB, not bundled) is cut down to
 the characters found in src/ and index.html, plus printable ASCII and common
 CJK punctuation. A heading whose text comes from elsewhere (a custom service

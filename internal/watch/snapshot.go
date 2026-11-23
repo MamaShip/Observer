@@ -33,7 +33,7 @@ func (s *Service) queueSnapshot(ctx context.Context, tx pgx.Tx, args SnapshotArg
 }
 
 // Snapshot builds the reading page for an article from the raw page stored
-// by Resolve, storing its images (plan.md §6.3). It is idempotent. When the
+// by Resolve, storing its images (docs/design.md §6.3). It is idempotent. When the
 // page cannot be backed up, or final is set and this attempt fails too, the
 // capture is marked failed, so nobody waits for a backup that will not come.
 func (s *Service) Snapshot(ctx context.Context, args SnapshotArgs, final bool) error {

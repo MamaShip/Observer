@@ -44,7 +44,7 @@ func (s *Service) ScheduleDue(ctx context.Context) (int, error) {
 }
 
 // Expire ends watches whose period is over and stops checking articles
-// nobody watches any more (plan.md §6.5).
+// nobody watches any more (docs/design.md §6.5).
 func (s *Service) Expire(ctx context.Context) error {
 	ended, err := s.q.ExpireWatches(ctx, s.now())
 	if err != nil {
@@ -68,7 +68,7 @@ type CanaryResult struct {
 }
 
 // Canary checks known pages and reports any whose verdict is not the
-// expected one: the first sign that WeChat changed its pages (plan.md §6.6).
+// expected one: the first sign that WeChat changed its pages (docs/design.md §6.6).
 func (s *Service) Canary(ctx context.Context) ([]CanaryResult, error) {
 	var bad []CanaryResult
 	for _, c := range []struct {

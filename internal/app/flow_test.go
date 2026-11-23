@@ -345,7 +345,7 @@ func TestUserFlow(t *testing.T) {
 	bob.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
 	alice.api(http.MethodDelete, "/me", nil, http.StatusNoContent, nil)
 	alice.api(http.MethodGet, "/me", nil, http.StatusUnauthorized, nil)
-	// Her address is gone from every table (plan.md §12).
+	// Her address is gone from every table (docs/design.md §12).
 	var traces int
 	if err := a.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM users WHERE email = 'alice@example.com')
 		+ (SELECT count(*) FROM login_codes WHERE email = 'alice@example.com')

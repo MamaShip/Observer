@@ -12,7 +12,7 @@ import (
 	"github.com/MamaShip/Observer/internal/wechat"
 )
 
-// Check looks at an alive article once (plan.md §5.3, §5.5). Only alive and
+// Check looks at an alive article once (docs/design.md §5.3, §5.5). Only alive and
 // deleted answers change anything; a deletion counts only when a second
 // check at least deletionConfirmDelay after the first agrees, however early
 // the second check runs. Everything else is recorded and the article is

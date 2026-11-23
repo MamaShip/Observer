@@ -12,7 +12,7 @@ import (
 	"github.com/MamaShip/Observer/internal/auth"
 )
 
-// ---- WeChat Official Account (plan.md §6.7) ----
+// ---- WeChat Official Account (docs/design.md §6.7) ----
 
 // SiteWechat is present when the Official Account entry is on.
 type SiteWechat struct {

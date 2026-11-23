@@ -48,7 +48,7 @@ type CreateInviteLinkParams struct {
 	ExpiresAt time.Time
 }
 
-// Public invitation links (plan.md §6.1).
+// Public invitation links (docs/design.md §6.1).
 func (q *Queries) CreateInviteLink(ctx context.Context, arg CreateInviteLinkParams) (InviteLink, error) {
 	row := q.db.QueryRow(ctx, createInviteLink,
 		arg.CreatorID,

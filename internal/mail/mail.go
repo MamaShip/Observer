@@ -1,5 +1,5 @@
 // Package mail sends email: an SMTP transport for production (Resend or any
-// other provider, plan.md §4) and an in-memory one for development and tests.
+// other provider, docs/design.md §4) and an in-memory one for development and tests.
 package mail
 
 import (

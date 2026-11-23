@@ -1,4 +1,4 @@
-// Package mp is the WeChat Official Account entry (plan.md §6.7): WeChat
+// Package mp is the WeChat Official Account entry (docs/design.md §6.7): WeChat
 // POSTs what users send to our subscription account, and each request is
 // answered with one passive reply. Plain-text mode over HTTPS: messages are
 // authenticated by the signature, not encrypted.

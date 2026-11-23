@@ -16,7 +16,7 @@ import (
 	"github.com/MamaShip/Observer/internal/wechat"
 )
 
-// Resolve fetches a pending article for the first time (plan.md §6.2–6.3).
+// Resolve fetches a pending article for the first time (docs/design.md §6.2–6.3).
 // final is true on the last attempt: if WeChat still gives no answer, the
 // waiting watches fail as unreachable instead of being retried.
 func (s *Service) Resolve(ctx context.Context, args ResolveArgs, final bool) error {

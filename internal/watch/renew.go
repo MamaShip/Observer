@@ -10,7 +10,7 @@ import (
 	"github.com/MamaShip/Observer/internal/store/db"
 )
 
-// Renewal (plan.md §6.5): a watch can be given another WatchDays from now.
+// Renewal (docs/design.md §6.5): a watch can be given another WatchDays from now.
 // An active watch is extended; one that ended because its period ran out or
 // the user stopped it is watched again, as long as the article is online.
 

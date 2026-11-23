@@ -14,7 +14,7 @@ import (
 	"github.com/MamaShip/Observer/internal/store/db"
 )
 
-// Public invitation links (plan.md §6.1): admins open them; the sign-up
+// Public invitation links (docs/design.md §6.1): admins open them; the sign-up
 // page (/join) checks them and passes the token with the login code.
 
 func inviteLinkGone() error {

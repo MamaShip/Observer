@@ -1,4 +1,4 @@
-# Monthly dependency updates, one grouped PR per ecosystem (plan.md §13.6).
+# Monthly dependency updates, one grouped PR per ecosystem (docs/design.md §13.6).
 # Security updates are not batched: GitHub opens those as they come.
 version: 2
 

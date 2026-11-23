@@ -9,7 +9,7 @@ import (
 	"github.com/MamaShip/Observer/internal/wechat"
 )
 
-// Check schedule (plan.md §5.5).
+// Check schedule (docs/design.md §5.5).
 const (
 	deletionConfirmDelay = 10 * time.Minute // second look before declaring an article deleted
 	failureBackoffBase   = 5 * time.Minute

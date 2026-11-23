@@ -98,7 +98,7 @@ func bindToken(t *testing.T, reply string) string {
 }
 
 // TestWechatFlow follows a WeChat user from following the account to
-// watching an article and getting its deletion email (plan.md §6.7).
+// watching an article and getting its deletion email (docs/design.md §6.7).
 func TestWechatFlow(t *testing.T) {
 	web := watchtest.NewWeb()
 	web.Set(watchtest.AliveURL, watchtest.Fixture(t, "alive_article.html"))

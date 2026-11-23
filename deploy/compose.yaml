@@ -1,4 +1,4 @@
-# Production stack (plan.md §13). On the server, next to this file:
+# Production stack (docs/design.md §13). On the server, next to this file:
 #   .env       settings and secrets (from .env.example), mode 600
 #   Caddyfile
 # Then: docker compose up -d

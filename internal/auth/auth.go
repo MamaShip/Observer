@@ -1,5 +1,5 @@
 // Package auth verifies email ownership with login codes and registration
-// invitations, and issues sessions (plan.md §6.1).
+// invitations, and issues sessions (docs/design.md §6.1).
 // Session tokens are 256-bit random values; only their sha256 is stored.
 package auth
 
