@@ -6,7 +6,7 @@ const route = useRoute()
 
 <template>
   <nav class="zg-side" aria-label="管理后台">
-    <div class="zg-side__brand"><img src="/favicon.svg" alt="">{{ serviceName() }}<small>ADMIN</small></div>
+    <RouterLink to="/" class="zg-side__brand" :aria-label="serviceName() + ' 首页'"><img src="/favicon.svg" alt="">{{ serviceName() }}<small>ADMIN</small></RouterLink>
     <span class="zg-side__label">运营</span>
     <RouterLink to="/admin">概览</RouterLink>
     <RouterLink to="/admin/users">账户管理</RouterLink>

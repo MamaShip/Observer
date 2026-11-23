@@ -56,8 +56,8 @@ button:disabled { cursor: not-allowed; }
 .zg-footnote { color: var(--ink-300); font-size: 12px; }
 @media (max-width: 767px) {
   .zg-input input, .zg-input textarea, .zg-select select { font-size: 16px; }
-  .zg-side__brand { flex-basis: 100%; }
-  .zg-side__brand small { margin-left: var(--space-2); }
+  .zg-side .zg-side__brand { flex-basis: 100%; }
+  .zg-side .zg-side__brand small { margin-left: var(--space-2); }
   .zg-side a { padding: 0 var(--space-2); }
   .zg-panel { padding: var(--space-4); }
 }
